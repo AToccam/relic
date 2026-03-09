@@ -24,12 +24,15 @@
    ```bash
    cd relic-gateway
    ```
-2. 执行依赖安装命令（由于国内网络环境，强烈建议配置淘宝镜像或使用代理）：
+2. 执行依赖安装命令（由于国内网络环境，强烈建议配置镜像或使用代理）：
    ```bash
    npm install
    ```
-   *稍等片刻，npm 会根据 `package.json` 自动为你下载所有必需的模块。*
-
+   *稍等片刻，npm 会根据 `package.json` 自动为你下载所有必需的模块。*   
+3. 执行配置文件同步
+   ```bash
+   npm run setup
+   ```
 ---
 
 ## 🔗 3. 核心配置 (连接后端大脑)
@@ -49,7 +52,7 @@
 依赖安装完毕且后端启动后，执行以下命令唤醒网关：
 
 ```bash
-npx openclaw gateway --port 18789 --verbose --allow-unconfigured
+npx openclaw gateway --port 18789 --verbose
 ```
 
 **启动成功的标志：**
