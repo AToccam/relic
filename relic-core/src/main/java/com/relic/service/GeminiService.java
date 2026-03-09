@@ -7,7 +7,7 @@ import com.google.genai.types.GenerateContentResponse;
 @Service
 public class GeminiService {
 
-    private final String API_KEY = "AIzaSyCFCldUlylxEKLvMvKa1S7wH5LlZeF8u0M";
+    private final String API_KEY = "AIzaSyAZ3iJfylBAbLC5U3pQvrB165-2iuinWYs";
 
     public String askGemini(String prompt) {
         try {

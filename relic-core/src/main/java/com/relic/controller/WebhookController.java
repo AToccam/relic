@@ -3,6 +3,9 @@ package com.relic.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.relic.dto.OpenClawRequest;
 import com.relic.service.DeepSeekService;
+import com.relic.service.GeminiService;
+import com.relic.service.QwenService;
+import com.relic.service.KimiService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -24,6 +27,72 @@ public class WebhookController {
 
     @Autowired
     private DeepSeekService deepSeekService;
+
+    @Autowired
+    private GeminiService geminiService;
+
+    @Autowired
+    private QwenService qwenService;
+
+    @Autowired
+    private KimiService kimiService;
+
+    // Kimi 连通性测试接口
+    @PostMapping("/test/kimi")
+    public Map<String, Object> testKimi(@RequestBody Map<String, String> request) {
+        String prompt = request.getOrDefault("prompt", "你好，请用一句话介绍你自己");
+        log.info("【Kimi 连通性测试】prompt: {}", prompt);
+
+        long startTime = System.currentTimeMillis();
+        String reply = kimiService.askKimi(prompt);
+        long costTime = System.currentTimeMillis() - startTime;
+
+        log.info("【Kimi 测试完成】耗时: {} ms, 返回: {}", costTime, reply);
+
+        return Map.of(
+                "status", reply.startsWith("连接 Kimi 失败") ? "fail" : "ok",
+                "costMs", costTime,
+                "reply", reply
+        );
+    }
+
+    // Qwen 连通性测试接口
+    @PostMapping("/test/qwen")
+    public Map<String, Object> testQwen(@RequestBody Map<String, String> request) {
+        String prompt = request.getOrDefault("prompt", "你好，请用一句话介绍你自己");
+        log.info("【Qwen 连通性测试】prompt: {}", prompt);
+
+        long startTime = System.currentTimeMillis();
+        String reply = qwenService.askQwen(prompt);
+        long costTime = System.currentTimeMillis() - startTime;
+
+        log.info("【Qwen 测试完成】耗时: {} ms, 返回: {}", costTime, reply);
+
+        return Map.of(
+                "status", reply.startsWith("连接 Qwen 失败") ? "fail" : "ok",
+                "costMs", costTime,
+                "reply", reply
+        );
+    }
+
+    // Gemini 连通性测试接口
+    @PostMapping("/test/gemini")
+    public Map<String, Object> testGemini(@RequestBody Map<String, String> request) {
+        String prompt = request.getOrDefault("prompt", "你好，请用一句话介绍你自己");
+        log.info("【Gemini 连通性测试】prompt: {}", prompt);
+
+        long startTime = System.currentTimeMillis();
+        String reply = geminiService.askGemini(prompt);
+        long costTime = System.currentTimeMillis() - startTime;
+
+        log.info("【Gemini 测试完成】耗时: {} ms, 返回: {}", costTime, reply);
+
+        return Map.of(
+                "status", reply.startsWith("连接失败") ? "fail" : "ok",
+                "costMs", costTime,
+                "reply", reply
+        );
+    }
 
     // 注意：这里的返回值改成了 Map<String, Object>，Spring 会自动把它转成 JSON 返回给网关
     @PostMapping("/openclaw")

@@ -1,3 +1,33 @@
+### Kimi 连通性测试
+POST http://127.0.0.1:8082/test/kimi
+Content-Type: application/json
+
+{
+  "prompt": "你好，请用一句话介绍你自己"
+}
+
+###
+
+### Qwen 连通性测试
+POST http://127.0.0.1:8082/test/qwen
+Content-Type: application/json
+
+{
+  "prompt": "你好，请用一句话介绍你自己"
+}
+
+###
+
+### Gemini 连通性测试
+POST http://127.0.0.1:8082/test/gemini
+Content-Type: application/json
+
+{
+  "prompt": "你好，请用一句话介绍你自己"
+}
+
+###
+
 ### 测试 OpenClaw Webhook 接收接口
 POST http://127.0.0.1:8082/webhook/openclaw
 Content-Type: application/json
