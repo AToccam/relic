@@ -1,0 +1,29 @@
+{
+  "meta": {
+    "lastTouchedVersion": "2026.3.7",
+    "lastTouchedAt": "2026-03-09T02:00:01.774Z"
+  },
+  "agents": {
+    "list": [
+      {
+        "id": "main",
+        "name": "main",
+        "workspace": "C:\\Users\\bench\\.openclaw\\workspace",
+        "agentDir": "C:\\Users\\bench\\.openclaw\\agents\\main\\agent"
+      }
+    ]
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto",
+    "restart": true,
+    "ownerDisplay": "raw"
+  },
+  "gateway": {
+    "mode": "local",
+    "auth": {
+      "mode": "token",
+      "token": "738b2be68626b36c1ffac8432bd34ee23de1bbeadddf4ec8"
+    }
+  }
+}

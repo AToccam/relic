@@ -1,14 +1,25 @@
 package com.relic.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
+@Slf4j
 @Service
 public class DeepSeekService {
 
@@ -49,6 +60,58 @@ public class DeepSeekService {
 
         } catch (Exception e) {
             return "连接 DeepSeek 失败：" + e.getMessage();
+        }
+    }
+
+    /**
+     * 流式调用 DeepSeek，逐块回调内容
+     */
+    @SuppressWarnings("unchecked")
+    public void streamDeepSeek(String prompt, Consumer<String> onChunk) throws Exception {
+        Map<String, Object> requestBody = Map.of(
+                "model", "deepseek-chat",
+                "messages", List.of(
+                        Map.of("role", "system", "content", "这是relic项目的系统测试"),
+                        Map.of("role", "user", "content", prompt)
+                ),
+                "stream", true
+        );
+
+        ObjectMapper objectMapper = new ObjectMapper();
+        String jsonBody = objectMapper.writeValueAsString(requestBody);
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(URL))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + API_KEY)
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                .build();
+
+        HttpResponse<java.io.InputStream> response = client.send(request,
+                HttpResponse.BodyHandlers.ofInputStream());
+
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (!line.startsWith("data: ")) continue;
+
+                String data = line.substring(6).trim();
+                if ("[DONE]".equals(data)) break;
+
+                Map<String, Object> chunk = objectMapper.readValue(data, Map.class);
+                List<Map<String, Object>> choices = (List<Map<String, Object>>) chunk.get("choices");
+                if (choices != null && !choices.isEmpty()) {
+                    Map<String, Object> delta = (Map<String, Object>) choices.get(0).get("delta");
+                    if (delta != null) {
+                        String content = (String) delta.get("content");
+                        if (content != null) {
+                            onChunk.accept(content);
+                        }
+                    }
+                }
+            }
         }
     }
 }
