@@ -26,7 +26,8 @@ public class AiRouterService {
     private static final String AGGREGATOR = "deepseek";
     private static final List<String> ADVISORS = List.of("kimi", "qwen");
 
-    private volatile Mode currentMode = Mode.SINGLE;
+    private volatile Mode currentMode = Mode.MULTI;
+    //SINGLE 模式下，直接使用 DeepSeek；MULTI 模式下，先让 Kimi 和 Qwen 分析，再由 DeepSeek 聚合输出
 
     private final Map<String, AiProvider> providerMap = new LinkedHashMap<>();
 
@@ -165,8 +166,8 @@ public class AiRouterService {
         return replies;
     }
 
-    /** 并行调用所有 advisor，收集回复 */
-    private Map<String, String> collectAdvisorReplies(String userQuestion) {
+    /** 并行调用所有 advisor，收集回复（对外暴露，可用于测试） */
+    public Map<String, String> collectAdvisorReplies(String userQuestion) {
         Map<String, String> replies = new ConcurrentHashMap<>();
 
         List<CompletableFuture<Void>> futures = ADVISORS.stream()

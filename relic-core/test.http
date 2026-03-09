@@ -56,6 +56,16 @@ Content-Type: application/json
 
 ###
 
+### 多 AI 协同测试（查看 Kimi/Qwen 的原始回复，不经过 DeepSeek）
+POST http://127.0.0.1:8082/test/multi
+Content-Type: application/json
+
+{
+  "prompt": "用一句话解释什么是量子计算"
+}
+
+###
+
 ### 测试 OpenClaw Webhook 接收接口
 POST http://127.0.0.1:8082/webhook/openclaw
 Content-Type: application/json

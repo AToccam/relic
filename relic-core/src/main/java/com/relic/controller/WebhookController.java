@@ -70,6 +70,27 @@ public class WebhookController {
         );
     }
 
+    // ==================== 多 AI 协同测试（查看各 advisor 原始回复） ====================
+
+    @PostMapping("/test/multi")
+    public Map<String, Object> testMulti(@RequestBody Map<String, String> request) {
+        String prompt = request.getOrDefault("prompt", "你好，请用一句话介绍你自己");
+        log.info("【多AI协同测试】prompt: {}", prompt);
+
+        long startTime = System.currentTimeMillis();
+        Map<String, String> advisorReplies = aiRouter.collectAdvisorReplies(prompt);
+        long costTime = System.currentTimeMillis() - startTime;
+
+        log.info("【多AI协同测试完成】耗时: {} ms", costTime);
+        advisorReplies.forEach((name, reply) ->
+                log.info("  {} -> {}", name, reply));
+
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("costMs", costTime);
+        result.put("advisors", advisorReplies);
+        return result;
+    }
+
     // ==================== OpenClaw Webhook ====================
 
     @PostMapping("/openclaw")
