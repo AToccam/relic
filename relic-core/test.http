@@ -1,0 +1,15 @@
+### 测试 OpenClaw Webhook 接收接口
+POST http://127.0.0.1:8082/webhook/openclaw
+Content-Type: application/json
+
+{
+  "type": "req",
+  "id": "fd58351c-b11e-4aa2-afb9-fd4f7f5bb6ea",
+  "method": "chat.send",
+  "params": {
+    "sessionKey": "agent:main:main",
+    "message": "Hello Relic！",
+    "deliver": false,
+    "idempotencyKey": "cd453e61-9c8a-42c8-83b5-c2d30ab5f26b"
+  }
+}

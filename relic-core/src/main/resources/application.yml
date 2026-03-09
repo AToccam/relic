@@ -1,0 +1,8 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: relic-core
+
+#deepseek api key：sk-d7cbb8c351964fab8c6a7d8709e9da7b
