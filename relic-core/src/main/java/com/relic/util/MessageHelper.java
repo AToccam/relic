@@ -66,4 +66,29 @@ public final class MessageHelper {
     public static Map<String, Object> buildUserMessage(String content) {
         return Map.of("role", "user", "content", content == null ? "" : content);
     }
+
+    /**
+     * 构建多 AI 协同的聚合消息列表：
+     * 在原始对话的基础上，注入 system prompt 告知 DeepSeek 参考各方观点后给出最终回答。
+     */
+    public static List<Map<String, Object>> buildAggregatedMessages(
+            List<Map<String, Object>> originalMessages, Map<String, String> advisorReplies) {
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("你是一个智能聚合助手。其他 AI 助手已经针对用户的问题给出了各自的分析，请你综合参考它们的观点，")
+          .append("给出更全面、更准确的最终回答。如果某个助手的回答有明显错误，请指出并纠正。\n\n");
+        sb.append("=== 各 AI 助手的回复 ===\n\n");
+
+        for (Map.Entry<String, String> entry : advisorReplies.entrySet()) {
+            sb.append("【").append(entry.getKey()).append(" 的回复】\n");
+            sb.append(entry.getValue()).append("\n\n");
+        }
+
+        sb.append("=== 请综合以上回复，给出你的最终回答 ===");
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        result.add(Map.of("role", "system", "content", sb.toString()));
+        result.addAll(originalMessages);
+        return result;
+    }
 }

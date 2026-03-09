@@ -8,9 +8,7 @@ import com.relic.util.OpenAiResponseBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -28,6 +26,27 @@ public class WebhookController {
     private AiRouterService aiRouter;
 
     private final ObjectMapper mapper = new ObjectMapper();
+
+    // ==================== 模式切换接口 ====================
+
+    @GetMapping("/mode")
+    public Map<String, Object> getMode() {
+        return Map.of(
+                "mode", aiRouter.getMode().name().toLowerCase(),
+                "availableProviders", aiRouter.getProviderNames()
+        );
+    }
+
+    @PostMapping("/mode")
+    public Map<String, Object> setMode(@RequestBody Map<String, String> request) {
+        String modeStr = request.getOrDefault("mode", "single");
+        AiRouterService.Mode mode = "multi".equalsIgnoreCase(modeStr)
+                ? AiRouterService.Mode.MULTI
+                : AiRouterService.Mode.SINGLE;
+        aiRouter.setMode(mode);
+        log.info("模式已切换为: {}", mode);
+        return Map.of("mode", mode.name().toLowerCase());
+    }
 
     // ==================== 统一 AI 连通性测试 ====================
 
@@ -66,7 +85,7 @@ public class WebhookController {
         String aiReply;
         try {
             long startTime = System.currentTimeMillis();
-            aiReply = aiRouter.askDefault(messages);
+            aiReply = aiRouter.askAuto(messages);
             long costTime = System.currentTimeMillis() - startTime;
             log.info("AI 调用成功，耗时: {} ms", costTime);
             log.info("AI 返回内容: {}", aiReply);
@@ -112,8 +131,8 @@ public class WebhookController {
 
         Thread.startVirtualThread(() -> {
             try {
-                log.info("【流式连接 AI 中...】");
-                aiRouter.streamDefault(finalMessages, content -> {
+                log.info("【流式连接 AI 中...】模式: {}", aiRouter.getMode());
+                aiRouter.streamAuto(finalMessages, content -> {
                     try {
                         Map<String, Object> chunk = OpenAiResponseBuilder.buildChunk(
                                 chatId, created, "deepseek-local", Map.of("content", content), null);

@@ -31,13 +31,27 @@ Content-Type: application/json
 
 ###
 
-### Gemini 连通性测试
-POST http://127.0.0.1:8082/test/ai
+### 查看当前模式
+GET http://127.0.0.1:8082/mode
+
+###
+
+### 切换为多 AI 协同模式
+POST http://127.0.0.1:8082/mode
 Content-Type: application/json
 
 {
-  "provider": "gemini",
-  "prompt": "你好，请用一句话介绍你自己"
+  "mode": "multi"
+}
+
+###
+
+### 切换为单 AI 模式（DeepSeek 直出）
+POST http://127.0.0.1:8082/mode
+Content-Type: application/json
+
+{
+  "mode": "single"
 }
 
 ###
