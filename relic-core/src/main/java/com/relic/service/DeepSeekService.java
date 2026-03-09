@@ -37,11 +37,10 @@ public class DeepSeekService {
         Map<String, Object> requestBody = Map.of(
                 "model", "deepseek-chat",
                 "messages", List.of(
-                        // 你可以在这里给你的系统植入“灵魂”
-                        Map.of("role", "system", "content", "这是relic项目的系统测试"),
+                        Map.of("role", "system", "content", "你是 Relic 项目的 AI 助手，请用自然语言回复用户，不要输出 JSON 格式。"),
                         Map.of("role", "user", "content", prompt)
                 ),
-                "stream", false // 先用非流式，一次性拿到完整回复
+                "stream", false
         );
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
@@ -71,7 +70,7 @@ public class DeepSeekService {
         Map<String, Object> requestBody = Map.of(
                 "model", "deepseek-chat",
                 "messages", List.of(
-                        Map.of("role", "system", "content", "这是relic项目的系统测试"),
+                        Map.of("role", "system", "content", "你是 Relic 项目的 AI 助手，请用自然语言回复用户。"),
                         Map.of("role", "user", "content", prompt)
                 ),
                 "stream", true
