@@ -100,9 +100,17 @@ public class WebhookController {
             cleanMessages.add(buildUserMessage(""));
         }
 
-        log.info("【上下文记忆条数】: {}", cleanMessages.size());
+        // 滑动窗口：仅保留最近 15 条对话记忆
+        int maxHistory = 15;
+        if (cleanMessages.size() > maxHistory) {
+            cleanMessages = new ArrayList<>(cleanMessages.subList(cleanMessages.size() - maxHistory, cleanMessages.size()));
+            log.info("【触发滑动窗口】已截断历史记录，仅保留最近 {} 条", maxHistory);
+        }
+
+        log.info("【最终发送给 DeepSeek 的记忆条数】: {}", cleanMessages.size());
         log.info("【当前最新提问】: {}", cleanMessages.get(cleanMessages.size() - 1).get("content"));
 
+        final List<Map<String, Object>> finalMessages = cleanMessages;
         SseEmitter emitter = new SseEmitter(120_000L);
         String chatId = "chatcmpl-" + System.currentTimeMillis();
         long created = System.currentTimeMillis() / 1000;
@@ -115,7 +123,7 @@ public class WebhookController {
             try {
                 log.info("【流式连接 DeepSeek 中...】");
                 // 逐块转发 DeepSeek 内容
-                deepSeekService.streamDeepSeek(cleanMessages, content -> {
+                deepSeekService.streamDeepSeek(finalMessages, content -> {
                     try {
                         Map<String, Object> chunk = buildChunk(chatId, created, Map.of("content", content), null);
                         emitter.send(SseEmitter.event().data(mapper.writeValueAsString(chunk), MediaType.APPLICATION_JSON));

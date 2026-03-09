@@ -60,9 +60,8 @@ public class DeepSeekService {
         }
     }
 
-    /**
-     * 流式调用 DeepSeek，逐块回调内容
-     */
+
+     //流式调用 DeepSeek，逐块回调内容
     @SuppressWarnings("unchecked")
     public void streamDeepSeek(List<Map<String, Object>> messages, Consumer<String> onChunk) throws Exception {
         Map<String, Object> requestBody = new HashMap<>();
