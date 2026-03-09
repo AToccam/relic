@@ -13,10 +13,18 @@ import java.util.Map;
 
 @Slf4j
 @Service
-public class KimiService {
+public class KimiService implements AiProvider {
 
     private final String API_KEY = "sk-lbvuX4lkXbAj5pyVGGbmcEVP5jnDgjicPipqXh5o0IdxjNEh";
     private final String URL = "https://api.moonshot.cn/v1/chat/completions";
+
+    @Override
+    public String getName() { return "kimi"; }
+
+    @Override
+    public String ask(String prompt) {
+        return askKimi(prompt);
+    }
 
     @SuppressWarnings("unchecked")
     public String askKimi(String prompt) {

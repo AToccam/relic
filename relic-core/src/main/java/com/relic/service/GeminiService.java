@@ -5,9 +5,17 @@ import com.google.genai.Client;
 import com.google.genai.types.GenerateContentResponse;
 
 @Service
-public class GeminiService {
+public class GeminiService implements AiProvider {
 
     private final String API_KEY = "AIzaSyAZ3iJfylBAbLC5U3pQvrB165-2iuinWYs";
+
+    @Override
+    public String getName() { return "gemini"; }
+
+    @Override
+    public String ask(String prompt) {
+        return askGemini(prompt);
+    }
 
     public String askGemini(String prompt) {
         try {

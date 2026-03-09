@@ -22,10 +22,31 @@ import java.util.function.Consumer;
 
 @Slf4j
 @Service
-public class DeepSeekService {
+public class DeepSeekService implements AiProvider {
 
     private final String API_KEY = "sk-d7cbb8c351964fab8c6a7d8709e9da7b";
     private final String URL = "https://api.deepseek.com/chat/completions";
+
+    @Override
+    public String getName() { return "deepseek"; }
+
+    @Override
+    public String ask(String prompt) {
+        return askDeepSeek(List.of(Map.of("role", "user", "content", prompt)));
+    }
+
+    @Override
+    public String ask(List<Map<String, Object>> messages) {
+        return askDeepSeek(messages);
+    }
+
+    @Override
+    public void stream(List<Map<String, Object>> messages, Consumer<String> onChunk) throws Exception {
+        streamDeepSeek(messages, onChunk);
+    }
+
+    @Override
+    public boolean supportsStream() { return true; }
 
     public String askDeepSeek(List<Map<String, Object>> messages) {
         RestTemplate restTemplate = new RestTemplate();

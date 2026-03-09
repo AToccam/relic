@@ -2,10 +2,9 @@ package com.relic.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.relic.dto.OpenClawRequest;
-import com.relic.service.DeepSeekService;
-import com.relic.service.GeminiService;
-import com.relic.service.QwenService;
-import com.relic.service.KimiService;
+import com.relic.service.AiRouterService;
+import com.relic.util.MessageHelper;
+import com.relic.util.OpenAiResponseBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -16,8 +15,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -25,76 +22,37 @@ import java.util.Map;
 @RestController
 public class WebhookController {
 
-    @Autowired
-    private DeepSeekService deepSeekService;
+    private static final int MAX_HISTORY = 15;
 
     @Autowired
-    private GeminiService geminiService;
+    private AiRouterService aiRouter;
 
-    @Autowired
-    private QwenService qwenService;
+    private final ObjectMapper mapper = new ObjectMapper();
 
-    @Autowired
-    private KimiService kimiService;
+    // ==================== 统一 AI 连通性测试 ====================
 
-    // Kimi 连通性测试接口
-    @PostMapping("/test/kimi")
-    public Map<String, Object> testKimi(@RequestBody Map<String, String> request) {
+    @PostMapping("/test/ai")
+    public Map<String, Object> testAi(@RequestBody Map<String, String> request) {
+        String provider = request.getOrDefault("provider", "deepseek");
         String prompt = request.getOrDefault("prompt", "你好，请用一句话介绍你自己");
-        log.info("【Kimi 连通性测试】prompt: {}", prompt);
+        log.info("【{} 连通性测试】prompt: {}", provider, prompt);
 
         long startTime = System.currentTimeMillis();
-        String reply = kimiService.askKimi(prompt);
+        String reply = aiRouter.ask(provider, prompt);
         long costTime = System.currentTimeMillis() - startTime;
 
-        log.info("【Kimi 测试完成】耗时: {} ms, 返回: {}", costTime, reply);
+        log.info("【{} 测试完成】耗时: {} ms, 返回: {}", provider, costTime, reply);
 
         return Map.of(
-                "status", reply.startsWith("连接 Kimi 失败") ? "fail" : "ok",
+                "provider", provider,
+                "status", reply.contains("失败") ? "fail" : "ok",
                 "costMs", costTime,
                 "reply", reply
         );
     }
 
-    // Qwen 连通性测试接口
-    @PostMapping("/test/qwen")
-    public Map<String, Object> testQwen(@RequestBody Map<String, String> request) {
-        String prompt = request.getOrDefault("prompt", "你好，请用一句话介绍你自己");
-        log.info("【Qwen 连通性测试】prompt: {}", prompt);
+    // ==================== OpenClaw Webhook ====================
 
-        long startTime = System.currentTimeMillis();
-        String reply = qwenService.askQwen(prompt);
-        long costTime = System.currentTimeMillis() - startTime;
-
-        log.info("【Qwen 测试完成】耗时: {} ms, 返回: {}", costTime, reply);
-
-        return Map.of(
-                "status", reply.startsWith("连接 Qwen 失败") ? "fail" : "ok",
-                "costMs", costTime,
-                "reply", reply
-        );
-    }
-
-    // Gemini 连通性测试接口
-    @PostMapping("/test/gemini")
-    public Map<String, Object> testGemini(@RequestBody Map<String, String> request) {
-        String prompt = request.getOrDefault("prompt", "你好，请用一句话介绍你自己");
-        log.info("【Gemini 连通性测试】prompt: {}", prompt);
-
-        long startTime = System.currentTimeMillis();
-        String reply = geminiService.askGemini(prompt);
-        long costTime = System.currentTimeMillis() - startTime;
-
-        log.info("【Gemini 测试完成】耗时: {} ms, 返回: {}", costTime, reply);
-
-        return Map.of(
-                "status", reply.startsWith("连接失败") ? "fail" : "ok",
-                "costMs", costTime,
-                "reply", reply
-        );
-    }
-
-    // 注意：这里的返回值改成了 Map<String, Object>，Spring 会自动把它转成 JSON 返回给网关
     @PostMapping("/openclaw")
     public Map<String, Object> receiveMessage(@RequestBody OpenClawRequest request) {
         if (!"chat.send".equals(request.getMethod())) {
@@ -102,112 +60,77 @@ public class WebhookController {
         }
 
         String userMessage = request.getParams().getMessage();
-        List<Map<String, Object>> messages = buildSingleTurnMessages(userMessage);
         log.info("收到来自 OpenClaw 的前端指令: {}", userMessage);
 
-        log.info("正在连接 DeepSeek");
-        String aiReply = "";
+        List<Map<String, Object>> messages = MessageHelper.buildSingleTurnMessages(userMessage);
+        String aiReply;
         try {
-            // 记录开始时间
             long startTime = System.currentTimeMillis();
-
-            aiReply = deepSeekService.askDeepSeek(messages);
-
-            // 记录结束时间与结果
+            aiReply = aiRouter.askDefault(messages);
             long costTime = System.currentTimeMillis() - startTime;
-            log.info("DeepSeek 调用成功，耗时: {} ms", costTime);
-            log.info("DeepSeek 返回内容: {}", aiReply);
+            log.info("AI 调用成功，耗时: {} ms", costTime);
+            log.info("AI 返回内容: {}", aiReply);
 
-            // 防止返回 null 导致 OpenClaw 报错
             if (aiReply == null || aiReply.trim().isEmpty()) {
-                aiReply = "DeepSeek 返回了空内容，请检查 API 密钥或网络余额。";
+                aiReply = "AI 返回了空内容，请检查 API 密钥或网络余额。";
             }
-
         } catch (Exception e) {
-            // 打印堆栈报错
-            log.error("连接DeepSeek API 时发生异常】", e);
+            log.error("调用 AI API 时发生异常", e);
             aiReply = "后端请求出错：" + e.getMessage();
         }
 
-
-        // 组装 OpenClaw 要求的标准回应格式
         return Map.of(
-                "type", "res",               // 这是一个响应 (Response)
-                "id", request.getId(),       // 必须把网关发来的流水号原样还回去，网关才知道是回复哪句话的
-                "result", Map.of(
-                        "text", aiReply          // 把 DeepSeek 的真实回答塞进 text 字段
-                )
+                "type", "res",
+                "id", request.getId(),
+                "result", Map.of("text", aiReply)
         );
     }
 
-    // openai 格式回复：真正的流式 SSE 输出
+    // ==================== OpenAI 兼容格式：流式 SSE ====================
+
     @PostMapping(value = "/v1/chat/completions")
     @SuppressWarnings("unchecked")
     public SseEmitter handleOpenAIRequest(@RequestBody Map<String, Object> request) {
         List<Map<String, Object>> rawMessages = (List<Map<String, Object>>) request.get("messages");
-        List<Map<String, Object>> cleanMessages = new ArrayList<>();
+        List<Map<String, Object>> messages = MessageHelper.cleanRawMessages(rawMessages);
 
-        if (rawMessages != null) {
-            for (Map<String, Object> msg : rawMessages) {
-                String role = (String) msg.get("role");
-                String text = extractTextContent(msg.get("content"));
-
-                // 切除 OpenClaw 注入的 metadata 和时间戳
-                if ("user".equals(role) && text.contains("Sender (untrusted metadata):")) {
-                    text = text.replaceAll("Sender \\(untrusted metadata\\):[\\s\\S]*?```json[\\s\\S]*?```\\s*", "");
-                    text = text.replaceAll("\\[.*?\\]\\s*", "");
-                }
-
-                cleanMessages.add(Map.of(
-                        "role", role == null ? "user" : role,
-                        "content", text.trim()
-                ));
-            }
+        if (messages.isEmpty()) {
+            messages.add(MessageHelper.buildUserMessage(""));
         }
 
-        if (cleanMessages.isEmpty()) {
-            cleanMessages.add(buildUserMessage(""));
-        }
+        messages = MessageHelper.applySlidingWindow(messages, MAX_HISTORY);
+        log.info("【最终发送给 AI 的记忆条数】: {}", messages.size());
+        log.info("【当前最新提问】: {}", messages.get(messages.size() - 1).get("content"));
 
-        // 滑动窗口：仅保留最近 15 条对话记忆
-        int maxHistory = 15;
-        if (cleanMessages.size() > maxHistory) {
-            cleanMessages = new ArrayList<>(cleanMessages.subList(cleanMessages.size() - maxHistory, cleanMessages.size()));
-            log.info("【触发滑动窗口】已截断历史记录，仅保留最近 {} 条", maxHistory);
-        }
-
-        log.info("【最终发送给 DeepSeek 的记忆条数】: {}", cleanMessages.size());
-        log.info("【当前最新提问】: {}", cleanMessages.get(cleanMessages.size() - 1).get("content"));
-
-        final List<Map<String, Object>> finalMessages = cleanMessages;
+        final List<Map<String, Object>> finalMessages = messages;
         SseEmitter emitter = new SseEmitter(120_000L);
         String chatId = "chatcmpl-" + System.currentTimeMillis();
         long created = System.currentTimeMillis() / 1000;
-        ObjectMapper mapper = new ObjectMapper();
 
         emitter.onCompletion(() -> log.info("【SSE 连接已关闭】"));
         emitter.onTimeout(() -> log.warn("【SSE 连接超时】"));
 
         Thread.startVirtualThread(() -> {
             try {
-                log.info("【流式连接 DeepSeek 中...】");
-                // 逐块转发 DeepSeek 内容
-                deepSeekService.streamDeepSeek(finalMessages, content -> {
+                log.info("【流式连接 AI 中...】");
+                aiRouter.streamDefault(finalMessages, content -> {
                     try {
-                        Map<String, Object> chunk = buildChunk(chatId, created, Map.of("content", content), null);
-                        emitter.send(SseEmitter.event().data(mapper.writeValueAsString(chunk), MediaType.APPLICATION_JSON));
+                        Map<String, Object> chunk = OpenAiResponseBuilder.buildChunk(
+                                chatId, created, "deepseek-local", Map.of("content", content), null);
+                        emitter.send(SseEmitter.event()
+                                .data(mapper.writeValueAsString(chunk), MediaType.APPLICATION_JSON));
                     } catch (IOException e) {
                         throw new UncheckedIOException(e);
                     }
                 });
 
-                // 发送结束标记
-                Map<String, Object> stopChunk = buildChunk(chatId, created, Map.of(), "stop");
-                emitter.send(SseEmitter.event().data(mapper.writeValueAsString(stopChunk), MediaType.APPLICATION_JSON));
+                Map<String, Object> stopChunk = OpenAiResponseBuilder.buildChunk(
+                        chatId, created, "deepseek-local", Map.of(), "stop");
+                emitter.send(SseEmitter.event()
+                        .data(mapper.writeValueAsString(stopChunk), MediaType.APPLICATION_JSON));
                 emitter.send(SseEmitter.event().data("[DONE]", MediaType.TEXT_PLAIN));
                 emitter.complete();
                 log.info("【流式响应完成】");
-
             } catch (Exception e) {
                 log.error("【流式响应异常】", e);
                 emitter.completeWithError(e);
@@ -215,45 +138,5 @@ public class WebhookController {
         });
 
         return emitter;
-    }
-
-    // 构建 OpenAI chat.completion.chunk 格式
-    private Map<String, Object> buildChunk(String id, long created, Map<String, Object> delta, String finishReason) {
-        HashMap<String, Object> choice = new HashMap<>();
-        choice.put("index", 0);
-        choice.put("delta", delta);
-        choice.put("finish_reason", finishReason);
-
-        return Map.of(
-                "id", id,
-                "object", "chat.completion.chunk",
-                "created", created,
-                "model", "deepseek-local",
-                "choices", List.of(choice)
-        );
-    }
-
-    @SuppressWarnings("unchecked")
-    private String extractTextContent(Object contentObj) {
-        if (contentObj instanceof String str) {
-            return str;
-        }
-        if (contentObj instanceof List<?> list) {
-            for (Object item : list) {
-                if (item instanceof Map<?, ?> map && "text".equals(map.get("type"))) {
-                    Object text = map.get("text");
-                    return text == null ? "" : text.toString();
-                }
-            }
-        }
-        return "";
-    }
-
-    private List<Map<String, Object>> buildSingleTurnMessages(String userMessage) {
-        return List.of(buildUserMessage(userMessage));
-    }
-
-    private Map<String, Object> buildUserMessage(String content) {
-        return Map.of("role", "user", "content", content == null ? "" : content);
     }
 }

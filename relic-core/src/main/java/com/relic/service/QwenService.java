@@ -13,10 +13,18 @@ import java.util.Map;
 
 @Slf4j
 @Service
-public class QwenService {
+public class QwenService implements AiProvider {
 
     private final String API_KEY = "sk-8c46bed4d0324d12a6c44ba32f113d8e";
     private final String URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+
+    @Override
+    public String getName() { return "qwen"; }
+
+    @Override
+    public String ask(String prompt) {
+        return askQwen(prompt);
+    }
 
     @SuppressWarnings("unchecked")
     public String askQwen(String prompt) {

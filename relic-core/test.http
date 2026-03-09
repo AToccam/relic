@@ -1,28 +1,42 @@
-### Kimi 连通性测试
-POST http://127.0.0.1:8082/test/kimi
+### DeepSeek 连通性测试
+POST http://127.0.0.1:8082/test/ai
 Content-Type: application/json
 
 {
+  "provider": "deepseek",
+  "prompt": "你好，请用一句话介绍你自己"
+}
+
+###
+
+### Kimi 连通性测试
+POST http://127.0.0.1:8082/test/ai
+Content-Type: application/json
+
+{
+  "provider": "kimi",
   "prompt": "你好，请用一句话介绍你自己"
 }
 
 ###
 
 ### Qwen 连通性测试
-POST http://127.0.0.1:8082/test/qwen
+POST http://127.0.0.1:8082/test/ai
 Content-Type: application/json
 
 {
+  "provider": "qwen",
   "prompt": "你好，请用一句话介绍你自己"
 }
 
 ###
 
 ### Gemini 连通性测试
-POST http://127.0.0.1:8082/test/gemini
+POST http://127.0.0.1:8082/test/ai
 Content-Type: application/json
 
 {
+  "provider": "gemini",
   "prompt": "你好，请用一句话介绍你自己"
 }
 
