@@ -15,6 +15,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -26,7 +27,7 @@ public class DeepSeekService {
     private final String API_KEY = "sk-d7cbb8c351964fab8c6a7d8709e9da7b";
     private final String URL = "https://api.deepseek.com/chat/completions";
 
-    public String askDeepSeek(String prompt) {
+    public String askDeepSeek(List<Map<String, Object>> messages) {
         RestTemplate restTemplate = new RestTemplate();
         //请求头
         HttpHeaders headers = new HttpHeaders();
@@ -34,14 +35,11 @@ public class DeepSeekService {
         headers.setBearerAuth(API_KEY);
 
         //构建请求体
-        Map<String, Object> requestBody = Map.of(
-                "model", "deepseek-chat",
-                "messages", List.of(
-                        Map.of("role", "system", "content", "你是 Relic 项目的 AI 助手，请用自然语言回复用户，不要输出 JSON 格式。"),
-                        Map.of("role", "user", "content", prompt)
-                ),
-                "stream", false
-        );
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("model", "deepseek-chat");
+        requestBody.put("messages", messages);
+        requestBody.put("temperature", 0.7);
+        requestBody.put("stream", false);
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
 
@@ -66,15 +64,12 @@ public class DeepSeekService {
      * 流式调用 DeepSeek，逐块回调内容
      */
     @SuppressWarnings("unchecked")
-    public void streamDeepSeek(String prompt, Consumer<String> onChunk) throws Exception {
-        Map<String, Object> requestBody = Map.of(
-                "model", "deepseek-chat",
-                "messages", List.of(
-                        Map.of("role", "system", "content", "你是 Relic 项目的 AI 助手，请用自然语言回复用户。"),
-                        Map.of("role", "user", "content", prompt)
-                ),
-                "stream", true
-        );
+    public void streamDeepSeek(List<Map<String, Object>> messages, Consumer<String> onChunk) throws Exception {
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("model", "deepseek-chat");
+        requestBody.put("messages", messages);
+        requestBody.put("temperature", 0.7);
+        requestBody.put("stream", true);
 
         ObjectMapper objectMapper = new ObjectMapper();
         String jsonBody = objectMapper.writeValueAsString(requestBody);
