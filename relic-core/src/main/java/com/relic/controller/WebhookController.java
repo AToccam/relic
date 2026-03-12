@@ -15,12 +15,13 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @RestController
 public class WebhookController {
 
-    private static final int MAX_HISTORY = 15;
+    private static final int MAX_HISTORY = 8;
 
     @Autowired
     private AiRouterService aiRouter;
@@ -143,23 +144,30 @@ public class WebhookController {
         log.info("【当前最新提问】: {}", messages.get(messages.size() - 1).get("content"));
 
         final List<Map<String, Object>> finalMessages = messages;
-        SseEmitter emitter = new SseEmitter(120_000L);
+        SseEmitter emitter = new SseEmitter(180_000L);
         String chatId = "chatcmpl-" + System.currentTimeMillis();
         long created = System.currentTimeMillis() / 1000;
+        AtomicBoolean emitterActive = new AtomicBoolean(true);
 
-        emitter.onCompletion(() -> log.info("【SSE 连接已关闭】"));
-        emitter.onTimeout(() -> log.warn("【SSE 连接超时】"));
+        emitter.onCompletion(() -> {
+            emitterActive.set(false);
+            log.info("【SSE 连接已关闭】");
+        });
 
-        Thread.startVirtualThread(() -> {
+        Thread streamThread = Thread.startVirtualThread(() -> {
             try {
                 log.info("【流式连接 AI 中...】模式: {}", aiRouter.getMode());
                 aiRouter.streamAuto(finalMessages, content -> {
+                    if (!emitterActive.get()) {
+                        throw new UncheckedIOException(new IOException("SSE 连接已关闭，终止流式输出"));
+                    }
                     try {
                         Map<String, Object> chunk = OpenAiResponseBuilder.buildChunk(
                                 chatId, created, "deepseek-local", Map.of("content", content), null);
                         emitter.send(SseEmitter.event()
                                 .data(mapper.writeValueAsString(chunk), MediaType.APPLICATION_JSON));
                     } catch (IOException e) {
+                        emitterActive.set(false);
                         throw new UncheckedIOException(e);
                     }
                 });
@@ -172,26 +180,34 @@ public class WebhookController {
                 emitter.complete();
                 log.info("【流式响应完成】");
             } catch (Exception e) {
+                if (!emitterActive.get()) {
+                    log.warn("【流式响应】SSE 已关闭，丢弃后续处理: {}", e.getMessage());
+                    return;
+                }
                 log.error("【流式响应异常】", e);
                 try {
-                    // 发送错误信息作为最后一条内容，然后正常关闭。
-                    // 不能用 completeWithError —— 前端 EventSource 会自动重连导致死循环。
                     Map<String, Object> errChunk = OpenAiResponseBuilder.buildChunk(
                             chatId, created, "deepseek-local",
                             Map.of("content", "\n\n⚠️ 后端处理异常: " + e.getMessage()), null);
                     emitter.send(SseEmitter.event()
                             .data(mapper.writeValueAsString(errChunk), MediaType.APPLICATION_JSON));
-                    Map<String, Object> stopChunk = OpenAiResponseBuilder.buildChunk(
+                    Map<String, Object> stopChunk2 = OpenAiResponseBuilder.buildChunk(
                             chatId, created, "deepseek-local", Map.of(), "stop");
                     emitter.send(SseEmitter.event()
-                            .data(mapper.writeValueAsString(stopChunk), MediaType.APPLICATION_JSON));
+                            .data(mapper.writeValueAsString(stopChunk2), MediaType.APPLICATION_JSON));
                     emitter.send(SseEmitter.event().data("[DONE]", MediaType.TEXT_PLAIN));
                     emitter.complete();
                 } catch (Exception ex) {
-                    log.error("【发送错误消息也失败了】", ex);
-                    emitter.completeWithError(ex);
+                    log.warn("【发送错误消息也失败】SSE 可能已关闭: {}", ex.getMessage());
                 }
             }
+        });
+
+        // SSE 超时时中断虚拟线程，打破 DeepSeek 流式读取的阻塞
+        emitter.onTimeout(() -> {
+            emitterActive.set(false);
+            streamThread.interrupt();
+            log.warn("【SSE 连接超时，已中断流式线程】");
         });
 
         return emitter;

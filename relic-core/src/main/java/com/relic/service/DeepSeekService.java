@@ -17,9 +17,13 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 @Slf4j
@@ -150,9 +154,12 @@ public class DeepSeekService implements AiProvider {
         ObjectMapper objectMapper = new ObjectMapper();
         String jsonBody = objectMapper.writeValueAsString(requestBody);
 
-        HttpClient client = HttpClient.newHttpClient();
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(15))
+                .build();
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(URL))
+                .timeout(Duration.ofSeconds(90))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + API_KEY)
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
@@ -174,10 +181,26 @@ public class DeepSeekService implements AiProvider {
 
         ToolCallResult result = new ToolCallResult();
 
+        // 空闲超时看门狗：如果 60 秒内没收到任何数据，强制关闭流
+        InputStream bodyStream = response.body();
+        AtomicLong lastDataTime = new AtomicLong(System.currentTimeMillis());
+        Timer idleWatchdog = new Timer("ds-idle-watchdog", true);
+        idleWatchdog.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                if (System.currentTimeMillis() - lastDataTime.get() > 60_000) {
+                    log.warn("【DeepSeek】流式响应超过 60 秒无数据，强制关闭连接");
+                    try { bodyStream.close(); } catch (Exception ignored) {}
+                    cancel();
+                }
+            }
+        }, 15_000, 10_000);
+
         try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+                new InputStreamReader(bodyStream, StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
+                lastDataTime.set(System.currentTimeMillis());
                 if (!line.startsWith("data: ")) continue;
                 String data = line.substring(6).trim();
                 if ("[DONE]".equals(data)) break;
@@ -228,6 +251,8 @@ public class DeepSeekService implements AiProvider {
                     }
                 }
             }
+        } finally {
+            idleWatchdog.cancel();
         }
 
         return result;
