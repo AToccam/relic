@@ -1,5 +1,7 @@
 package com.relic.service;
 
+import com.relic.dto.ToolCallResult;
+
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -35,5 +37,33 @@ public interface AiProvider {
     /** 是否支持真正的流式输出 */
     default boolean supportsStream() {
         return false;
+    }
+
+    // ==================== Tool Calling 支持（可选实现） ====================
+
+    /** 是否支持 OpenAI 兼容的 function calling / tools */
+    default boolean supportsTools() {
+        return false;
+    }
+
+    /**
+     * 非流式调用（带 tools 参数），返回结构化结果。
+     * 默认：忽略 tools，返回纯文本结果。
+     */
+    default ToolCallResult askWithTools(List<Map<String, Object>> messages,
+                                        List<Map<String, Object>> tools) {
+        String content = ask(messages);
+        return ToolCallResult.textOnly(content);
+    }
+
+    /**
+     * 流式调用（带 tools 参数），流式输出文本内容，同时返回可能的工具调用信息。
+     * 默认：忽略 tools，走普通 stream。
+     */
+    default ToolCallResult streamWithTools(List<Map<String, Object>> messages,
+                                            List<Map<String, Object>> tools,
+                                            Consumer<String> onChunk) throws Exception {
+        stream(messages, onChunk);
+        return ToolCallResult.textOnly(null);
     }
 }

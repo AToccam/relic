@@ -5,4 +5,8 @@ spring:
   application:
     name: relic-core
 
+relic:
+  workspace:
+    path: ${user.home}/.openclaw/workspace
+
 #deepseek api key：sk-d7cbb8c351964fab8c6a7d8709e9da7b

@@ -1,5 +1,6 @@
 package com.relic.service;
 
+import com.relic.tool.ToolCallService;
 import com.relic.util.MessageHelper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +31,9 @@ public class AiRouterService {
     //SINGLE 模式下，直接使用 DeepSeek；MULTI 模式下，先让 Kimi 和 Qwen 分析，再由 DeepSeek 聚合输出
 
     private final Map<String, AiProvider> providerMap = new LinkedHashMap<>();
+
+    @Autowired
+    private ToolCallService toolCallService;
 
     @Autowired
     public AiRouterService(List<AiProvider> providers) {
@@ -83,14 +87,16 @@ public class AiRouterService {
         if (currentMode == Mode.MULTI) {
             return askMulti(messages);
         } else {
-            return getProvider(AGGREGATOR).ask(messages);
+            List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
+            return toolCallService.askWithTools(getProvider(AGGREGATOR), enriched);
         }
     }
 
     // ==================== 单 AI 模式 ====================
 
     public void streamSingle(List<Map<String, Object>> messages, Consumer<String> onChunk) throws Exception {
-        getProvider(AGGREGATOR).stream(messages, onChunk);
+        List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
+        toolCallService.streamWithTools(getProvider(AGGREGATOR), enriched, onChunk);
     }
 
     // ==================== 多 AI 协同模式 ====================
@@ -116,7 +122,7 @@ public class AiRouterService {
         log.info("【多AI协同】已收集 {} 个顾问回复，交由 DeepSeek 聚合", advisorReplies.size());
 
         onChunk.accept("✅ 已收集完毕，正在生成最终回答...\n\n");
-        getProvider(AGGREGATOR).stream(aggregatedMessages, onChunk);
+        toolCallService.streamWithTools(getProvider(AGGREGATOR), aggregatedMessages, onChunk);
     }
 
     /** 多 AI 协同同步输出（非流式） */
@@ -124,7 +130,7 @@ public class AiRouterService {
         String userQuestion = extractLatestUserMessage(messages);
         Map<String, String> advisorReplies = collectAdvisorReplies(userQuestion);
         List<Map<String, Object>> aggregatedMessages = MessageHelper.buildAggregatedMessages(messages, advisorReplies);
-        return getProvider(AGGREGATOR).ask(aggregatedMessages);
+        return toolCallService.askWithTools(getProvider(AGGREGATOR), aggregatedMessages);
     }
 
     /** 并行调用所有 advisor，收集回复（带心跳保活） */
