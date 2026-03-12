@@ -173,7 +173,24 @@ public class WebhookController {
                 log.info("【流式响应完成】");
             } catch (Exception e) {
                 log.error("【流式响应异常】", e);
-                emitter.completeWithError(e);
+                try {
+                    // 发送错误信息作为最后一条内容，然后正常关闭。
+                    // 不能用 completeWithError —— 前端 EventSource 会自动重连导致死循环。
+                    Map<String, Object> errChunk = OpenAiResponseBuilder.buildChunk(
+                            chatId, created, "deepseek-local",
+                            Map.of("content", "\n\n⚠️ 后端处理异常: " + e.getMessage()), null);
+                    emitter.send(SseEmitter.event()
+                            .data(mapper.writeValueAsString(errChunk), MediaType.APPLICATION_JSON));
+                    Map<String, Object> stopChunk = OpenAiResponseBuilder.buildChunk(
+                            chatId, created, "deepseek-local", Map.of(), "stop");
+                    emitter.send(SseEmitter.event()
+                            .data(mapper.writeValueAsString(stopChunk), MediaType.APPLICATION_JSON));
+                    emitter.send(SseEmitter.event().data("[DONE]", MediaType.TEXT_PLAIN));
+                    emitter.complete();
+                } catch (Exception ex) {
+                    log.error("【发送错误消息也失败了】", ex);
+                    emitter.completeWithError(ex);
+                }
             }
         });
 

@@ -82,8 +82,14 @@ public class ToolCallService {
         List<Map<String, Object>> conversation = new ArrayList<>(messages);
         List<Map<String, Object>> tools = ToolDefinitions.getAll();
 
+        boolean anyContentSent = false;
+
         for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
             ToolCallResult result = provider.streamWithTools(conversation, tools, onChunk);
+
+            if (result.getContent().length() > 0) {
+                anyContentSent = true;
+            }
 
             if (result.hasToolCalls()) {
                 log.info("【工具调用-流式】Provider={}, 第 {} 轮, {} 个工具",
@@ -104,11 +110,16 @@ public class ToolCallService {
                 }
                 onChunk.accept("\n");
             } else {
+                if (!anyContentSent && result.getContent().length() == 0) {
+                    log.warn("【工具调用-流式】AI 返回了空响应，finishReason={}", result.getFinishReason());
+                    onChunk.accept("⚠️ AI 未返回有效内容，请稍后重试。");
+                }
                 return;
             }
         }
 
         log.warn("【工具调用-流式】达到最大轮次限制 {}", MAX_TOOL_ROUNDS);
+        onChunk.accept("⚠️ 工具调用轮次超过限制，已停止处理。");
     }
 
     // ==================== 内部辅助 ====================

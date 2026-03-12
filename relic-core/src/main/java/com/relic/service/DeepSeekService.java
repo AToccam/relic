@@ -129,9 +129,6 @@ public class DeepSeekService implements AiProvider {
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
 
-        System.clearProperty("https.proxyHost");
-        System.clearProperty("https.proxyPort");
-
         Map<String, Object> response = restTemplate.postForObject(URL, entity, Map.class);
         List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
         return choices.get(0);
@@ -163,6 +160,17 @@ public class DeepSeekService implements AiProvider {
 
         HttpResponse<InputStream> response = client.send(request,
                 HttpResponse.BodyHandlers.ofInputStream());
+
+        // 检查 HTTP 状态码，非 2xx 时直接读取错误信息并抛出
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            String errorBody;
+            try (BufferedReader errReader = new BufferedReader(
+                    new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+                errorBody = errReader.lines().collect(java.util.stream.Collectors.joining("\n"));
+            }
+            log.error("DeepSeek API 返回错误 HTTP {}: {}", response.statusCode(), errorBody);
+            throw new RuntimeException("DeepSeek API 错误 (HTTP " + response.statusCode() + "): " + errorBody);
+        }
 
         ToolCallResult result = new ToolCallResult();
 

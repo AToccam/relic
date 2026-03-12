@@ -32,7 +32,10 @@ public class ToolCallResult {
             Map<String, Object> map = new HashMap<>();
             map.put("id", id);
             map.put("type", "function");
-            map.put("function", Map.of("name", name, "arguments", arguments.toString()));
+            Map<String, Object> func = new HashMap<>();
+            func.put("name", name != null ? name : "");
+            func.put("arguments", arguments.toString());
+            map.put("function", func);
             return map;
         }
     }
