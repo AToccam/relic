@@ -52,8 +52,7 @@ const openclawConfig = {
                         "id": "deepseek-local",
                         "name": "Relic DeepSeek Brain",
                         "contextWindow": 32000,
-                        "maxTokens": 4096,
-                        "stream": true 
+                        "maxTokens": 4096
                     }
                 ]
             }
