@@ -340,7 +340,7 @@ public class AiRouterService {
     private void streamFastLocal(List<Map<String, Object>> messages, Consumer<String> onChunk) {
         String question = extractLatestUserMessage(messages);
         String answer = localFallbackService.get().simpleAnswer(question);
-        onChunk.accept("快速模式：当前调用本地模型。\n\n");
+        onChunk.accept("⚡️快速模式：当前调用本地模型。\n\n");
         onChunk.accept(answer);
     }
 

@@ -136,7 +136,7 @@ public final class MessageHelper {
 
         for (Map.Entry<String, String> entry : advisorReplies.entrySet()) {
             sb.append("【").append(entry.getKey()).append(" 的回复】\n");
-            // 截断过长的 advisor 回复，避免请求体过大导致 DeepSeek 响应缓慢
+            // 截断过长的 advisor 回复，避免请求体过大导致 Leader 响应缓慢
             String reply = entry.getValue();
             if (reply.length() > 2000) {
                 reply = reply.substring(0, 2000) + "...（已截断）";

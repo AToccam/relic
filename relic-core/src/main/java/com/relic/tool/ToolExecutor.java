@@ -3,10 +3,18 @@ package com.relic.tool;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.poi.hwpf.HWPFDocument;
+import org.apache.poi.hwpf.extractor.WordExtractor;
+import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -27,6 +35,9 @@ import java.util.stream.Stream;
 @Slf4j
 @Service
 public class ToolExecutor {
+
+    private static final long MAX_SUPPORTED_FILE_BYTES = 10L * 1024 * 1024;
+    private static final int MAX_RETURN_CHARS = 100_000;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -180,13 +191,16 @@ public class ToolExecutor {
             }
 
             long size = Files.size(filePath);
-            if (size > 100_000) {
-                String content = Files.readString(filePath, StandardCharsets.UTF_8);
-                return "文件较大 (" + size + " 字节)，仅显示前100KB:\n"
-                        + content.substring(0, Math.min(100_000, content.length()));
+            if (size > MAX_SUPPORTED_FILE_BYTES) {
+                return "文件过大，当前仅支持读取不超过 10MB 的文件";
             }
 
-            return Files.readString(filePath, StandardCharsets.UTF_8);
+            String extracted = extractContentByType(filePath, filename);
+            if (extracted == null || extracted.isBlank()) {
+                return "文件已读取，但未提取到可见文本内容";
+            }
+
+            return limitContent(extracted, size);
         } catch (SecurityException e) {
             return "安全错误: " + e.getMessage();
         } catch (java.nio.charset.MalformedInputException e) {
@@ -194,6 +208,53 @@ public class ToolExecutor {
         } catch (IOException e) {
             return "读取文件失败: " + e.getMessage();
         }
+    }
+
+    private String extractContentByType(Path filePath, String filename) throws IOException {
+        String lower = filename == null ? "" : filename.toLowerCase();
+
+        if (lower.endsWith(".pdf")) {
+            return readPdf(filePath);
+        }
+        if (lower.endsWith(".docx")) {
+            return readDocx(filePath);
+        }
+        if (lower.endsWith(".doc")) {
+            return readDoc(filePath);
+        }
+
+        return Files.readString(filePath, StandardCharsets.UTF_8);
+    }
+
+    private String readPdf(Path filePath) throws IOException {
+        try (PDDocument document = Loader.loadPDF(filePath.toFile())) {
+            PDFTextStripper stripper = new PDFTextStripper();
+            return stripper.getText(document);
+        }
+    }
+
+    private String readDocx(Path filePath) throws IOException {
+        try (InputStream in = Files.newInputStream(filePath);
+             XWPFDocument document = new XWPFDocument(in);
+             XWPFWordExtractor extractor = new XWPFWordExtractor(document)) {
+            return extractor.getText();
+        }
+    }
+
+    private String readDoc(Path filePath) throws IOException {
+        try (InputStream in = Files.newInputStream(filePath);
+             HWPFDocument document = new HWPFDocument(in);
+             WordExtractor extractor = new WordExtractor(document)) {
+            return extractor.getText();
+        }
+    }
+
+    private String limitContent(String content, long sizeInBytes) {
+        if (content.length() <= MAX_RETURN_CHARS) {
+            return content;
+        }
+        return "文件较大 (" + sizeInBytes + " 字节)，仅显示前 " + MAX_RETURN_CHARS + " 字符:\n"
+                + content.substring(0, MAX_RETURN_CHARS);
     }
 
     private String listFiles(String subPath) {

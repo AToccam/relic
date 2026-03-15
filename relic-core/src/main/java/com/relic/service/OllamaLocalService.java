@@ -68,9 +68,9 @@ public class OllamaLocalService implements LocalIntentClassifier {
     }
 
     public String simpleAnswer(String userMessage) {
-        String system = "你是本地离线应急助手。请直接给出简洁、可执行、尽量正确的回答，不要编造实时数据。";
+        String system = "你是本地离线助手。请直接给出简洁、可执行、尽量正确的回答，不要编造实时数据。";
         String prompt = "用户问题：\n" + userMessage + "\n\n"
-                + "请给出简要回答（尽量 120 字以内）；如果需要联网实时信息，明确说明当前为离线兜底回答。";
+                + "请给出简要回答（尽量 120 字以内）；如果需要联网实时信息，明确说明当前为离线回答。";
 
         try {
             String reply = generate(system, prompt, 220, 0.2, answerTimeoutMs);
@@ -79,7 +79,7 @@ public class OllamaLocalService implements LocalIntentClassifier {
             }
             return reply.trim();
         } catch (Exception e) {
-            log.warn("Ollama 本地兜底回答失败: {}", e.getMessage());
+            log.warn("Ollama 本地回答失败: {}", e.getMessage());
             return "当前云端 AI 暂不可用，且本地应急模型调用失败，请稍后重试。";
         }
     }

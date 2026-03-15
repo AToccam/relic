@@ -41,7 +41,7 @@ public final class ToolDefinitions {
                                 "required", List.of("filename", "content")
                         )),
                 buildTool("read_file",
-                        "读取用户工作区目录中指定文件的内容",
+                        "读取用户工作区目录中指定文件的内容（支持文本、PDF、DOC、DOCX）",
                         Map.of(
                                 "type", "object",
                                 "properties", Map.of(
