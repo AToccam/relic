@@ -3,6 +3,7 @@ package com.relic.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.relic.dto.ToolCallResult;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -32,6 +33,15 @@ public class DeepSeekService implements AiProvider {
 
     private final String API_KEY = "sk-d7cbb8c351964fab8c6a7d8709e9da7b";
     private final String URL = "https://api.deepseek.com/chat/completions";
+
+    @Value("${relic.deepseek.connect-timeout-ms:20000}")
+    private int connectTimeoutMs;
+
+    @Value("${relic.deepseek.request-timeout-ms:300000}")
+    private int requestTimeoutMs;
+
+    @Value("${relic.deepseek.idle-timeout-ms:180000}")
+    private int idleTimeoutMs;
 
     @Override
     public String getName() { return "deepseek"; }
@@ -153,11 +163,11 @@ public class DeepSeekService implements AiProvider {
         String jsonBody = objectMapper.writeValueAsString(requestBody);
 
         HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(15))
+            .connectTimeout(Duration.ofMillis(Math.max(3000, connectTimeoutMs)))
                 .build();
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(URL))
-                .timeout(Duration.ofSeconds(90))
+            .timeout(Duration.ofMillis(Math.max(30_000, requestTimeoutMs)))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + API_KEY)
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
@@ -179,20 +189,25 @@ public class DeepSeekService implements AiProvider {
 
         ToolCallResult result = new ToolCallResult();
 
-        // 空闲超时看门狗：如果 60 秒内没收到任何数据，强制关闭流
+        // 空闲超时看门狗：在长推理场景下需要更长等待，超时阈值可配置
         InputStream bodyStream = response.body();
         AtomicLong lastDataTime = new AtomicLong(System.currentTimeMillis());
-        Timer idleWatchdog = new Timer("ds-idle-watchdog", true);
-        idleWatchdog.scheduleAtFixedRate(new TimerTask() {
-            @Override
-            public void run() {
-                if (System.currentTimeMillis() - lastDataTime.get() > 60_000) {
-                    log.warn("【DeepSeek】流式响应超过 60 秒无数据，强制关闭连接");
-                    try { bodyStream.close(); } catch (Exception ignored) {}
-                    cancel();
+        Timer idleWatchdog = null;
+        if (idleTimeoutMs > 0) {
+            idleWatchdog = new Timer("ds-idle-watchdog", true);
+            final long idleLimit = idleTimeoutMs;
+            final long checkPeriod = Math.max(5_000L, Math.min(15_000L, idleLimit / 6));
+            idleWatchdog.scheduleAtFixedRate(new TimerTask() {
+                @Override
+                public void run() {
+                    if (System.currentTimeMillis() - lastDataTime.get() > idleLimit) {
+                        log.warn("【DeepSeek】流式响应超过 {} ms 无数据，强制关闭连接", idleLimit);
+                        try { bodyStream.close(); } catch (Exception ignored) {}
+                        cancel();
+                    }
                 }
-            }
-        }, 15_000, 10_000);
+            }, checkPeriod, checkPeriod);
+        }
 
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(bodyStream, StandardCharsets.UTF_8))) {
@@ -250,7 +265,9 @@ public class DeepSeekService implements AiProvider {
                 }
             }
         } finally {
-            idleWatchdog.cancel();
+            if (idleWatchdog != null) {
+                idleWatchdog.cancel();
+            }
         }
 
         return result;

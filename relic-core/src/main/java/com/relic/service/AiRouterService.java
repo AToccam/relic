@@ -5,11 +5,11 @@ import com.relic.util.MessageHelper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.net.ConnectException;
 import java.net.UnknownHostException;
-import java.net.http.HttpTimeoutException;
 import java.nio.channels.UnresolvedAddressException;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -38,6 +38,9 @@ public class AiRouterService {
     private final Map<String, AiProvider> providerMap = new LinkedHashMap<>();
     private final SemanticRouter semanticRouter;
     private final Optional<OllamaLocalService> localFallbackService;
+
+    @Value("${relic.router.fast-use-local:true}")
+    private boolean fastUseLocal;
 
     @Autowired
     private ToolCallService toolCallService;
@@ -94,12 +97,19 @@ public class AiRouterService {
             log.info("【语义路由】path={}, reason={}", decision.path(), decision.reason());
 
             switch (decision.path()) {
-                case TOOL_FIRST, FAST -> streamSingle(messages, onChunk);
+                case TOOL_FIRST -> streamSingle(messages, onChunk);
+                case FAST -> {
+                    if (fastUseLocal && localFallbackService.isPresent()) {
+                        streamFastLocal(messages, onChunk);
+                    } else {
+                        streamSingle(messages, onChunk);
+                    }
+                }
                 case DEEP -> streamMulti(messages, onChunk);
             }
         } catch (Exception e) {
             if (isUpstreamConnectivityIssue(e)) {
-                fallbackStreamAnswer(messages, onChunk, e.getMessage());
+                fallbackStreamAnswer(messages, onChunk, describeThrowable(e));
                 return;
             }
             throw e;
@@ -118,6 +128,9 @@ public class AiRouterService {
                 log.info("【语义路由】path={}, reason={}", decision.path(), decision.reason());
                 if (decision.path() == SemanticRouter.RoutePath.DEEP) {
                     result = askMulti(messages);
+                } else if (decision.path() == SemanticRouter.RoutePath.FAST
+                        && fastUseLocal && localFallbackService.isPresent()) {
+                    result = askFastLocal(messages);
                 } else {
                     List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
                     result = toolCallService.askWithTools(getProvider(AGGREGATOR), enriched);
@@ -130,7 +143,7 @@ public class AiRouterService {
             return result;
         } catch (Exception e) {
             if (isUpstreamConnectivityIssue(e)) {
-                return fallbackTextAnswer(messages, e.getMessage());
+                return fallbackTextAnswer(messages, describeThrowable(e));
             }
             throw e;
         }
@@ -257,7 +270,6 @@ public class AiRouterService {
         return lower.contains("连接 deepseek 失败")
                 || lower.contains("deepseek api 错误")
                 || lower.contains("connect")
-                || lower.contains("timeout")
                 || lower.contains("refused");
     }
 
@@ -266,9 +278,7 @@ public class AiRouterService {
         while (curr != null) {
             if (curr instanceof ConnectException
                     || curr instanceof UnknownHostException
-                    || curr instanceof UnresolvedAddressException
-                    || curr instanceof HttpTimeoutException
-                    || curr instanceof java.net.SocketTimeoutException) {
+                    || curr instanceof UnresolvedAddressException) {
                 return true;
             }
             String cls = curr.getClass().getName();
@@ -280,7 +290,6 @@ public class AiRouterService {
             if (curr.getMessage() != null) {
                 String lower = curr.getMessage().toLowerCase(Locale.ROOT);
                 if (lower.contains("connect")
-                        || lower.contains("timeout")
                         || lower.contains("refused")
                         || lower.contains("unresolved")
                         || lower.contains("unknown host")) {
@@ -296,7 +305,7 @@ public class AiRouterService {
         String question = extractLatestUserMessage(messages);
         if (localFallbackService.isPresent()) {
             log.warn("【本地兜底】检测到上游异常，转 Ollama 简答。原因: {}", reason);
-            return "[本地兜底模式]\n" + localFallbackService.get().simpleAnswer(question);
+            return "连接失败，当前调用本地模型。\n" + localFallbackService.get().simpleAnswer(question);
         }
         return "云端 AI 暂不可用：" + reason;
     }
@@ -308,10 +317,38 @@ public class AiRouterService {
         if (localFallbackService.isPresent()) {
             log.warn("【本地兜底-流式】检测到上游异常，转 Ollama 简答。原因: {}", reason);
             String answer = localFallbackService.get().simpleAnswer(question);
-            onChunk.accept("\n\n⚠️ 云端连接异常，已切换本地应急模型。\n\n");
+            onChunk.accept("\n\n连接失败，当前调用本地模型。\n\n");
             onChunk.accept(answer);
             return;
         }
         onChunk.accept("\n\n⚠️ 云端 AI 暂不可用，且未配置本地兜底模型。\n");
+    }
+
+    private String askFastLocal(List<Map<String, Object>> messages) {
+        String question = extractLatestUserMessage(messages);
+        return "⚡️快速模式：当前调用本地模型。\n" + localFallbackService.get().simpleAnswer(question);
+    }
+
+    private void streamFastLocal(List<Map<String, Object>> messages, Consumer<String> onChunk) {
+        String question = extractLatestUserMessage(messages);
+        String answer = localFallbackService.get().simpleAnswer(question);
+        onChunk.accept("快速模式：当前调用本地模型。\n\n");
+        onChunk.accept(answer);
+    }
+
+    private String describeThrowable(Throwable e) {
+        if (e == null) return "unknown";
+        StringBuilder sb = new StringBuilder(e.getClass().getSimpleName());
+        if (e.getMessage() != null && !e.getMessage().isBlank()) {
+            sb.append(": ").append(e.getMessage());
+        }
+        Throwable cause = e.getCause();
+        if (cause != null) {
+            sb.append(" | cause=").append(cause.getClass().getSimpleName());
+            if (cause.getMessage() != null && !cause.getMessage().isBlank()) {
+                sb.append(": ").append(cause.getMessage());
+            }
+        }
+        return sb.toString();
     }
 }

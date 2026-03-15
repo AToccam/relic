@@ -8,6 +8,8 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 @Slf4j
@@ -34,6 +36,9 @@ public class DefaultSemanticRouter implements SemanticRouter {
     @Value("${relic.router.deep-question-min-chars:80}")
     private int deepQuestionMinChars;
 
+    @Value("${relic.router.local-classifier-budget-ms:5000}")
+    private int localClassifierBudgetMs;
+
     public DefaultSemanticRouter(ObjectProvider<LocalIntentClassifier> localClassifierProvider) {
         this.localClassifier = Optional.ofNullable(localClassifierProvider.getIfAvailable());
     }
@@ -45,17 +50,35 @@ public class DefaultSemanticRouter implements SemanticRouter {
             return new RouteDecision(RoutePath.FAST, "empty-user-message");
         }
 
+        RouteDecision ruleDecision = decideByRules(userMessage);
+
         if (enableLocalClassifier && localClassifier.isPresent()) {
             try {
-                Optional<RoutePath> localDecision = localClassifier.get().classify(userMessage);
+                Optional<RoutePath> localDecision = CompletableFuture
+                        .supplyAsync(() -> localClassifier.get().classify(userMessage))
+                        .get(localClassifierBudgetMs, TimeUnit.MILLISECONDS);
                 if (localDecision.isPresent()) {
-                    return new RouteDecision(localDecision.get(), "local-classifier");
+                    RoutePath localPath = localDecision.get();
+
+                    // 护栏：只有命中明显工具意图时，才允许走 TOOL_FIRST
+                    if (localPath == RoutePath.TOOL_FIRST && !looksLikeToolIntent(userMessage)) {
+                        log.info("本地分类器命中 TOOL_FIRST，但未检测到工具关键词，回退规则路由: {}",
+                                ruleDecision.path());
+                        return new RouteDecision(ruleDecision.path(), "local-guardrail");
+                    }
+
+                    return new RouteDecision(localPath, "local-classifier");
                 }
             } catch (Exception e) {
-                log.warn("本地分类器异常，已回退规则路由: {}", e.getMessage());
+                log.warn("本地分类器超时/异常，已回退规则路由: {}, budgetMs={}",
+                        e.getClass().getSimpleName(), localClassifierBudgetMs);
             }
         }
 
+        return ruleDecision;
+    }
+
+    private RouteDecision decideByRules(String userMessage) {
         if (looksLikeToolIntent(userMessage)) {
             return new RouteDecision(RoutePath.TOOL_FIRST, "tool-intent");
         }

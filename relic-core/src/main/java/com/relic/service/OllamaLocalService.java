@@ -111,7 +111,7 @@ public class OllamaLocalService implements LocalIntentClassifier {
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(resolveGenerateUrl()))
-                .timeout(Duration.ofMillis(Math.max(800, timeoutMs * 2L)))
+            .timeout(Duration.ofMillis(Math.max(500, timeoutMs)))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();

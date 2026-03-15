@@ -8,9 +8,20 @@ spring:
 relic:
   workspace:
     path: ${user.home}/.openclaw/workspace
+  deepseek:
+    # 连接超时（仅握手阶段）
+    connect-timeout-ms: 20000
+    # 整个请求最大等待时长，长推理建议 >= 300000
+    request-timeout-ms: 300000
+    # 流式空闲超时，0 表示关闭空闲熔断
+    idle-timeout-ms: 180000
   router:
     # 开启后会优先调用 LocalIntentClassifier（若存在实现 Bean）
     enable-local-classifier: true
+    # FAST 路由是否默认走本地模型（true: 本地快速回复，false: 仍走 DeepSeek）
+    fast-use-local: true
+    # 本地语义分类最长等待时间，超时后立即回退规则路由（避免阻塞主链路）
+    local-classifier-budget-ms: 5000
     # 超过该长度且不属于闲聊时，默认视为深度问题
     deep-question-min-chars: 80
     # 预留：本地小模型分类服务配置（后续实现可直接复用）
@@ -18,7 +29,7 @@ relic:
       endpoint: http://127.0.0.1:11434
       model: qwen3.5:2B
       disable-thinking: true
-      classify-timeout-ms: 3000
+      classify-timeout-ms: 4000
       answer-timeout-ms: 12000
 
 #deepseek api key：sk-d7cbb8c351964fab8c6a7d8709e9da7b
