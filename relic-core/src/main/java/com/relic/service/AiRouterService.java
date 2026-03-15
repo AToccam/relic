@@ -87,13 +87,14 @@ public class AiRouterService {
     //根据当前模式自动选择流式输出方式
     //SINGLE: 强制快车道；MULTI: 智能分流（快车道/工具优先/多专家）
     public void streamAuto(List<Map<String, Object>> messages, Consumer<String> onChunk) throws Exception {
+        SemanticRouter.RouteDecision decision = null;
         try {
             if (currentMode == Mode.SINGLE) {
                 streamSingle(messages, onChunk);
                 return;
             }
 
-            SemanticRouter.RouteDecision decision = semanticRouter.decide(messages);
+            decision = semanticRouter.decide(messages);
             log.info("【语义路由】path={}, reason={}", decision.path(), decision.reason());
 
             switch (decision.path()) {
@@ -108,7 +109,9 @@ public class AiRouterService {
                 case DEEP -> streamMulti(messages, onChunk);
             }
         } catch (Exception e) {
-            if (isUpstreamConnectivityIssue(e)) {
+            if (decision != null
+                    && decision.path() == SemanticRouter.RoutePath.FAST
+                    && isUpstreamConnectivityIssue(e)) {
                 fallbackStreamAnswer(messages, onChunk, describeThrowable(e));
                 return;
             }
@@ -118,13 +121,14 @@ public class AiRouterService {
 
     //根据当前模式自动选择同步问答方式
     public String askAuto(List<Map<String, Object>> messages) {
+        SemanticRouter.RouteDecision decision = null;
         try {
             String result;
             if (currentMode == Mode.SINGLE) {
                 List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
                 result = toolCallService.askWithTools(getProvider(AGGREGATOR), enriched);
             } else {
-                SemanticRouter.RouteDecision decision = semanticRouter.decide(messages);
+                decision = semanticRouter.decide(messages);
                 log.info("【语义路由】path={}, reason={}", decision.path(), decision.reason());
                 if (decision.path() == SemanticRouter.RoutePath.DEEP) {
                     result = askMulti(messages);
@@ -137,12 +141,16 @@ public class AiRouterService {
                 }
             }
 
-            if (isUpstreamFailureText(result)) {
+            if (decision != null
+                    && decision.path() == SemanticRouter.RoutePath.FAST
+                    && isUpstreamFailureText(result)) {
                 return fallbackTextAnswer(messages, result);
             }
             return result;
         } catch (Exception e) {
-            if (isUpstreamConnectivityIssue(e)) {
+            if (decision != null
+                    && decision.path() == SemanticRouter.RoutePath.FAST
+                    && isUpstreamConnectivityIssue(e)) {
                 return fallbackTextAnswer(messages, describeThrowable(e));
             }
             throw e;

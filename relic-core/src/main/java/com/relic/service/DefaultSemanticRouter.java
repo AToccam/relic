@@ -17,7 +17,15 @@ import java.util.regex.Pattern;
 public class DefaultSemanticRouter implements SemanticRouter {
 
     private static final Pattern TOOL_PATTERN = Pattern.compile(
-            "(天气|气温|温度|查一下|帮我查|搜索|检索|最新|新闻|read\\s+file|list\\s+files|create\\s+file|读取文件|列出文件|创建文件|写入文件)",
+            "(天气|气温|温度|查一下|帮我查|搜索|检索|最新|新闻|"
+                + "read\\s+file|list\\s+files|create\\s+file|"
+                + "读取文件|列出文件|创建文件|写入文件|"
+                + "读取|读一下|打开|查看|新建|创建|写入|保存|删除|重命名|"
+                + "文件|文档|目录|文件夹)",
+            Pattern.CASE_INSENSITIVE);
+
+        private static final Pattern FILE_EXT_PATTERN = Pattern.compile(
+            "\\.(txt|md|markdown|json|csv|log|yaml|yml|xml|java|py|js|ts)\\b",
             Pattern.CASE_INSENSITIVE);
 
     private static final Pattern DEEP_PATTERN = Pattern.compile(
@@ -91,7 +99,8 @@ public class DefaultSemanticRouter implements SemanticRouter {
     }
 
     private boolean looksLikeToolIntent(String userMessage) {
-        return TOOL_PATTERN.matcher(userMessage).find();
+        return TOOL_PATTERN.matcher(userMessage).find()
+                || FILE_EXT_PATTERN.matcher(userMessage).find();
     }
 
     private boolean isDeepQuestion(String userMessage) {
