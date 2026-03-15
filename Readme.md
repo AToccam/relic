@@ -13,8 +13,21 @@
 在启动本项目前，请确保你的电脑上已经安装了 Node.js 环境：
 * **Node.js**: 推荐版本 v18.x 或更高。
 * **npm**: Node.js 自带的包管理器。
+* **Ollama**: 用于本地运行模型（如 qwen3.5:2b）。
 
 > **测试安装是否成功**：在终端运行 `node -v` 和 `npm -v`，如果有版本号输出则说明环境正常。
+
+### Ollama 安装与模型准备（Windows PowerShell）
+
+1. 在 PowerShell 中执行以下命令安装 Ollama：
+   ```powershell
+   irm https://ollama.com/install.ps1 | iex
+   ```
+2. 安装完成后，在控制台拉起并运行 qwen3.5:2b：
+   ```powershell
+   ollama run qwen3.5:2b
+   ```
+   首次运行会自动下载模型，下载完成后即可开始对话。
 
 ---
 
