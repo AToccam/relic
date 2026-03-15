@@ -90,7 +90,15 @@ public class AiRouterService {
         SemanticRouter.RouteDecision decision = null;
         try {
             if (currentMode == Mode.SINGLE) {
-                streamSingle(messages, onChunk);
+                decision = semanticRouter.decide(messages);
+                log.info("【语义路由-SINGLE】path={}, reason={}", decision.path(), decision.reason());
+
+                if (decision.path() == SemanticRouter.RoutePath.FAST
+                        && fastUseLocal && localFallbackService.isPresent()) {
+                    streamFastLocal(messages, onChunk);
+                } else {
+                    streamSingle(messages, onChunk);
+                }
                 return;
             }
 
@@ -125,8 +133,16 @@ public class AiRouterService {
         try {
             String result;
             if (currentMode == Mode.SINGLE) {
-                List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
-                result = toolCallService.askWithTools(getProvider(AGGREGATOR), enriched);
+                decision = semanticRouter.decide(messages);
+                log.info("【语义路由-SINGLE】path={}, reason={}", decision.path(), decision.reason());
+
+                if (decision.path() == SemanticRouter.RoutePath.FAST
+                        && fastUseLocal && localFallbackService.isPresent()) {
+                    result = askFastLocal(messages);
+                } else {
+                    List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
+                    result = toolCallService.askWithTools(getProvider(AGGREGATOR), enriched);
+                }
             } else {
                 decision = semanticRouter.decide(messages);
                 log.info("【语义路由】path={}, reason={}", decision.path(), decision.reason());

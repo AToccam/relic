@@ -53,12 +53,23 @@ public class OllamaLocalService implements LocalIntentClassifier {
                 + "请直接输出分类标签：";
 
         try {
+            long start = System.currentTimeMillis();
             String raw = generate(system, prompt, 12, 0.0, classifyTimeoutMs);
             String normalized = normalizeLabel(raw);
+            long cost = System.currentTimeMillis() - start;
             return switch (normalized) {
-                case "FAST" -> Optional.of(SemanticRouter.RoutePath.FAST);
-                case "TOOL_FIRST" -> Optional.of(SemanticRouter.RoutePath.TOOL_FIRST);
-                case "DEEP" -> Optional.of(SemanticRouter.RoutePath.DEEP);
+                case "FAST" -> {
+                    log.info("Ollama 本地分类完成: FAST, cost={} ms", cost);
+                    yield Optional.of(SemanticRouter.RoutePath.FAST);
+                }
+                case "TOOL_FIRST" -> {
+                    log.info("Ollama 本地分类完成: TOOL_FIRST, cost={} ms", cost);
+                    yield Optional.of(SemanticRouter.RoutePath.TOOL_FIRST);
+                }
+                case "DEEP" -> {
+                    log.info("Ollama 本地分类完成: DEEP, cost={} ms", cost);
+                    yield Optional.of(SemanticRouter.RoutePath.DEEP);
+                }
                 default -> Optional.empty();
             };
         } catch (Exception e) {
