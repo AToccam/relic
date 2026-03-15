@@ -4,9 +4,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * OpenAI chat.completion.chunk 格式构建工具。
- */
+//OpenAI chat.completion.chunk 格式构建工具。
 public final class OpenAiResponseBuilder {
 
     private OpenAiResponseBuilder() {}
