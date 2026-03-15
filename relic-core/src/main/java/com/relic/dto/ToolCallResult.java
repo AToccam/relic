@@ -15,7 +15,7 @@ public class ToolCallResult {
     private final StringBuilder content = new StringBuilder();
     private final List<ToolCall> toolCalls = new ArrayList<>();
 
-    /** 工具调用详情 */
+    // 工具调用详情
     public static class ToolCall {
         private String id;
         private String name;
@@ -40,7 +40,7 @@ public class ToolCallResult {
         }
     }
 
-    // ==================== 工厂方法 ====================
+    //工厂方法
 
     public static ToolCallResult textOnly(String text) {
         ToolCallResult r = new ToolCallResult();
@@ -49,7 +49,7 @@ public class ToolCallResult {
         return r;
     }
 
-    // ==================== Getter ====================
+    // Getter
 
     public String getFinishReason() { return finishReason; }
     public void setFinishReason(String finishReason) { this.finishReason = finishReason; }
@@ -63,7 +63,7 @@ public class ToolCallResult {
         return "tool_calls".equals(finishReason) && !toolCalls.isEmpty();
     }
 
-    /** 构建 assistant 消息（含 tool_calls），用于回传给 AI */
+    // 构建 assistant 消息（含 tool_calls），用于回传给 AI 
     public Map<String, Object> toAssistantMessage() {
         Map<String, Object> msg = new HashMap<>();
         msg.put("role", "assistant");

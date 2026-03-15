@@ -8,5 +8,15 @@ spring:
 relic:
   workspace:
     path: ${user.home}/.openclaw/workspace
+  router:
+    # 开启后会优先调用 LocalIntentClassifier（若存在实现 Bean）
+    enable-local-classifier: false
+    # 超过该长度且不属于闲聊时，默认视为深度问题
+    deep-question-min-chars: 80
+    # 预留：本地小模型分类服务配置（后续实现可直接复用）
+    local-model:
+      endpoint: http://127.0.0.1:11434
+      model: qwen2.5:3b
+      timeout-ms: 1200
 
 #deepseek api key：sk-d7cbb8c351964fab8c6a7d8709e9da7b

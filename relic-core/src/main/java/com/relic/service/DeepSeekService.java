@@ -42,8 +42,7 @@ public class DeepSeekService implements AiProvider {
     @Override
     public boolean supportsTools() { return true; }
 
-    // ==================== 纯文本问答 ====================
-
+    //纯文本问答
     @Override
     public String ask(String prompt) {
         return ask(List.of(Map.of("role", "user", "content", prompt)));
@@ -66,8 +65,7 @@ public class DeepSeekService implements AiProvider {
         streamRaw(messages, null, onChunk);
     }
 
-    // ==================== 带工具的单次调用（不含循环） ====================
-
+    //带工具的单次调用（不含循环）
     @Override
     @SuppressWarnings("unchecked")
     public ToolCallResult askWithTools(List<Map<String, Object>> messages,

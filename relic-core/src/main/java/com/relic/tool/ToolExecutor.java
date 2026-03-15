@@ -66,8 +66,7 @@ public class ToolExecutor {
         }
     }
 
-    // ==================== Web 搜索 ====================
-
+    // Web 搜索
     @SuppressWarnings("unchecked")
     private String webSearch(String query) {
         try {
@@ -147,8 +146,7 @@ public class ToolExecutor {
         }
     }
 
-    // ==================== 文件操作 ====================
-
+    // 文件操作
     private String createTextFile(String filename, String content) {
         try {
             if (content != null && content.length() > 1_000_000) {
@@ -228,9 +226,7 @@ public class ToolExecutor {
         }
     }
 
-    // ==================== 路径安全校验 ====================
-
-    /** 防止路径遍历攻击，确保路径不超出工作区范围 */
+    // 路径安全校验， 防止路径遍历攻击，确保路径不超出工作区范围
     private Path resolveAndValidatePath(String filename) {
         Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
         Path resolved = workspace.resolve(filename).normalize();

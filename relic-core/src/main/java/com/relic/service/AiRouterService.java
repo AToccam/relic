@@ -27,24 +27,25 @@ public class AiRouterService {
     private static final String AGGREGATOR = "deepseek";
     private static final List<String> ADVISORS = List.of("kimi", "qwen");
 
-    private volatile Mode currentMode = Mode.SINGLE;
+    private volatile Mode currentMode = Mode.MULTI; //默认多 AI 协同模式
     //SINGLE 模式下，直接使用 DeepSeek；MULTI 模式下，先让 Kimi 和 Qwen 分析，再由 DeepSeek 聚合输出
 
     private final Map<String, AiProvider> providerMap = new LinkedHashMap<>();
+    private final SemanticRouter semanticRouter;
 
     @Autowired
     private ToolCallService toolCallService;
 
     @Autowired
-    public AiRouterService(List<AiProvider> providers) {
+    public AiRouterService(List<AiProvider> providers, SemanticRouter semanticRouter) {
+        this.semanticRouter = semanticRouter;
         for (AiProvider p : providers) {
             providerMap.put(p.getName(), p);
             log.info("注册 AI 提供者: {}", p.getName());
         }
     }
 
-    // ==================== 模式管理 ====================
-
+    //模式管理
     public Mode getMode() { return currentMode; }
 
     public void setMode(Mode mode) {
@@ -53,7 +54,6 @@ public class AiRouterService {
     }
 
     // ==================== Provider 查询 ====================
-
     public AiProvider getProvider(String name) {
         AiProvider provider = providerMap.get(name);
         if (provider == null) {
@@ -66,30 +66,44 @@ public class AiRouterService {
         return providerMap.keySet();
     }
 
-    /** 使用指定 provider 进行单轮问答 */
+    // 使用指定 provider 进行单轮问答，测试用
     public String ask(String providerName, String prompt) {
         return getProvider(providerName).ask(prompt);
     }
 
-    // ==================== 自动模式调度 ====================
-
-    /** 根据当前模式自动选择流式输出方式 */
+    //自动模式调度
+    //根据当前模式自动选择流式输出方式
+    //SINGLE: 强制快车道；MULTI: 智能分流（快车道/工具优先/多专家）
     public void streamAuto(List<Map<String, Object>> messages, Consumer<String> onChunk) throws Exception {
-        if (currentMode == Mode.MULTI) {
-            streamMulti(messages, onChunk);
-        } else {
+        if (currentMode == Mode.SINGLE) {
             streamSingle(messages, onChunk);
+            return;
+        }
+
+        SemanticRouter.RouteDecision decision = semanticRouter.decide(messages);
+        log.info("【语义路由】path={}, reason={}", decision.path(), decision.reason());
+
+        switch (decision.path()) {
+            case TOOL_FIRST, FAST -> streamSingle(messages, onChunk);
+            case DEEP -> streamMulti(messages, onChunk);
         }
     }
 
-    /** 根据当前模式自动选择同步问答方式 */
+    //根据当前模式自动选择同步问答方式
     public String askAuto(List<Map<String, Object>> messages) {
-        if (currentMode == Mode.MULTI) {
-            return askMulti(messages);
-        } else {
+        if (currentMode == Mode.SINGLE) {
             List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
             return toolCallService.askWithTools(getProvider(AGGREGATOR), enriched);
         }
+
+        SemanticRouter.RouteDecision decision = semanticRouter.decide(messages);
+        log.info("【语义路由】path={}, reason={}", decision.path(), decision.reason());
+        if (decision.path() == SemanticRouter.RoutePath.DEEP) {
+            return askMulti(messages);
+        }
+
+        List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
+        return toolCallService.askWithTools(getProvider(AGGREGATOR), enriched);
     }
 
     // ==================== 单 AI 模式 ====================
@@ -119,7 +133,7 @@ public class AiRouterService {
 
         // 构建包含多方观点的消息列表，传给 DeepSeek 流式输出
         List<Map<String, Object>> aggregatedMessages = MessageHelper.buildAggregatedMessages(messages, advisorReplies);
-        log.info("【多AI协同】已收集 {} 个顾问回复，交由 DeepSeek 聚合", advisorReplies.size());
+        log.info("【多AI协同】已收集 {} 个顾问回复，交由Leader聚合", advisorReplies.size());
 
         onChunk.accept("✅ 已收集完毕，正在生成最终回答...\n\n");
         toolCallService.streamWithTools(getProvider(AGGREGATOR), aggregatedMessages, onChunk);
@@ -172,7 +186,7 @@ public class AiRouterService {
         return replies;
     }
 
-    /** 并行调用所有 advisor，收集回复（对外暴露，可用于测试） */
+    //并行调用所有 advisor，收集回复（对外暴露，可用于测试） 
     public Map<String, String> collectAdvisorReplies(String userQuestion) {
         Map<String, String> replies = new ConcurrentHashMap<>();
 

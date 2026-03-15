@@ -14,7 +14,6 @@ import java.util.function.Consumer;
 
 /**
  * 独立的工具调用服务层 —— 与具体 AI 提供者解耦。
- * <p>
  * 职责：
  * 1. 管理工具定义（ToolDefinitions）
  * 2. 驱动"调用 AI → 检测 tool_calls → 执行工具 → 结果回传 AI"的循环
@@ -122,8 +121,7 @@ public class ToolCallService {
         onChunk.accept("⚠️ 工具调用轮次超过限制，已停止处理。");
     }
 
-    // ==================== 内部辅助 ====================
-
+    // 内部辅助
     private void executeAndAppend(List<ToolCallResult.ToolCall> toolCalls,
                                    List<Map<String, Object>> conversation) {
         for (ToolCallResult.ToolCall tc : toolCalls) {

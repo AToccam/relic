@@ -2,6 +2,8 @@ package com.relic.dto;
 
 import lombok.Data;
 
+
+//OpenClaw请求体映射
 @Data
 public class OpenClawRequest {
     // 对应 JSON 中的 "type": "req"

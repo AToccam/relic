@@ -12,13 +12,13 @@ import java.util.function.Consumer;
  */
 public interface AiProvider {
 
-    /** 提供者标识名，如 "deepseek"、"qwen" */
+    //提供者标识名，如 "deepseek""qwen"
     String getName();
 
-    /** 单轮简单问答 */
+    //单轮简单问答 
     String ask(String prompt);
 
-    /** 基于多轮消息列表问答（默认实现：取最后一条 user 消息调 ask(prompt)） */
+    //基于多轮消息列表问答（默认实现：取最后一条 user 消息调 ask(prompt)）
     default String ask(List<Map<String, Object>> messages) {
         for (int i = messages.size() - 1; i >= 0; i--) {
             if ("user".equals(messages.get(i).get("role"))) {
@@ -28,20 +28,19 @@ public interface AiProvider {
         return ask("");
     }
 
-    /** 流式输出（默认实现：一次性返回全部内容） */
+    //流式输出（默认实现：一次性返回全部内容）
     default void stream(List<Map<String, Object>> messages, Consumer<String> onChunk) throws Exception {
         String result = ask(messages);
         onChunk.accept(result);
     }
 
-    /** 是否支持真正的流式输出 */
+    // 是否支持真正的流式输出
     default boolean supportsStream() {
         return false;
     }
 
-    // ==================== Tool Calling 支持（可选实现） ====================
-
-    /** 是否支持 OpenAI 兼容的 function calling / tools */
+    // Tool Calling 支持（可选实现）
+    // 是否支持 OpenAI 兼容的 function calling / tools
     default boolean supportsTools() {
         return false;
     }

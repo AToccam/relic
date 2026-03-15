@@ -11,7 +11,7 @@ public final class MessageHelper {
 
     private MessageHelper() {}
 
-    /** 清洗 OpenAI 格式的 rawMessages：切除 metadata / 时间戳注入，同时保留 tool 相关字段 */
+    //清洗 OpenAI 格式的 rawMessages：切除 metadata / 时间戳注入，同时保留 tool 相关字段
     @SuppressWarnings("unchecked")
     public static List<Map<String, Object>> cleanRawMessages(List<Map<String, Object>> rawMessages) {
         List<Map<String, Object>> clean = new ArrayList<>();
@@ -59,7 +59,7 @@ public final class MessageHelper {
         return clean;
     }
 
-    /** 从 content 字段提取纯文本（兼容 string / array<{type,text}> 两种格式） */
+    //从 content 字段提取纯文本（兼容 string / array<{type,text}> 两种格式）
     public static String extractTextContent(Object contentObj) {
         if (contentObj instanceof String str) return str;
         if (contentObj instanceof List<?> list) {
@@ -73,7 +73,7 @@ public final class MessageHelper {
         return "";
     }
 
-    /** 滑动窗口：仅保留最近 maxHistory 条消息 */
+    //滑动窗口：仅保留最近 maxHistory 条消息
     public static List<Map<String, Object>> applySlidingWindow(List<Map<String, Object>> messages, int maxHistory) {
         if (messages.size() > maxHistory) {
             return new ArrayList<>(messages.subList(messages.size() - maxHistory, messages.size()));
@@ -81,12 +81,12 @@ public final class MessageHelper {
         return messages;
     }
 
-    /** 构建单轮对话消息列表 */
+    //构建单轮对话消息列表
     public static List<Map<String, Object>> buildSingleTurnMessages(String userMessage) {
         return List.of(buildUserMessage(userMessage));
     }
 
-    /** 工具引导 system prompt，供 SINGLE 模式注入 */
+    //工具引导 system prompt，供 SINGLE 模式注入
     private static final String TOOL_SYSTEM_PROMPT =
             "你是一个强大的 AI 助手。你可以使用以下工具来辅助回答用户的问题：\n"
             + "- web_search: 搜索互联网获取最新信息、新闻、技术资料等\n"
@@ -111,7 +111,7 @@ public final class MessageHelper {
         return result;
     }
 
-    /** 构建 user 角色消息 */
+    //构建 user 角色消息
     public static Map<String, Object> buildUserMessage(String content) {
         return Map.of("role", "user", "content", content == null ? "" : content);
     }

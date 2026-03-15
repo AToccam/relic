@@ -21,15 +21,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @RestController
 public class WebhookController {
 
-    private static final int MAX_HISTORY = 8;
+    private static final int MAX_HISTORY = 8; //最大历史条数
 
     @Autowired
     private AiRouterService aiRouter;
 
     private final ObjectMapper mapper = new ObjectMapper();
 
-    // ==================== 模式切换接口 ====================
-
+    //模式切换接口Single/Multi
     @GetMapping("/mode")
     public Map<String, Object> getMode() {
         return Map.of(
@@ -49,8 +48,8 @@ public class WebhookController {
         return Map.of("mode", mode.name().toLowerCase());
     }
 
-    // ==================== 统一 AI 连通性测试 ====================
 
+    //统一 AI 连通性测试
     @PostMapping("/test/ai")
     public Map<String, Object> testAi(@RequestBody Map<String, String> request) {
         String provider = request.getOrDefault("provider", "deepseek");
@@ -71,8 +70,7 @@ public class WebhookController {
         );
     }
 
-    // ==================== 多 AI 协同测试（查看各 advisor 原始回复） ====================
-
+    // 多 AI 协同测试（查看各 advisor 原始回复）
     @PostMapping("/test/multi")
     public Map<String, Object> testMulti(@RequestBody Map<String, String> request) {
         String prompt = request.getOrDefault("prompt", "你好，请用一句话介绍你自己");
@@ -92,8 +90,8 @@ public class WebhookController {
         return result;
     }
 
-    // ==================== OpenClaw Webhook ====================
 
+    //OpenClaw Webhook
     @PostMapping("/openclaw")
     public Map<String, Object> receiveMessage(@RequestBody OpenClawRequest request) {
         if (!"chat.send".equals(request.getMethod())) {
@@ -127,8 +125,7 @@ public class WebhookController {
         );
     }
 
-    // ==================== OpenAI 兼容格式：流式 SSE ====================
-
+    // OpenAI 兼容格式，流式 SSE 
     @PostMapping(value = "/v1/chat/completions")
     @SuppressWarnings("unchecked")
     public SseEmitter handleOpenAIRequest(@RequestBody Map<String, Object> request) {
@@ -203,7 +200,7 @@ public class WebhookController {
             }
         });
 
-        // SSE 超时时中断虚拟线程，打破 DeepSeek 流式读取的阻塞
+        // SSE 超时时中断虚拟线程，防止DeepSeek 流式读取的阻塞
         emitter.onTimeout(() -> {
             emitterActive.set(false);
             streamThread.interrupt();
