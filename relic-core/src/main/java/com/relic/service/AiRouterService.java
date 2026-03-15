@@ -20,8 +20,8 @@ import java.util.function.Consumer;
 /**
  * AI 路由服务：管理所有 AiProvider，统一调度。
  * 支持两种模式：
- * - single: 仅 DeepSeek 直接回答
- * - multi:  Kimi + Qwen 并行分析 → DeepSeek 聚合后流式输出
+ * - single: 仅主模型（Qwen）直接回答
+ * - multi:  Advisor 并行分析 → 主模型（Qwen）聚合后输出
  */
 @Slf4j
 @Service
@@ -29,11 +29,11 @@ public class AiRouterService {
 
     public enum Mode { SINGLE, MULTI }
 
-    private static final String AGGREGATOR = "deepseek";
-    private static final List<String> ADVISORS = List.of("kimi", "qwen");
+    private static final String AGGREGATOR = "qwen";
+    private static final List<String> ADVISORS = List.of("deepseek", "kimi");
 
     private volatile Mode currentMode = Mode.MULTI; //默认多 AI 协同模式
-    //SINGLE 模式下，直接使用 DeepSeek；MULTI 模式下，先让 Kimi 和 Qwen 分析，再由 DeepSeek 聚合输出
+    //SINGLE 模式下，直接使用主模型；MULTI 模式下，先让 advisor 分析，再由主模型聚合输出
 
     private final Map<String, AiProvider> providerMap = new LinkedHashMap<>();
     private final SemanticRouter semanticRouter;
@@ -89,6 +89,14 @@ public class AiRouterService {
     public void streamAuto(List<Map<String, Object>> messages, Consumer<String> onChunk) throws Exception {
         SemanticRouter.RouteDecision decision = null;
         try {
+            Optional<SemanticRouter.RouteDecision> multimodalDecision = forcePrimaryForMultimodal(messages);
+            if (multimodalDecision.isPresent()) {
+                decision = multimodalDecision.get();
+                log.info("【语义路由-多模态优先】path={}, reason={}", decision.path(), decision.reason());
+                streamSingle(messages, onChunk);
+                return;
+            }
+
             if (currentMode == Mode.SINGLE) {
                 decision = semanticRouter.decide(messages);
                 log.info("【语义路由-SINGLE】path={}, reason={}", decision.path(), decision.reason());
@@ -132,6 +140,15 @@ public class AiRouterService {
         SemanticRouter.RouteDecision decision = null;
         try {
             String result;
+            Optional<SemanticRouter.RouteDecision> multimodalDecision = forcePrimaryForMultimodal(messages);
+            if (multimodalDecision.isPresent()) {
+                decision = multimodalDecision.get();
+                log.info("【语义路由-多模态优先】path={}, reason={}", decision.path(), decision.reason());
+                List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
+                result = toolCallService.askWithTools(getProvider(AGGREGATOR), enriched);
+                return result;
+            }
+
             if (currentMode == Mode.SINGLE) {
                 decision = semanticRouter.decide(messages);
                 log.info("【语义路由-SINGLE】path={}, reason={}", decision.path(), decision.reason());
@@ -186,7 +203,7 @@ public class AiRouterService {
      * 多 AI 协同流式输出：
      * 1. 提取用户最新提问
      * 2. Kimi + Qwen 并行处理（期间发心跳保活）
-     * 3. 将各方观点注入 system prompt，交给 DeepSeek 流式聚合输出
+    * 3. 将各方观点注入 system prompt，交给主模型流式聚合输出
      */
     public void streamMulti(List<Map<String, Object>> messages, Consumer<String> onChunk) throws Exception {
         String userQuestion = extractLatestUserMessage(messages);
@@ -198,7 +215,7 @@ public class AiRouterService {
         // 并行收集 advisor 回复，同时发心跳保活
         Map<String, String> advisorReplies = collectAdvisorRepliesWithHeartbeat(userQuestion, onChunk);
 
-        // 构建包含多方观点的消息列表，传给 DeepSeek 流式输出
+        // 构建包含多方观点的消息列表，传给主模型流式输出
         List<Map<String, Object>> aggregatedMessages = MessageHelper.buildAggregatedMessages(messages, advisorReplies);
         log.info("【多AI协同】已收集 {} 个顾问回复，交由Leader聚合", advisorReplies.size());
 
@@ -282,17 +299,66 @@ public class AiRouterService {
     private String extractLatestUserMessage(List<Map<String, Object>> messages) {
         for (int i = messages.size() - 1; i >= 0; i--) {
             if ("user".equals(messages.get(i).get("role"))) {
-                return (String) messages.get(i).get("content");
+                return MessageHelper.extractTextContent(messages.get(i).get("content"));
             }
         }
         return "";
     }
 
+    private Optional<SemanticRouter.RouteDecision> forcePrimaryForMultimodal(List<Map<String, Object>> messages) {
+        if (!hasMultimodalInput(messages)) {
+            return Optional.empty();
+        }
+        return Optional.of(new SemanticRouter.RouteDecision(
+                SemanticRouter.RoutePath.DEEP,
+                "multimodal-primary"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean hasMultimodalInput(List<Map<String, Object>> messages) {
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Map<String, Object> msg = messages.get(i);
+            if (!"user".equals(msg.get("role"))) {
+                continue;
+            }
+            return hasMediaInContent(msg.get("content"));
+        }
+        return false;
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean hasMediaInContent(Object content) {
+        if (content instanceof List<?> list) {
+            for (Object item : list) {
+                if (!(item instanceof Map<?, ?> raw)) {
+                    continue;
+                }
+                Map<String, Object> part = (Map<String, Object>) raw;
+                String type = String.valueOf(part.getOrDefault("type", "")).toLowerCase(Locale.ROOT);
+                if (type.contains("image") || type.contains("audio")
+                        || part.containsKey("image_url") || part.containsKey("input_audio")
+                        || part.containsKey("audio_url")) {
+                    return true;
+                }
+            }
+        }
+        if (content instanceof Map<?, ?> raw) {
+            Map<String, Object> part = (Map<String, Object>) raw;
+            String type = String.valueOf(part.getOrDefault("type", "")).toLowerCase(Locale.ROOT);
+            return type.contains("image") || type.contains("audio")
+                    || part.containsKey("image_url") || part.containsKey("input_audio")
+                    || part.containsKey("audio_url");
+        }
+        return false;
+    }
+
     private boolean isUpstreamFailureText(String text) {
         if (text == null) return false;
         String lower = text.toLowerCase(Locale.ROOT);
-        return lower.contains("连接 deepseek 失败")
-                || lower.contains("deepseek api 错误")
+        return lower.contains("连接 qwen 失败")
+            || lower.contains("qwen api 错误")
+            || lower.contains("连接 deepseek 失败")
+            || lower.contains("deepseek api 错误")
                 || lower.contains("connect")
                 || lower.contains("refused");
     }

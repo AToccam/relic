@@ -33,19 +33,14 @@ public final class MessageHelper {
                 continue;
             }
 
-            String text = extractTextContent(msg.get("content"));
-
-            // 切除 OpenClaw 注入的 metadata 和时间戳
-            if ("user".equals(role) && text.contains("Sender (untrusted metadata):")) {
-                text = text.replaceAll("Sender \\(untrusted metadata\\):[\\s\\S]*?```json[\\s\\S]*?```\\s*", "");
-                text = text.replaceAll("\\[.*?\\]\\s*", "");
-            }
+            Object normalizedContent = normalizeContent(msg.get("content"), "user".equals(role));
 
             // 保留 assistant 消息中的 tool_calls 字段
             if ("assistant".equals(role) && msg.get("tool_calls") != null) {
                 Map<String, Object> assistantMsg = new java.util.HashMap<>();
                 assistantMsg.put("role", "assistant");
-                assistantMsg.put("content", text.trim().isEmpty() ? null : text.trim());
+                String plainText = extractTextContent(normalizedContent).trim();
+                assistantMsg.put("content", plainText.isEmpty() ? null : normalizedContent);
                 assistantMsg.put("tool_calls", msg.get("tool_calls"));
                 clean.add(assistantMsg);
                 continue;
@@ -53,7 +48,7 @@ public final class MessageHelper {
 
             clean.add(Map.of(
                     "role", role == null ? "user" : role,
-                    "content", text.trim()
+                    "content", normalizedContent
             ));
         }
         return clean;
@@ -63,14 +58,60 @@ public final class MessageHelper {
     public static String extractTextContent(Object contentObj) {
         if (contentObj instanceof String str) return str;
         if (contentObj instanceof List<?> list) {
+            StringBuilder sb = new StringBuilder();
             for (Object item : list) {
                 if (item instanceof Map<?, ?> map && "text".equals(map.get("type"))) {
                     Object text = map.get("text");
-                    return text == null ? "" : text.toString();
+                    if (text != null) {
+                        if (sb.length() > 0) sb.append('\n');
+                        sb.append(text);
+                    }
                 }
             }
+            return sb.toString();
         }
         return "";
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object normalizeContent(Object contentObj, boolean sanitizeUserMetadata) {
+        if (contentObj instanceof String str) {
+            return sanitizeUserMetadata ? sanitizeUserText(str) : str.trim();
+        }
+
+        if (contentObj instanceof List<?> list) {
+            List<Map<String, Object>> normalized = new ArrayList<>();
+            for (Object item : list) {
+                if (!(item instanceof Map<?, ?> raw)) {
+                    continue;
+                }
+                Map<String, Object> part = new java.util.HashMap<>((Map<String, Object>) raw);
+                Object type = part.get("type");
+                if ("text".equals(type)) {
+                    String text = part.get("text") == null ? "" : part.get("text").toString();
+                    text = sanitizeUserMetadata ? sanitizeUserText(text) : text.trim();
+                    part.put("text", text);
+                }
+                normalized.add(part);
+            }
+            return normalized;
+        }
+
+        if (contentObj instanceof Map<?, ?> raw) {
+            return new java.util.HashMap<>((Map<String, Object>) raw);
+        }
+
+        return contentObj == null ? "" : contentObj.toString();
+    }
+
+    private static String sanitizeUserText(String text) {
+        if (text == null) return "";
+        String sanitized = text;
+        if (sanitized.contains("Sender (untrusted metadata):")) {
+            sanitized = sanitized.replaceAll("Sender \\(untrusted metadata\\):[\\s\\S]*?```json[\\s\\S]*?```\\s*", "");
+            sanitized = sanitized.replaceAll("\\[.*?\\]\\s*", "");
+        }
+        return sanitized.trim();
     }
 
     //滑动窗口：仅保留最近 maxHistory 条消息
@@ -118,7 +159,7 @@ public final class MessageHelper {
 
     /**
      * 构建多 AI 协同的聚合消息列表：
-     * 在原始对话的基础上，注入 system prompt 告知 DeepSeek 参考各方观点后给出最终回答。
+        * 在原始对话的基础上，注入 system prompt 告知主模型参考各方观点后给出最终回答。
      */
     public static List<Map<String, Object>> buildAggregatedMessages(
             List<Map<String, Object>> originalMessages, Map<String, String> advisorReplies) {

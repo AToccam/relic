@@ -18,7 +18,7 @@ relic:
   router:
     # 开启后会优先调用 LocalIntentClassifier（若存在实现 Bean）
     enable-local-classifier: true
-    # FAST 路由是否默认走本地模型（true: 本地快速回复，false: 仍走 DeepSeek）
+    # FAST 路由是否默认走本地模型（true: 本地快速回复，false: 仍走云端主模型 Qwen）
     fast-use-local: true
     # 本地语义分类最长等待时间，建议 >= classify-timeout-ms
     local-classifier-budget-ms: 9000

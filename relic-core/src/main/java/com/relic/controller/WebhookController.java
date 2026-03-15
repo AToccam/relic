@@ -52,7 +52,7 @@ public class WebhookController {
     //统一 AI 连通性测试
     @PostMapping("/test/ai")
     public Map<String, Object> testAi(@RequestBody Map<String, String> request) {
-        String provider = request.getOrDefault("provider", "deepseek");
+        String provider = request.getOrDefault("provider", "qwen");
         String prompt = request.getOrDefault("prompt", "你好，请用一句话介绍你自己");
         log.info("【{} 连通性测试】prompt: {}", provider, prompt);
 
@@ -160,7 +160,7 @@ public class WebhookController {
                     }
                     try {
                         Map<String, Object> chunk = OpenAiResponseBuilder.buildChunk(
-                                chatId, created, "deepseek-local", Map.of("content", content), null);
+                            chatId, created, "qwen-main", Map.of("content", content), null);
                         emitter.send(SseEmitter.event()
                                 .data(mapper.writeValueAsString(chunk), MediaType.APPLICATION_JSON));
                     } catch (IOException e) {
@@ -170,7 +170,7 @@ public class WebhookController {
                 });
 
                 Map<String, Object> stopChunk = OpenAiResponseBuilder.buildChunk(
-                        chatId, created, "deepseek-local", Map.of(), "stop");
+            chatId, created, "qwen-main", Map.of(), "stop");
                 emitter.send(SseEmitter.event()
                         .data(mapper.writeValueAsString(stopChunk), MediaType.APPLICATION_JSON));
                 emitter.send(SseEmitter.event().data("[DONE]", MediaType.TEXT_PLAIN));
@@ -184,12 +184,12 @@ public class WebhookController {
                 log.error("【流式响应异常】", e);
                 try {
                     Map<String, Object> errChunk = OpenAiResponseBuilder.buildChunk(
-                            chatId, created, "deepseek-local",
+                        chatId, created, "qwen-main",
                             Map.of("content", "\n\n⚠️ 后端处理异常: " + e.getMessage()), null);
                     emitter.send(SseEmitter.event()
                             .data(mapper.writeValueAsString(errChunk), MediaType.APPLICATION_JSON));
                     Map<String, Object> stopChunk2 = OpenAiResponseBuilder.buildChunk(
-                            chatId, created, "deepseek-local", Map.of(), "stop");
+                        chatId, created, "qwen-main", Map.of(), "stop");
                     emitter.send(SseEmitter.event()
                             .data(mapper.writeValueAsString(stopChunk2), MediaType.APPLICATION_JSON));
                     emitter.send(SseEmitter.event().data("[DONE]", MediaType.TEXT_PLAIN));
@@ -200,7 +200,7 @@ public class WebhookController {
             }
         });
 
-        // SSE 超时时中断虚拟线程，防止DeepSeek 流式读取的阻塞
+        // SSE 超时时中断虚拟线程，防止上游流式读取的阻塞
         emitter.onTimeout(() -> {
             emitterActive.set(false);
             streamThread.interrupt();

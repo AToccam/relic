@@ -68,6 +68,12 @@ public class DefaultSemanticRouter implements SemanticRouter {
                 if (localDecision.isPresent()) {
                     RoutePath localPath = localDecision.get();
 
+                    // 护栏：规则已经判定为工具/深度时，不允许被本地分类器降级到 FAST
+                    if (localPath == RoutePath.FAST && ruleDecision.path() != RoutePath.FAST) {
+                        log.info("本地分类器命中 FAST，但规则路由为 {}，保留规则结果", ruleDecision.path());
+                        return new RouteDecision(ruleDecision.path(), "local-guardrail-preserve-rule");
+                    }
+
                     // 护栏：只有命中明显工具意图时，才允许走 TOOL_FIRST
                     if (localPath == RoutePath.TOOL_FIRST && !looksLikeToolIntent(userMessage)) {
                         log.info("本地分类器命中 TOOL_FIRST，但未检测到工具关键词，回退规则路由: {}",
