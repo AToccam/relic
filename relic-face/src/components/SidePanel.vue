@@ -1,392 +1,329 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useSettingsStore } from '@/stores/settings'
-import { useChatStore } from '@/stores/chat'
+import { ref } from 'vue'
+import ComingSoonModal from './ComingSoonModal.vue'
 
-const settings = useSettingsStore()
-const chat = useChatStore()
+const modal = ref<string | null>(null)
 
-const multiPrompt = ref('你好，请用一句话介绍你自己')
+interface SourceFile {
+  id: string
+  name: string
+  size: string
+}
 
-onMounted(() => settings.fetchMode())
+const files = ref<SourceFile[]>([])
+const fileInput = ref<HTMLInputElement | null>(null)
+const isDragging = ref(false)
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function addFiles(fileList: FileList) {
+  for (const file of Array.from(fileList)) {
+    files.value.push({
+      id: `${Date.now()}-${Math.random()}`,
+      name: file.name,
+      size: formatSize(file.size),
+    })
+  }
+}
+
+function onFileChange(e: Event) {
+  const target = e.target as HTMLInputElement
+  if (target.files?.length) addFiles(target.files)
+  if (fileInput.value) fileInput.value.value = ''
+}
+
+function onDrop(e: DragEvent) {
+  isDragging.value = false
+  if (e.dataTransfer?.files.length) addFiles(e.dataTransfer.files)
+}
+
+function removeFile(id: string) {
+  files.value = files.value.filter(f => f.id !== id)
+}
 </script>
 
 <template>
   <aside class="side-panel">
-    <div class="logo">
-      <span class="logo-text">Relic</span>
-      <span class="logo-sub">AI Gateway</span>
+    <div class="panel-header">
+      <span class="panel-title">来源</span>
+      <button class="header-icon-btn" @click="modal = '搜索来源'" title="搜索">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+      </button>
     </div>
 
-    <section class="panel-section">
-      <h3 class="section-title">路由模式</h3>
-      <div class="mode-btns">
-        <button
-          :class="['mode-btn', { active: settings.mode === 'single' }]"
-          @click="settings.switchMode('single')"
-        >
-          Single
-        </button>
-        <button
-          :class="['mode-btn', { active: settings.mode === 'multi' }]"
-          @click="settings.switchMode('multi')"
-        >
-          Multi
-        </button>
-      </div>
-      <p class="mode-hint">
-        {{ settings.mode === 'multi'
-          ? 'Kimi + Qwen 协同 → DeepSeek 聚合'
-          : `Single 当前模型：${settings.singleProvider}` }}
-      </p>
-      <div v-if="settings.mode === 'single'" class="single-provider-row">
-        <label class="single-provider-label" for="single-provider-select">Single 模型</label>
-        <select
-          id="single-provider-select"
-          class="single-provider-select"
-          :value="settings.singleProvider"
-          @change="settings.switchSingleProvider(($event.target as HTMLSelectElement).value)"
-        >
-          <option
-            v-for="provider in settings.singleProviderOptions"
-            :key="provider"
-            :value="provider"
-          >
-            {{ provider }}
-          </option>
-        </select>
-      </div>
-    </section>
-
-    <section class="panel-section">
-      <h3 class="section-title">提供者</h3>
+    <div class="panel-body">
+      <!-- 拖拽上传区 -->
       <div
-        v-for="p in settings.providers"
-        :key="p"
-        class="provider-row"
+        :class="['drop-zone', { dragging: isDragging }]"
+        @dragover.prevent="isDragging = true"
+        @dragleave="isDragging = false"
+        @drop.prevent="onDrop"
+        @click="fileInput?.click()"
       >
-        <span class="provider-name">{{ p }}</span>
-        <div class="provider-right">
-          <span
-            v-if="settings.testResults[p]"
-            :class="['test-status', settings.testResults[p].status]"
-          >
-            {{ settings.testResults[p].status === 'ok' ? '✓' : '✗' }}
-            {{ settings.testResults[p].costMs }}ms
-          </span>
-          <button
-            class="test-btn"
-            @click="settings.runTest(p)"
-            :disabled="settings.loading"
-          >
-            测试
+        <input
+          ref="fileInput"
+          type="file"
+          multiple
+          accept=".pdf,.doc,.docx,.txt,.md,.ppt,.pptx,.xls,.xlsx,.csv"
+          style="display:none"
+          @change="onFileChange"
+        />
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="17 8 12 3 7 8" />
+          <line x1="12" y1="3" x2="12" y2="15" />
+        </svg>
+        <p class="drop-title">点击或拖拽上传文件</p>
+        <span class="drop-hint">支持 PDF、Word、TXT、Excel 等格式</span>
+      </div>
+
+      <!-- 文件列表 -->
+      <template v-if="files.length">
+        <div class="source-section-title">已添加来源 · {{ files.length }}</div>
+        <div
+          v-for="file in files"
+          :key="file.id"
+          class="source-item"
+        >
+          <div class="file-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+          </div>
+          <div class="file-info">
+            <span class="file-name" :title="file.name">{{ file.name }}</span>
+            <span class="file-size">{{ file.size }}</span>
+          </div>
+          <button class="remove-btn" @click="removeFile(file.id)" title="移除">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
           </button>
         </div>
-      </div>
-      <div v-if="settings.providers.length === 0" class="no-providers">
-        后端未连接
-      </div>
-    </section>
+      </template>
 
-    <section class="panel-section multi-test-section">
-      <h3 class="section-title">多 AI 联测</h3>
-      <input
-        v-model="multiPrompt"
-        class="multi-input"
-        placeholder="输入测试问题"
-      />
-      <button
-        class="multi-btn"
-        @click="settings.runMultiTest(multiPrompt)"
-        :disabled="settings.multiLoading || !multiPrompt.trim()"
-      >
-        {{ settings.multiLoading ? '请求中…' : '并行测试' }}
-      </button>
-      <div v-if="settings.multiTestResult" class="multi-results">
-        <div class="multi-cost">总耗时 {{ settings.multiTestResult.costMs }}ms</div>
-        <div
-          v-for="(reply, name) in settings.multiTestResult.advisors"
-          :key="name"
-          class="multi-advisor"
-        >
-          <span class="advisor-name">{{ name }}</span>
-          <p class="advisor-reply">{{ reply }}</p>
-        </div>
+      <!-- 空状态 -->
+      <div v-else class="empty-hint">
+        <p>已保存的来源将显示在此处</p>
+        <span>点击上方区域添加 PDF、文本等文件</span>
       </div>
-    </section>
-
-    <div class="panel-bottom">
-      <button class="clear-btn" @click="chat.clear()">
-        清空对话
-      </button>
     </div>
   </aside>
+
+  <ComingSoonModal
+    v-if="modal"
+    :title="modal"
+    @close="modal = null"
+  />
 </template>
 
 <style scoped>
 .side-panel {
-  width: 220px;
-  flex-shrink: 0;
-  background: #141920;
-  border-right: 1px solid #2d3748;
-  display: flex;
-  flex-direction: column;
-  padding: 20px 0 16px;
-}
-
-.logo {
-  padding: 0 18px 20px;
-  border-bottom: 1px solid #2d3748;
-  margin-bottom: 8px;
-}
-
-.logo-text {
-  display: block;
-  font-size: 20px;
-  font-weight: 700;
-  color: #90cdf4;
-  letter-spacing: 0.5px;
-}
-
-.logo-sub {
-  font-size: 11px;
-  color: #4a5568;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-.panel-section {
-  padding: 12px 18px;
-  border-bottom: 1px solid #2d3748;
-}
-
-.section-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: #718096;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  margin: 0 0 10px;
-}
-
-.mode-btns {
-  display: flex;
-  gap: 6px;
-}
-
-.mode-btn {
   flex: 1;
-  padding: 6px 0;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  border: 1px solid #4a5568;
-  background: transparent;
-  color: #718096;
-  transition: all 0.2s;
-}
-
-.mode-btn.active {
-  background: #3b82f6;
-  border-color: #3b82f6;
-  color: #fff;
-}
-
-.mode-btn:not(.active):hover {
-  border-color: #718096;
-  color: #a0aec0;
-}
-
-.mode-hint {
-  font-size: 11px;
-  color: #4a5568;
-  margin: 8px 0 0;
-  line-height: 1.4;
-}
-
-.single-provider-row {
-  margin-top: 10px;
+  min-width: 0;
+  background: #f8f9fa;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  overflow: hidden;
 }
 
-.single-provider-label {
-  font-size: 11px;
-  color: #718096;
-}
-
-.single-provider-select {
-  width: 100%;
-  background: #2d3748;
-  border: 1px solid #4a5568;
-  border-radius: 5px;
-  color: #e2e8f0;
-  font-size: 12px;
-  padding: 5px 8px;
-  outline: none;
-  text-transform: capitalize;
-}
-
-.single-provider-select:focus {
-  border-color: #3b82f6;
-}
-
-.provider-row {
+.panel-header {
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 0;
-}
-
-.provider-name {
-  font-size: 13px;
-  color: #a0aec0;
-  text-transform: capitalize;
-}
-
-.provider-right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.test-status {
-  font-size: 11px;
-}
-
-.test-status.ok { color: #48bb78; }
-.test-status.fail { color: #fc8181; }
-
-.test-btn {
-  padding: 3px 8px;
-  font-size: 11px;
-  border-radius: 4px;
-  border: 1px solid #4a5568;
-  background: transparent;
-  color: #718096;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.test-btn:hover:not(:disabled) {
-  border-color: #3b82f6;
-  color: #90cdf4;
-}
-
-.test-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.no-providers {
-  font-size: 12px;
-  color: #4a5568;
-  padding: 4px 0;
-}
-
-.panel-bottom {
-  margin-top: auto;
-  padding: 12px 18px 0;
-}
-
-.clear-btn {
-  width: 100%;
-  padding: 8px;
-  border-radius: 6px;
-  font-size: 13px;
-  border: 1px solid #4a5568;
-  background: transparent;
-  color: #718096;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.clear-btn:hover {
-  border-color: #e53e3e;
-  color: #fc8181;
-}
-
-.multi-test-section {
+  padding: 0 16px;
+  border-bottom: 1px solid #e2e8f0;
   flex-shrink: 0;
 }
 
-.multi-input {
-  width: 100%;
-  background: #2d3748;
-  border: 1px solid #4a5568;
-  border-radius: 5px;
-  color: #e2e8f0;
-  font-size: 12px;
-  padding: 5px 8px;
-  outline: none;
-  margin-bottom: 7px;
-  font-family: inherit;
+.panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a202c;
 }
 
-.multi-input:focus {
-  border-color: #3b82f6;
-}
-
-.multi-btn {
-  width: 100%;
-  padding: 6px 0;
+.header-icon-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  border: 1px solid #4a5568;
+  border: none;
   background: transparent;
   color: #a0aec0;
-  transition: all 0.2s;
+  cursor: pointer;
+  transition: all 0.15s;
 }
 
-.multi-btn:hover:not(:disabled) {
-  border-color: #3b82f6;
-  color: #90cdf4;
+.header-icon-btn:hover {
+  background: #e2e8f0;
+  color: #4a5568;
 }
 
-.multi-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.multi-results {
-  margin-top: 10px;
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 12px;
   display: flex;
   flex-direction: column;
+  gap: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e0 transparent;
+}
+
+.drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
+  padding: 20px 12px;
+  border-radius: 10px;
+  border: 1.5px dashed #cbd5e0;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+  color: #a0aec0;
+  flex-shrink: 0;
 }
 
-.multi-cost {
-  font-size: 11px;
-  color: #718096;
+.drop-zone:hover,
+.drop-zone.dragging {
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.04);
+  color: #6366f1;
 }
 
-.multi-advisor {
-  background: #1a202c;
-  border-radius: 5px;
-  padding: 7px 9px;
+.drop-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #4a5568;
+  margin: 0;
 }
 
-.advisor-name {
-  font-size: 11px;
-  font-weight: 600;
-  color: #90cdf4;
-  text-transform: capitalize;
-  display: block;
-  margin-bottom: 3px;
+.drop-zone:hover .drop-title,
+.drop-zone.dragging .drop-title {
+  color: #6366f1;
 }
 
-.advisor-reply {
+.drop-hint {
   font-size: 11px;
   color: #a0aec0;
   line-height: 1.4;
-  word-break: break-all;
-  white-space: pre-wrap;
-  max-height: 80px;
-  overflow-y: auto;
-  scrollbar-width: thin;
+}
+
+.source-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #a0aec0;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 4px 4px 0;
+}
+
+.source-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  transition: box-shadow 0.15s;
+}
+
+.source-item:hover {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+.file-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.file-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.file-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #1a202c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-size {
+  font-size: 11px;
+  color: #a0aec0;
+}
+
+.remove-btn {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: #cbd5e0;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.remove-btn:hover {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+.empty-hint {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  padding: 16px 0;
+  user-select: none;
+}
+
+.empty-hint p {
+  font-size: 13px;
+  font-weight: 500;
+  color: #a0aec0;
+  margin: 0;
+}
+
+.empty-hint span {
+  font-size: 12px;
+  color: #cbd5e0;
+  line-height: 1.5;
 }
 </style>
