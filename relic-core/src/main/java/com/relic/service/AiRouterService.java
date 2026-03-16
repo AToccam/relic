@@ -170,7 +170,7 @@ public class AiRouterService {
             Optional<SemanticRouter.RouteDecision> multimodalDecision = forcePrimaryForMultimodal(messages);
             if (multimodalDecision.isPresent()) {
                 decision = multimodalDecision.get();
-                String providerName = resolveProviderNameForMessages(messages);
+                String providerName = resolveToolProviderNameForMessages(messages);
                 log.info("【语义路由-多模态优先】path={}, reason={}, provider={}",
                         decision.path(), decision.reason(), providerName);
                 streamSingle(messages, onChunk);
@@ -743,12 +743,6 @@ public class AiRouterService {
     private String resolveToolProviderNameForMessages(List<Map<String, Object>> messages) {
         if (currentMode == Mode.SINGLE) {
             String selectedSingle = resolvePrimaryProviderName();
-            AiProvider singleProvider = getProvider(selectedSingle);
-            if (hasMultimodalInput(messages) && !singleProvider.supportsMultimodal()) {
-                String fallback = resolveProviderNameForMessages(messages);
-                log.warn("SINGLE 模型 [{}] 不支持多模态，回退到 {}", selectedSingle, fallback);
-                return fallback;
-            }
             return selectedSingle;
         }
 

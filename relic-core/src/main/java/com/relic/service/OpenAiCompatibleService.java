@@ -28,6 +28,8 @@ import java.util.function.Consumer;
 
 @Slf4j
 public abstract class OpenAiCompatibleService implements AiProvider {
+    // 支持自定义temperature，默认0.7
+    protected double getTemperature() { return 0.7; }
 
     protected abstract String getApiKey();
 
@@ -107,7 +109,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("model", getModel());
         requestBody.put("messages", messages);
-        requestBody.put("temperature", 0.7);
+        requestBody.put("temperature", getTemperature());
         requestBody.put("stream", true);
         applyToolPayload(requestBody, messages, tools);
 
@@ -280,7 +282,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("model", getModel());
         requestBody.put("messages", messages);
-        requestBody.put("temperature", 0.7);
+        requestBody.put("temperature", getTemperature());
         requestBody.put("stream", false);
         applyToolPayload(requestBody, messages, tools);
 

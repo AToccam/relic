@@ -37,7 +37,6 @@ public class QwenService extends OpenAiCompatibleService {
 
     @Override
     public boolean supportsMultimodal() {
-        String lower = model == null ? "" : model.toLowerCase();
-        return lower.contains("vl") || lower.contains("vision") || lower.contains("omni");
+        return true;
     }
 }
