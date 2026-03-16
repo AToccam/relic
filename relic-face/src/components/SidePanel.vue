@@ -79,10 +79,11 @@ const modal = ref<string | null>(null)
 
 <style scoped>
 .side-panel {
-  width: 240px;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
   background: #f8f9fa;
-  border-right: 1px solid #e2e8f0;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
   display: flex;
   flex-direction: column;
   overflow: hidden;

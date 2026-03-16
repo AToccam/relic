@@ -60,10 +60,11 @@ const cards = [
 
 <style scoped>
 .right-panel {
-  width: 260px;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
   background: #f8f9fa;
-  border-left: 1px solid #e2e8f0;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
   display: flex;
   flex-direction: column;
   overflow: hidden;

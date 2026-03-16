@@ -31,19 +31,24 @@ const showSettings = ref(false)
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
+  background: #e8eaf0;
 }
 
 .chat-body {
   flex: 1;
   display: flex;
   overflow: hidden;
+  padding: 8px;
+  gap: 8px;
 }
 
 .chat-main {
-  flex: 1;
+  flex: 2;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
 }
 </style>
