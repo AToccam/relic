@@ -34,6 +34,9 @@ public class DeepSeekService extends OpenAiCompatibleService {
     private final String API_KEY = "sk-d7cbb8c351964fab8c6a7d8709e9da7b";
     private final String URL = "https://api.deepseek.com/chat/completions";
 
+    @Value("${relic.deepseek.model:deepseek-chat}")
+    private String model;
+
     @Value("${relic.deepseek.connect-timeout-ms:20000}")
     private int connectTimeoutMs;
 
@@ -53,7 +56,7 @@ public class DeepSeekService extends OpenAiCompatibleService {
     protected String getUrl() { return URL; }
 
     @Override
-    protected String getModel() { return "deepseek-chat"; }
+    protected String getModel() { return model; }
 
     @Override
     protected String providerDisplayName() { return "DeepSeek"; }

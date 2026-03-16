@@ -9,7 +9,7 @@ public class QwenService extends OpenAiCompatibleService {
     private final String API_KEY = "sk-8c46bed4d0324d12a6c44ba32f113d8e";
     private final String URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
 
-    @Value("${relic.qwen.model:qwen-plus}")
+    @Value("${relic.qwen.model:qwen-vl-plus}")
     private String model;
 
     @Override

@@ -22,20 +22,45 @@ import java.util.function.Consumer;
 /**
  * AI 路由服务：管理所有 AiProvider，统一调度。
  * 支持两种模式：
- * - single: 仅主模型（Qwen）直接回答
- * - multi:  Advisor 并行分析 → 主模型（Qwen）聚合后输出
+ * - single: 仅主模型直接回答
+ * - multi:  Advisor 并行分析 → 主模型聚合后输出
  */
 @Slf4j
 @Service
 public class AiRouterService {
 
-    public enum Mode { SINGLE, MULTI }
+    private static final Set<String> READABLE_TEXT_EXTENSIONS = Set.of(
+        "txt", "md", "markdown", "json", "xml", "yaml", "yml", "csv", "log",
+        "pdf", "doc", "docx"
+    );
 
-    private static final String AGGREGATOR = "qwen";
-    private static final List<String> ADVISORS = List.of("deepseek", "kimi");
+    private static final Set<String> NON_TEXT_MULTIMODAL_EXTENSIONS = Set.of(
+        "ppt", "pptx", "xls", "xlsx", "ods", "odp", "key", "numbers", "pages"
+    );
+
+    private static final Set<String> MEDIA_EXTENSIONS = Set.of(
+        "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg",
+        "mp3", "wav", "ogg", "m4a", "flac", "aac", "webm",
+        "mp4", "mov", "avi", "mkv", "m4v"
+    );
+
+    public enum Mode { SINGLE, MULTI }
 
     private volatile Mode currentMode = Mode.MULTI; //默认多 AI 协同模式
     //SINGLE 模式下，直接使用主模型；MULTI 模式下，先让 advisor 分析，再由主模型聚合输出
+
+    @Value("${relic.router.primary-provider:deepseek}")
+    private String primaryProvider;
+
+    @Value("${relic.router.advisors:qwen,kimi}")
+    private String advisorsConfig;
+
+    private List<String> advisors = List.of("qwen", "kimi");
+
+    @Value("${relic.router.multimodal-providers:qwen,kimi}")
+    private String multimodalProvidersConfig;
+
+    private List<String> multimodalProviders = List.of("qwen", "kimi");
 
     private final Map<String, AiProvider> providerMap = new LinkedHashMap<>();
     private final SemanticRouter semanticRouter;
@@ -61,14 +86,33 @@ public class AiRouterService {
 
     @PostConstruct
     public void logStartupConfiguration() {
+        advisors = Arrays.stream(advisorsConfig.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .distinct()
+                .toList();
+        multimodalProviders = Arrays.stream(multimodalProvidersConfig.split(","))
+            .map(String::trim)
+            .filter(s -> !s.isEmpty())
+            .distinct()
+            .toList();
         log.info("========== AI Router Configuration ==========");
         log.info("启动模式: {}", currentMode);
-        log.info("主力模型: {}", AGGREGATOR);
-        log.info("Advisor 列表: {}", ADVISORS);
+        log.info("主力模型: {}", primaryProvider);
+        log.info("Advisor 列表: {}", advisors);
+        log.info("多模态优先 Provider 列表: {}", multimodalProviders);
         log.info("已注册 Provider: {}", providerMap.keySet());
         log.info("FAST 是否优先走本地模型: {}", fastUseLocal);
         log.info("本地兜底服务是否可用: {}", localFallbackService.isPresent());
         log.info("============================================");
+    }
+
+    public String getPrimaryProviderName() {
+        return resolvePrimaryProviderName();
+    }
+
+    public String getProviderNameForMessages(List<Map<String, Object>> messages) {
+        return resolveProviderNameForMessages(messages);
     }
 
     //模式管理
@@ -106,7 +150,9 @@ public class AiRouterService {
             Optional<SemanticRouter.RouteDecision> multimodalDecision = forcePrimaryForMultimodal(messages);
             if (multimodalDecision.isPresent()) {
                 decision = multimodalDecision.get();
-                log.info("【语义路由-多模态优先】path={}, reason={}", decision.path(), decision.reason());
+                String providerName = resolveProviderNameForMessages(messages);
+                log.info("【语义路由-多模态优先】path={}, reason={}, provider={}",
+                        decision.path(), decision.reason(), providerName);
                 streamSingle(messages, onChunk);
                 return;
             }
@@ -157,9 +203,11 @@ public class AiRouterService {
             Optional<SemanticRouter.RouteDecision> multimodalDecision = forcePrimaryForMultimodal(messages);
             if (multimodalDecision.isPresent()) {
                 decision = multimodalDecision.get();
-                log.info("【语义路由-多模态优先】path={}, reason={}", decision.path(), decision.reason());
+                String providerName = resolveProviderNameForMessages(messages);
+                log.info("【语义路由-多模态优先】path={}, reason={}, provider={}",
+                        decision.path(), decision.reason(), providerName);
                 List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
-                result = toolCallService.askWithTools(getProvider(AGGREGATOR), enriched);
+                result = toolCallService.askWithTools(getProvider(providerName), enriched);
                 return result;
             }
 
@@ -172,7 +220,7 @@ public class AiRouterService {
                     result = askFastLocalOrCloud(messages);
                 } else {
                     List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
-                    result = toolCallService.askWithTools(getProvider(AGGREGATOR), enriched);
+                    result = toolCallService.askWithTools(getProvider(resolvePrimaryProviderName()), enriched);
                 }
             } else {
                 decision = semanticRouter.decide(messages);
@@ -184,7 +232,7 @@ public class AiRouterService {
                     result = askFastLocalOrCloud(messages);
                 } else {
                     List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
-                    result = toolCallService.askWithTools(getProvider(AGGREGATOR), enriched);
+                    result = toolCallService.askWithTools(getProvider(resolvePrimaryProviderName()), enriched);
                 }
             }
 
@@ -208,7 +256,8 @@ public class AiRouterService {
 
     public void streamSingle(List<Map<String, Object>> messages, Consumer<String> onChunk) throws Exception {
         List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
-        toolCallService.streamWithTools(getProvider(AGGREGATOR), enriched, onChunk);
+        String providerName = resolveProviderNameForMessages(messages);
+        toolCallService.streamWithTools(getProvider(providerName), enriched, onChunk);
     }
 
     // ==================== 多 AI 协同模式 ====================
@@ -234,7 +283,7 @@ public class AiRouterService {
         log.info("【多AI协同】已收集 {} 个顾问回复，交由Leader聚合", advisorReplies.size());
 
         onChunk.accept("✅ 已收集完毕，正在生成最终回答...\n\n");
-        toolCallService.streamWithTools(getProvider(AGGREGATOR), aggregatedMessages, onChunk);
+        toolCallService.streamWithTools(getProvider(resolvePrimaryProviderName()), aggregatedMessages, onChunk);
     }
 
     /** 多 AI 协同同步输出（非流式） */
@@ -242,7 +291,7 @@ public class AiRouterService {
         String userQuestion = extractLatestUserMessage(messages);
         Map<String, String> advisorReplies = collectAdvisorReplies(userQuestion);
         List<Map<String, Object>> aggregatedMessages = MessageHelper.buildAggregatedMessages(messages, advisorReplies);
-        return toolCallService.askWithTools(getProvider(AGGREGATOR), aggregatedMessages);
+        return toolCallService.askWithTools(getProvider(resolvePrimaryProviderName()), aggregatedMessages);
     }
 
     /** 并行调用所有 advisor，收集回复（带心跳保活） */
@@ -250,7 +299,7 @@ public class AiRouterService {
         Map<String, String> replies = new ConcurrentHashMap<>();
 
         CompletableFuture<Void> allDone = CompletableFuture.allOf(
-                ADVISORS.stream()
+            advisors.stream()
                         .filter(providerMap::containsKey)
                         .map(name -> CompletableFuture.runAsync(() -> {
                             try {
@@ -288,7 +337,7 @@ public class AiRouterService {
     public Map<String, String> collectAdvisorReplies(String userQuestion) {
         Map<String, String> replies = new ConcurrentHashMap<>();
 
-        List<CompletableFuture<Void>> futures = ADVISORS.stream()
+        List<CompletableFuture<Void>> futures = advisors.stream()
                 .filter(providerMap::containsKey)
                 .map(name -> CompletableFuture.runAsync(() -> {
                     try {
@@ -348,22 +397,181 @@ public class AiRouterService {
                     continue;
                 }
                 Map<String, Object> part = (Map<String, Object>) raw;
-                String type = String.valueOf(part.getOrDefault("type", "")).toLowerCase(Locale.ROOT);
-                if (type.contains("image") || type.contains("audio")
-                        || part.containsKey("image_url") || part.containsKey("input_audio")
-                        || part.containsKey("audio_url")) {
+                if (isMultimodalPart(part)) {
                     return true;
                 }
+
+                if ("text".equalsIgnoreCase(String.valueOf(part.get("type")))) {
+                    Object textObj = part.get("text");
+                    if (textObj != null && isMultimodalTextHint(textObj.toString())) {
+                        return true;
+                    }
+                }
             }
+            return false;
         }
         if (content instanceof Map<?, ?> raw) {
             Map<String, Object> part = (Map<String, Object>) raw;
-            String type = String.valueOf(part.getOrDefault("type", "")).toLowerCase(Locale.ROOT);
-            return type.contains("image") || type.contains("audio")
-                    || part.containsKey("image_url") || part.containsKey("input_audio")
-                    || part.containsKey("audio_url");
+            return isMultimodalPart(part);
+        }
+        if (content instanceof String str) {
+            return isMultimodalTextHint(str);
         }
         return false;
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean isMultimodalPart(Map<String, Object> part) {
+        String type = String.valueOf(part.getOrDefault("type", "")).toLowerCase(Locale.ROOT);
+        if (type.contains("image") || type.contains("audio") || type.contains("video")) {
+            return true;
+        }
+
+        if (part.containsKey("image_url") || part.containsKey("input_audio")
+                || part.containsKey("audio_url") || part.containsKey("video_url")) {
+            return true;
+        }
+
+        boolean hasFilePayload = part.containsKey("file_url") || part.containsKey("input_file")
+                || type.contains("file") || type.contains("document");
+        if (!hasFilePayload) {
+            return false;
+        }
+
+        String fileNameOrUrl = extractFileNameOrUrl(part);
+        String ext = extractExtension(fileNameOrUrl);
+        if (!ext.isEmpty()) {
+            if (READABLE_TEXT_EXTENSIONS.contains(ext)) {
+                return false;
+            }
+            if (NON_TEXT_MULTIMODAL_EXTENSIONS.contains(ext) || MEDIA_EXTENSIONS.contains(ext)) {
+                return true;
+            }
+        }
+
+        String mime = extractMimeType(part);
+        if (!mime.isEmpty()) {
+            if (mime.startsWith("image/") || mime.startsWith("audio/") || mime.startsWith("video/")) {
+                return true;
+            }
+
+            boolean looksLikeUnstructuredOffice = mime.contains("presentation")
+                    || mime.contains("spreadsheet")
+                    || mime.contains("powerpoint")
+                    || mime.contains("ms-excel")
+                    || mime.contains("officedocument.presentationml")
+                    || mime.contains("officedocument.spreadsheetml");
+            if (looksLikeUnstructuredOffice) {
+                return true;
+            }
+
+            boolean looksLikeReadableText = mime.startsWith("text/")
+                    || mime.equals("application/pdf")
+                    || mime.contains("msword")
+                    || mime.contains("officedocument.wordprocessingml");
+            if (looksLikeReadableText) {
+                return false;
+            }
+        }
+
+        // 文件部件但无法确定类型时，默认走多模态以提升识别成功率。
+        return true;
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractFileNameOrUrl(Map<String, Object> part) {
+        Object filename = part.get("filename");
+        if (filename != null) {
+            return filename.toString();
+        }
+
+        Object name = part.get("name");
+        if (name != null) {
+            return name.toString();
+        }
+
+        Object url = part.get("url");
+        if (url != null) {
+            return url.toString();
+        }
+
+        Object fileUrlObj = part.get("file_url");
+        if (fileUrlObj instanceof Map<?, ?> raw) {
+            Map<String, Object> fileUrl = (Map<String, Object>) raw;
+            Object nestedUrl = fileUrl.get("url");
+            if (nestedUrl != null) {
+                return nestedUrl.toString();
+            }
+            Object nestedFilename = fileUrl.get("filename");
+            if (nestedFilename != null) {
+                return nestedFilename.toString();
+            }
+        }
+
+        Object inputFileObj = part.get("input_file");
+        if (inputFileObj instanceof Map<?, ?> raw) {
+            Map<String, Object> inputFile = (Map<String, Object>) raw;
+            Object nestedFilename = inputFile.get("filename");
+            if (nestedFilename != null) {
+                return nestedFilename.toString();
+            }
+        }
+
+        return "";
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractMimeType(Map<String, Object> part) {
+        Object mimeType = part.get("mime_type");
+        if (mimeType != null) {
+            return mimeType.toString().toLowerCase(Locale.ROOT);
+        }
+        Object contentType = part.get("content_type");
+        if (contentType != null) {
+            return contentType.toString().toLowerCase(Locale.ROOT);
+        }
+
+        Object fileUrlObj = part.get("file_url");
+        if (fileUrlObj instanceof Map<?, ?> raw) {
+            Map<String, Object> fileUrl = (Map<String, Object>) raw;
+            Object nestedMime = fileUrl.get("mime_type");
+            if (nestedMime != null) {
+                return nestedMime.toString().toLowerCase(Locale.ROOT);
+            }
+        }
+        return "";
+    }
+
+    private String extractExtension(String filenameOrUrl) {
+        if (filenameOrUrl == null || filenameOrUrl.isBlank()) {
+            return "";
+        }
+
+        String lower = filenameOrUrl.toLowerCase(Locale.ROOT);
+        int q = lower.indexOf('?');
+        if (q >= 0) {
+            lower = lower.substring(0, q);
+        }
+        int hash = lower.indexOf('#');
+        if (hash >= 0) {
+            lower = lower.substring(0, hash);
+        }
+
+        int slash = Math.max(lower.lastIndexOf('/'), lower.lastIndexOf('\\'));
+        String name = slash >= 0 ? lower.substring(slash + 1) : lower;
+        int dot = name.lastIndexOf('.');
+        if (dot < 0 || dot == name.length() - 1) {
+            return "";
+        }
+        return name.substring(dot + 1);
+    }
+
+    private boolean isMultimodalTextHint(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String lower = text.toLowerCase(Locale.ROOT);
+        return lower.matches(".*\\.(png|jpe?g|gif|webp|bmp|svg|mp3|wav|ogg|m4a|flac|aac|mp4|mov|avi|mkv|m4v|ppt|pptx|xls|xlsx|ods|odp)\\b.*");
     }
 
     private boolean isUpstreamFailureText(String text) {
@@ -438,7 +646,7 @@ public class AiRouterService {
         if (isLocalFallbackFailureText(localAnswer)) {
             log.warn("【FAST 本地失败】自动回退云端主模型");
             List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
-            return toolCallService.askWithTools(getProvider(AGGREGATOR), enriched);
+            return toolCallService.askWithTools(getProvider(resolvePrimaryProviderName()), enriched);
         }
         return localAnswer;
     }
@@ -485,5 +693,44 @@ public class AiRouterService {
             }
         }
         return sb.toString();
+    }
+
+    private String resolvePrimaryProviderName() {
+        String candidate = primaryProvider == null ? "" : primaryProvider.trim();
+        if (!candidate.isEmpty() && providerMap.containsKey(candidate)) {
+            return candidate;
+        }
+
+        if (providerMap.containsKey("deepseek")) {
+            log.warn("配置的主模型 [{}] 不可用，自动回退到 deepseek", candidate);
+            return "deepseek";
+        }
+
+        if (!providerMap.isEmpty()) {
+            String fallback = providerMap.keySet().iterator().next();
+            log.warn("配置的主模型 [{}] 不可用，自动回退到 {}", candidate, fallback);
+            return fallback;
+        }
+
+        throw new IllegalStateException("未注册任何 AI Provider");
+    }
+
+    private String resolveProviderNameForMessages(List<Map<String, Object>> messages) {
+        if (hasMultimodalInput(messages)) {
+            return resolveMultimodalProviderName();
+        }
+        return resolvePrimaryProviderName();
+    }
+
+    private String resolveMultimodalProviderName() {
+        for (String candidate : multimodalProviders) {
+            if (providerMap.containsKey(candidate)) {
+                return candidate;
+            }
+        }
+
+        String primary = resolvePrimaryProviderName();
+        log.warn("未找到可用的多模态 Provider，回退主模型: {}", primary);
+        return primary;
     }
 }

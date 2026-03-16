@@ -9,6 +9,8 @@ relic:
   workspace:
     path: ${user.home}/.openclaw/workspace
   deepseek:
+    # DeepSeek 模型名，可切换为支持多模态输入的模型版本
+    model: deepseek-chat
     # 连接超时（仅握手阶段）
     connect-timeout-ms: 20000
     # 整个请求最大等待时长，长推理建议 >= 300000
@@ -16,6 +18,12 @@ relic:
     # 流式空闲超时，0 表示关闭空闲熔断
     idle-timeout-ms: 180000
   router:
+    # 主模型 provider 名称（默认 deepseek）
+    primary-provider: qwen
+    # 检测到图片/音频输入时的 provider 优先级（逗号分隔）
+    multimodal-providers: qwen,kimi
+    # 顾问 provider 列表（逗号分隔），用于 MULTI 模式
+    advisors: deepseek,kimi
     # 开启后会优先调用 LocalIntentClassifier（若存在实现 Bean）
     enable-local-classifier: true
     # FAST 路由是否默认走本地模型（true: 本地快速回复，false: 仍走云端主模型 Qwen）

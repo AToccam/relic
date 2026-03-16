@@ -143,6 +143,7 @@ public class WebhookController {
         final List<Map<String, Object>> finalMessages = messages;
         SseEmitter emitter = new SseEmitter(180_000L);
         String chatId = "chatcmpl-" + System.currentTimeMillis();
+        String modelName = aiRouter.getProviderNameForMessages(finalMessages);
         long created = System.currentTimeMillis() / 1000;
         AtomicBoolean emitterActive = new AtomicBoolean(true);
 
@@ -160,7 +161,7 @@ public class WebhookController {
                     }
                     try {
                         Map<String, Object> chunk = OpenAiResponseBuilder.buildChunk(
-                            chatId, created, "qwen-main", Map.of("content", content), null);
+                            chatId, created, modelName, Map.of("content", content), null);
                         emitter.send(SseEmitter.event()
                                 .data(mapper.writeValueAsString(chunk), MediaType.APPLICATION_JSON));
                     } catch (IOException e) {
@@ -170,7 +171,7 @@ public class WebhookController {
                 });
 
                 Map<String, Object> stopChunk = OpenAiResponseBuilder.buildChunk(
-            chatId, created, "qwen-main", Map.of(), "stop");
+            chatId, created, modelName, Map.of(), "stop");
                 emitter.send(SseEmitter.event()
                         .data(mapper.writeValueAsString(stopChunk), MediaType.APPLICATION_JSON));
                 emitter.send(SseEmitter.event().data("[DONE]", MediaType.TEXT_PLAIN));
@@ -184,12 +185,12 @@ public class WebhookController {
                 log.error("【流式响应异常】", e);
                 try {
                     Map<String, Object> errChunk = OpenAiResponseBuilder.buildChunk(
-                        chatId, created, "qwen-main",
+                        chatId, created, modelName,
                             Map.of("content", "\n\n⚠️ 后端处理异常: " + e.getMessage()), null);
                     emitter.send(SseEmitter.event()
                             .data(mapper.writeValueAsString(errChunk), MediaType.APPLICATION_JSON));
                     Map<String, Object> stopChunk2 = OpenAiResponseBuilder.buildChunk(
-                        chatId, created, "qwen-main", Map.of(), "stop");
+                        chatId, created, modelName, Map.of(), "stop");
                     emitter.send(SseEmitter.event()
                             .data(mapper.writeValueAsString(stopChunk2), MediaType.APPLICATION_JSON));
                     emitter.send(SseEmitter.event().data("[DONE]", MediaType.TEXT_PLAIN));
