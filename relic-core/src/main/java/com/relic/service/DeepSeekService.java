@@ -86,9 +86,7 @@ public class DeepSeekService extends OpenAiCompatibleService {
         requestBody.put("messages", messages);
         requestBody.put("temperature", 0.7);
         requestBody.put("stream", true);
-        if (tools != null && !tools.isEmpty()) {
-            requestBody.put("tools", tools);
-        }
+        applyToolPayload(requestBody, messages, tools);
 
         ObjectMapper objectMapper = new ObjectMapper();
         String jsonBody = objectMapper.writeValueAsString(requestBody);

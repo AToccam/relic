@@ -19,7 +19,7 @@ relic:
     idle-timeout-ms: 180000
   router:
     # 主模型 provider 名称（默认 deepseek）
-    primary-provider: qwen
+    primary-provider: deepseek
     # 检测到图片/音频输入时的 provider 优先级（逗号分隔）
     multimodal-providers: qwen,kimi
     # 顾问 provider 列表（逗号分隔），用于 MULTI 模式

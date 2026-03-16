@@ -17,8 +17,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
 
@@ -105,9 +107,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
         requestBody.put("messages", messages);
         requestBody.put("temperature", 0.7);
         requestBody.put("stream", true);
-        if (tools != null && !tools.isEmpty()) {
-            requestBody.put("tools", tools);
-        }
+        applyToolPayload(requestBody, messages, tools);
 
         String jsonBody = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(requestBody);
 
@@ -230,14 +230,100 @@ public abstract class OpenAiCompatibleService implements AiProvider {
         requestBody.put("messages", messages);
         requestBody.put("temperature", 0.7);
         requestBody.put("stream", false);
-        if (tools != null && !tools.isEmpty()) {
-            requestBody.put("tools", tools);
-        }
+        applyToolPayload(requestBody, messages, tools);
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
         Map<String, Object> response = restTemplate.postForObject(getUrl(), entity, Map.class);
         List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
         return choices.get(0);
+    }
+
+    protected void applyToolPayload(Map<String, Object> requestBody,
+                                    List<Map<String, Object>> messages,
+                                    List<Map<String, Object>> tools) {
+        if (tools == null || tools.isEmpty()) {
+            return;
+        }
+
+        requestBody.put("tools", tools);
+        if (shouldForceToolChoice(messages)) {
+            requestBody.put("tool_choice", "required");
+        }
+    }
+
+    protected boolean shouldForceToolChoice(List<Map<String, Object>> messages) {
+        if (hasToolInteraction(messages)) {
+            return false;
+        }
+
+        String latestUserText = extractLatestUserText(messages).toLowerCase(Locale.ROOT);
+        if (latestUserText.isBlank()) {
+            return false;
+        }
+
+        return latestUserText.contains("调用工具")
+                || latestUserText.contains("使用工具")
+                || latestUserText.contains("帮我列出")
+                || latestUserText.contains("列出工作区")
+                || latestUserText.contains("list_files")
+                || latestUserText.contains("read_file")
+                || latestUserText.contains("create_text_file")
+                || latestUserText.contains("web_search");
+    }
+
+    private boolean hasToolInteraction(List<Map<String, Object>> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return false;
+        }
+
+        for (Map<String, Object> msg : messages) {
+            if ("tool".equals(msg.get("role"))) {
+                return true;
+            }
+
+            if ("assistant".equals(msg.get("role")) && msg.get("tool_calls") != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String extractLatestUserText(List<Map<String, Object>> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return "";
+        }
+
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Map<String, Object> msg = messages.get(i);
+            if (!"user".equals(msg.get("role"))) {
+                continue;
+            }
+            return extractTextParts(msg.get("content")).trim();
+        }
+        return "";
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractTextParts(Object contentObj) {
+        if (contentObj instanceof String str) {
+            return str;
+        }
+
+        if (contentObj instanceof List<?> list) {
+            List<String> textParts = new ArrayList<>();
+            for (Object item : list) {
+                if (!(item instanceof Map<?, ?> raw)) {
+                    continue;
+                }
+                Map<String, Object> part = (Map<String, Object>) raw;
+                if ("text".equals(part.get("type")) && part.get("text") != null) {
+                    textParts.add(part.get("text").toString());
+                }
+            }
+            return String.join("\n", textParts);
+        }
+
+        return "";
     }
 
     @SuppressWarnings("unchecked")
