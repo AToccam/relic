@@ -3,7 +3,6 @@ export interface Message {
   role: 'user' | 'assistant'
   content: string
   apiContent?: ChatContent
-  attachments?: LocalAttachment[]
   streaming?: boolean
 }
 
@@ -44,14 +43,6 @@ export interface FileUrlPart {
 }
 
 export type ChatContent = string | Array<TextPart | ImageUrlPart | InputAudioPart | VideoUrlPart | FileUrlPart>
-
-export interface LocalAttachment {
-  id: string
-  kind: 'image' | 'audio' | 'video' | 'file'
-  name: string
-  mimeType: string
-  dataUrl: string
-}
 
 export type Mode = 'single' | 'multi'
 

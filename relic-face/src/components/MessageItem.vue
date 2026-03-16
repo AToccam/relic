@@ -17,14 +17,6 @@ const html = computed(() =>
       <div v-if="message.role === 'assistant'" class="markdown-body" v-html="html" />
       <template v-else>
         <div class="plain-text">{{ message.content }}</div>
-        <div v-if="message.attachments?.length" class="attachment-preview-list">
-          <div v-for="item in message.attachments" :key="item.id" class="attachment-preview-item">
-            <img v-if="item.kind === 'image'" class="inline-image" :src="item.dataUrl" alt="user image" />
-            <audio v-else-if="item.kind === 'audio'" class="inline-audio" :src="item.dataUrl" controls preload="metadata" />
-            <video v-else-if="item.kind === 'video'" class="inline-video" :src="item.dataUrl" controls preload="metadata" />
-            <div v-else class="inline-file">文件: {{ item.name }}</div>
-          </div>
-        </div>
       </template>
       <span v-if="message.streaming" class="cursor">▋</span>
     </div>
@@ -85,46 +77,6 @@ const html = computed(() =>
 
 .plain-text {
   white-space: pre-wrap;
-}
-
-.attachment-preview-list {
-  margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.attachment-preview-item {
-  background: rgba(0, 0, 0, 0.05);
-  border-radius: 8px;
-  padding: 6px;
-}
-
-.inline-image {
-  max-width: 100%;
-  max-height: 220px;
-  border-radius: 6px;
-  display: block;
-}
-
-.inline-audio {
-  width: 100%;
-  height: 32px;
-}
-
-.inline-video {
-  width: 100%;
-  max-height: 240px;
-  border-radius: 6px;
-  background: #e2e8f0;
-}
-
-.inline-file {
-  border: 1px dashed #cbd5e0;
-  border-radius: 6px;
-  padding: 8px;
-  color: #718096;
-  font-size: 12px;
 }
 
 .cursor {
