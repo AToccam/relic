@@ -72,6 +72,8 @@ public class ToolCallResult {
         }
         String c = content.toString();
         msg.put("content", c.isEmpty() ? null : c);
+        // 修复Kimi工具调用API，补全reasoning_content字段
+        msg.put("reasoning_content", c.isEmpty() ? "工具调用推理内容" : c);
         return msg;
     }
 }

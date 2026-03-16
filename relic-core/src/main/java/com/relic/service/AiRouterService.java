@@ -734,6 +734,9 @@ public class AiRouterService {
     }
 
     private String resolveProviderNameForMessages(List<Map<String, Object>> messages) {
+        if (currentMode == Mode.SINGLE) {
+            return resolvePrimaryProviderName();
+        }
         if (hasMultimodalInput(messages)) {
             return resolveMultimodalProviderName();
         }
