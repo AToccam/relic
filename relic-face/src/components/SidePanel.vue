@@ -37,8 +37,25 @@ onMounted(() => settings.fetchMode())
       <p class="mode-hint">
         {{ settings.mode === 'multi'
           ? 'Kimi + Qwen 协同 → DeepSeek 聚合'
-          : 'DeepSeek 直接回答' }}
+          : `Single 当前模型：${settings.singleProvider}` }}
       </p>
+      <div v-if="settings.mode === 'single'" class="single-provider-row">
+        <label class="single-provider-label" for="single-provider-select">Single 模型</label>
+        <select
+          id="single-provider-select"
+          class="single-provider-select"
+          :value="settings.singleProvider"
+          @change="settings.switchSingleProvider(($event.target as HTMLSelectElement).value)"
+        >
+          <option
+            v-for="provider in settings.singleProviderOptions"
+            :key="provider"
+            :value="provider"
+          >
+            {{ provider }}
+          </option>
+        </select>
+      </div>
     </section>
 
     <section class="panel-section">
@@ -186,6 +203,34 @@ onMounted(() => settings.fetchMode())
   color: #4a5568;
   margin: 8px 0 0;
   line-height: 1.4;
+}
+
+.single-provider-row {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.single-provider-label {
+  font-size: 11px;
+  color: #718096;
+}
+
+.single-provider-select {
+  width: 100%;
+  background: #2d3748;
+  border: 1px solid #4a5568;
+  border-radius: 5px;
+  color: #e2e8f0;
+  font-size: 12px;
+  padding: 5px 8px;
+  outline: none;
+  text-transform: capitalize;
+}
+
+.single-provider-select:focus {
+  border-color: #3b82f6;
 }
 
 .provider-row {

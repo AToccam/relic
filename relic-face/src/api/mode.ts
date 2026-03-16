@@ -7,11 +7,11 @@ export async function getMode(): Promise<ModeResponse> {
   return res.json()
 }
 
-export async function setMode(mode: Mode): Promise<ModeResponse> {
+export async function setMode(mode: Mode, singleProvider?: string): Promise<ModeResponse> {
   const res = await fetch(`${BASE}/mode`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode })
+    body: JSON.stringify({ mode, singleProvider })
   })
   return res.json()
 }

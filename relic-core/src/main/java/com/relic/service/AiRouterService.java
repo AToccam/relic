@@ -741,6 +741,17 @@ public class AiRouterService {
     }
 
     private String resolveToolProviderNameForMessages(List<Map<String, Object>> messages) {
+        if (currentMode == Mode.SINGLE) {
+            String selectedSingle = resolvePrimaryProviderName();
+            AiProvider singleProvider = getProvider(selectedSingle);
+            if (hasMultimodalInput(messages) && !singleProvider.supportsMultimodal()) {
+                String fallback = resolveProviderNameForMessages(messages);
+                log.warn("SINGLE 模型 [{}] 不支持多模态，回退到 {}", selectedSingle, fallback);
+                return fallback;
+            }
+            return selectedSingle;
+        }
+
         String configured = toolProvider == null ? "" : toolProvider.trim();
         if (!configured.isEmpty() && providerMap.containsKey(configured)) {
             AiProvider provider = getProvider(configured);
