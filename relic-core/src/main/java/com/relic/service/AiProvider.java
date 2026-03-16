@@ -45,6 +45,11 @@ public interface AiProvider {
         return false;
     }
 
+    // 是否支持多模态消息部件（如 image_url / input_audio）
+    default boolean supportsMultimodal() {
+        return false;
+    }
+
     /**
      * 非流式调用（带 tools 参数），返回结构化结果。
      * 默认：忽略 tools，返回纯文本结果。

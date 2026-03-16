@@ -34,4 +34,9 @@ public class QwenService extends OpenAiCompatibleService {
     protected String providerDisplayName() {
         return "Qwen";
     }
+
+    @Override
+    public boolean supportsMultimodal() {
+        return true;
+    }
 }

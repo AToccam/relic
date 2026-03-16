@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -53,10 +54,10 @@ public class ToolCallService {
     public String askWithTools(AiProvider provider, List<Map<String, Object>> messages) {
         if (!provider.supportsTools()) {
             log.debug("Provider {} 不支持 tools，走纯文本路径", provider.getName());
-            return provider.ask(messages);
+            return provider.ask(ensureProviderCompatibleMessages(provider, messages));
         }
 
-        List<Map<String, Object>> conversation = new ArrayList<>(messages);
+        List<Map<String, Object>> conversation = ensureProviderCompatibleMessages(provider, messages);
         List<Map<String, Object>> tools = ToolDefinitions.getAll();
 
         for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -87,13 +88,15 @@ public class ToolCallService {
     public void streamWithTools(AiProvider provider,
                                  List<Map<String, Object>> messages,
                                  Consumer<String> onChunk) throws Exception {
+        List<Map<String, Object>> normalizedMessages = ensureProviderCompatibleMessages(provider, messages);
+
         if (!provider.supportsTools()) {
             log.debug("Provider {} 不支持 tools，走纯流式路径", provider.getName());
-            streamWithoutToolsWithWatchdog(provider, messages, onChunk);
+            streamWithoutToolsWithWatchdog(provider, normalizedMessages, onChunk);
             return;
         }
 
-        List<Map<String, Object>> conversation = new ArrayList<>(messages);
+        List<Map<String, Object>> conversation = normalizedMessages;
         List<Map<String, Object>> tools = ToolDefinitions.getAll();
 
         boolean anyContentSent = false;
@@ -240,5 +243,52 @@ public class ToolCallService {
     private void logToolResult(String name, String result) {
         log.info("【工具结果】{}: {}", name,
                 result.length() > 200 ? result.substring(0, 200) + "..." : result);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> ensureProviderCompatibleMessages(AiProvider provider,
+                                                                       List<Map<String, Object>> messages) {
+        if (provider.supportsMultimodal() || messages == null || messages.isEmpty()) {
+            return new ArrayList<>(messages == null ? List.of() : messages);
+        }
+
+        List<Map<String, Object>> normalized = new ArrayList<>(messages.size());
+        int replacedPartCount = 0;
+
+        for (Map<String, Object> message : messages) {
+            Map<String, Object> copied = new HashMap<>(message);
+            Object content = message.get("content");
+            if (content instanceof List<?> list) {
+                List<Map<String, Object>> textParts = new ArrayList<>();
+                int replacedInMessage = 0;
+                for (Object item : list) {
+                    if (!(item instanceof Map<?, ?> raw)) {
+                        continue;
+                    }
+                    Map<String, Object> part = (Map<String, Object>) raw;
+                    String type = String.valueOf(part.getOrDefault("type", "")).toLowerCase(Locale.ROOT);
+                    if ("text".equals(type) && part.get("text") != null) {
+                        textParts.add(Map.of("type", "text", "text", part.get("text").toString()));
+                    } else {
+                        replacedPartCount++;
+                        replacedInMessage++;
+                    }
+                }
+
+                if (textParts.isEmpty() && replacedInMessage > 0) {
+                    copied.put("content", "[非文本多模态内容已省略，以兼容当前模型] ");
+                } else {
+                    copied.put("content", textParts);
+                }
+            }
+            normalized.add(copied);
+        }
+
+        if (replacedPartCount > 0) {
+            log.info("【消息兼容转换】Provider={}，已省略 {} 个非文本多模态片段",
+                    provider.getName(), replacedPartCount);
+        }
+
+        return normalized;
     }
 }
