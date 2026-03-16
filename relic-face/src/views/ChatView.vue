@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import TopNavBar from '@/components/TopNavBar.vue'
 import SidePanel from '@/components/SidePanel.vue'
 import MessageList from '@/components/MessageList.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import RightPanel from '@/components/RightPanel.vue'
 import SettingsPanel from '@/components/SettingsPanel.vue'
+import { useSettingsStore } from '@/stores/settings'
 
 const showSettings = ref(false)
+const settings = useSettingsStore()
+
+onMounted(() => settings.fetchMode())
 </script>
 
 <template>
