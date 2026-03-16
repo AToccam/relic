@@ -11,11 +11,20 @@ export const useSettingsStore = defineStore('settings', () => {
   const loading = ref(false)
   const multiLoading = ref(false)
 
+  // Multi 模式角色配置（预留接口，暂未接入后端）
+  const multiAdvisors = ref<string[]>([])
+  const multiLeader = ref<string>('')
+
   async function fetchMode() {
     try {
       const data = await getMode()
       mode.value = data.mode
       providers.value = Array.from(data.availableProviders ?? [])
+      // 首次加载时，默认全部提供者为 advisor，第一个为 leader
+      if (multiAdvisors.value.length === 0 && providers.value.length > 0) {
+        multiAdvisors.value = [...providers.value]
+        multiLeader.value = providers.value[0] ?? ''
+      }
     } catch {
       // backend not reachable on load
     }
@@ -46,5 +55,9 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  return { mode, providers, testResults, multiTestResult, loading, multiLoading, fetchMode, switchMode, runTest, runMultiTest }
+  return {
+    mode, providers, testResults, multiTestResult, loading, multiLoading,
+    multiAdvisors, multiLeader,
+    fetchMode, switchMode, runTest, runMultiTest
+  }
 })

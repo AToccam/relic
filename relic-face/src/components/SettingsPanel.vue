@@ -37,8 +37,60 @@ const multiPrompt = ref('你好，请用一句话介绍你自己')
             </div>
             <p class="mode-hint">
               {{ settings.mode === 'multi'
-                ? 'Kimi + Qwen 协同 → DeepSeek 聚合'
+                ? `${settings.multiAdvisors.join(' + ')} 协同 → ${settings.multiLeader} 聚合`
                 : 'DeepSeek 直接回答' }}
+            </p>
+          </section>
+
+          <!-- Multi 角色配置 -->
+          <section v-if="settings.mode === 'multi' && settings.providers.length > 0" class="section">
+            <h3 class="section-title">Multi 模式角色分配</h3>
+            <p class="section-desc">选择参与协同的 Advisor 模型和负责聚合的 Leader 模型</p>
+
+            <div class="role-group">
+              <div class="role-label">
+                <span class="role-tag advisor-tag">Advisor</span>
+                <span class="role-desc">参与初步回答（可多选）</span>
+              </div>
+              <div class="role-options">
+                <label
+                  v-for="p in settings.providers"
+                  :key="'adv-' + p"
+                  class="role-checkbox"
+                >
+                  <input
+                    type="checkbox"
+                    :value="p"
+                    v-model="settings.multiAdvisors"
+                  />
+                  <span class="role-name">{{ p }}</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="role-group">
+              <div class="role-label">
+                <span class="role-tag leader-tag">Leader</span>
+                <span class="role-desc">负责综合聚合（单选）</span>
+              </div>
+              <div class="role-options">
+                <label
+                  v-for="p in settings.providers"
+                  :key="'ldr-' + p"
+                  class="role-radio"
+                >
+                  <input
+                    type="radio"
+                    :value="p"
+                    v-model="settings.multiLeader"
+                  />
+                  <span class="role-name">{{ p }}</span>
+                </label>
+              </div>
+            </div>
+
+            <p class="role-tip">
+              * 接口已预留，后端对接后生效
             </p>
           </section>
 
@@ -404,5 +456,90 @@ const multiPrompt = ref('你好，请用一句话介绍你自己')
   max-height: 100px;
   overflow-y: auto;
   scrollbar-width: thin;
+}
+
+.role-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f8f9fa;
+  border: 1px solid #e2e8f0;
+}
+
+.role-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.role-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.3px;
+}
+
+.advisor-tag {
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+}
+
+.leader-tag {
+  background: rgba(245, 158, 11, 0.1);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.role-desc {
+  font-size: 12px;
+  color: #a0aec0;
+}
+
+.role-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.role-checkbox,
+.role-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s;
+  user-select: none;
+}
+
+.role-checkbox:hover,
+.role-radio:hover {
+  border-color: #6366f1;
+}
+
+.role-checkbox input,
+.role-radio input {
+  accent-color: #6366f1;
+  cursor: pointer;
+}
+
+.role-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #4a5568;
+  text-transform: capitalize;
+}
+
+.role-tip {
+  font-size: 11px;
+  color: #cbd5e0;
+  margin-top: -2px;
 }
 </style>
