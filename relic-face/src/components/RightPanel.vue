@@ -1,67 +1,69 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useSettingsStore } from '@/stores/settings'
+import ComingSoonModal from './ComingSoonModal.vue'
 
-const settings = useSettingsStore()
-const multiPrompt = ref('你好，请用一句话介绍你自己')
+const modal = ref<string | null>(null)
+
+const cards = [
+  { title: '音频概览', icon: 'M9 19V6l12-3v13M9 19c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm12-3c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2z' },
+  { title: '演示文稿', icon: 'M2 3h20v14H2zM8 21h8M12 17v4' },
+  { title: '思维导图', icon: 'M12 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM3 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm18 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM12 18a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM12 6v4M5 12h4m6 0h4M12 16v-4' },
+  { title: '报告', icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8' },
+  { title: '闪卡', icon: 'M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2zM12 11v2' },
+  { title: '信息图', icon: 'M18 20V10M12 20V4M6 20v-6' },
+]
 </script>
 
 <template>
   <aside class="right-panel">
     <div class="panel-header">
-      <span class="panel-title">多 AI 联测</span>
+      <span class="panel-title">Studio</span>
+      <button class="header-icon-btn" @click="modal = '更多选项'" title="更多">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" />
+        </svg>
+      </button>
     </div>
 
     <div class="panel-body">
-      <div class="input-group">
-        <input
-          v-model="multiPrompt"
-          class="multi-input"
-          placeholder="输入测试问题"
-        />
+      <p class="cards-hint">选择输出类型，Studio 将为你生成内容</p>
+      <div class="cards-grid">
         <button
-          class="multi-btn"
-          @click="settings.runMultiTest(multiPrompt)"
-          :disabled="settings.multiLoading || !multiPrompt.trim()"
+          v-for="card in cards"
+          :key="card.title"
+          class="studio-card"
+          @click="modal = card.title"
         >
-          {{ settings.multiLoading ? '请求中…' : '并行测试' }}
+          <svg class="card-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path :d="card.icon" />
+          </svg>
+          <span class="card-title">{{ card.title }}</span>
         </button>
       </div>
 
-      <div v-if="settings.multiTestResult" class="multi-results">
-        <div class="multi-cost">总耗时 {{ settings.multiTestResult.costMs }}ms</div>
-        <div
-          v-for="(reply, name) in settings.multiTestResult.advisors"
-          :key="name"
-          class="multi-advisor"
-        >
-          <span class="advisor-name">{{ name }}</span>
-          <p class="advisor-reply">{{ reply }}</p>
-        </div>
-      </div>
-
-      <div v-else-if="!settings.multiLoading" class="panel-empty">
-        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+      <div class="studio-empty">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
         </svg>
-        <p>并行发送同一问题给多个 AI</p>
-        <span>对比不同模型的回答</span>
-      </div>
-
-      <div v-else class="panel-loading">
-        <span>请求中…</span>
+        <p>Studio 输出将保存在此处</p>
+        <span>添加来源后，点击上方卡片开始生成内容。</span>
       </div>
     </div>
   </aside>
+
+  <ComingSoonModal
+    v-if="modal"
+    :title="modal"
+    @close="modal = null"
+  />
 </template>
 
 <style scoped>
 .right-panel {
   width: 260px;
   flex-shrink: 0;
-  background: #141920;
-  border-left: 1px solid #2d3748;
+  background: #f8f9fa;
+  border-left: 1px solid #e2e8f0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -71,147 +73,113 @@ const multiPrompt = ref('你好，请用一句话介绍你自己')
   height: 48px;
   display: flex;
   align-items: center;
-  padding: 0 18px;
-  border-bottom: 1px solid #2d3748;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid #e2e8f0;
   flex-shrink: 0;
 }
 
 .panel-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
+  color: #1a202c;
+}
+
+.header-icon-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
   color: #a0aec0;
-  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.header-icon-btn:hover {
+  background: #e2e8f0;
+  color: #4a5568;
 }
 
 .panel-body {
   flex: 1;
-  display: flex;
-  flex-direction: column;
   overflow-y: auto;
-  padding: 14px 16px;
-  gap: 12px;
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   scrollbar-width: thin;
-  scrollbar-color: #2d3748 transparent;
+  scrollbar-color: #cbd5e0 transparent;
 }
 
-.input-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.multi-input {
-  width: 100%;
-  background: #2d3748;
-  border: 1px solid #4a5568;
-  border-radius: 6px;
-  color: #e2e8f0;
+.cards-hint {
   font-size: 12px;
-  padding: 7px 10px;
-  outline: none;
-  font-family: inherit;
-  transition: border-color 0.2s;
-}
-
-.multi-input:focus {
-  border-color: #3b82f6;
-}
-
-.multi-btn {
-  width: 100%;
-  padding: 7px 0;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  border: 1px solid #4a5568;
-  background: transparent;
-  color: #a0aec0;
-  transition: all 0.2s;
-  font-family: inherit;
-}
-
-.multi-btn:hover:not(:disabled) {
-  border-color: #3b82f6;
-  color: #90cdf4;
-}
-
-.multi-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.multi-results {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.multi-cost {
-  font-size: 11px;
-  color: #718096;
-}
-
-.multi-advisor {
-  background: #1a202c;
-  border-radius: 6px;
-  padding: 8px 10px;
-  border: 1px solid #2d3748;
-}
-
-.advisor-name {
-  font-size: 11px;
-  font-weight: 600;
-  color: #90cdf4;
-  text-transform: capitalize;
-  display: block;
-  margin-bottom: 4px;
-}
-
-.advisor-reply {
-  font-size: 11px;
   color: #a0aec0;
   line-height: 1.5;
-  word-break: break-all;
-  white-space: pre-wrap;
-  max-height: 100px;
-  overflow-y: auto;
-  scrollbar-width: thin;
+  text-align: center;
 }
 
-.panel-empty {
-  flex: 1;
+.cards-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.studio-card {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
+  padding: 16px 8px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.studio-card:hover {
+  border-color: #6366f1;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.12);
+  background: #fafafe;
+}
+
+.card-icon {
+  color: #6366f1;
+}
+
+.card-title {
+  font-size: 12px;
+  font-weight: 500;
   color: #4a5568;
+}
+
+.studio-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
   text-align: center;
+  padding: 16px 4px;
+  color: #cbd5e0;
   user-select: none;
 }
 
-.panel-empty svg {
-  opacity: 0.4;
-}
-
-.panel-empty p {
+.studio-empty p {
   font-size: 13px;
-  color: #718096;
+  font-weight: 500;
+  color: #a0aec0;
   margin: 0;
 }
 
-.panel-empty span {
+.studio-empty span {
   font-size: 12px;
+  color: #cbd5e0;
   line-height: 1.5;
-}
-
-.panel-loading {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  color: #718096;
 }
 </style>
