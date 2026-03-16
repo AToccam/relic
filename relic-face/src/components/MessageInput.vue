@@ -114,11 +114,11 @@ function handleKeydown(e: KeyboardEvent) {
 <style scoped>
 .input-area {
   padding: 12px 20px 16px;
-  border-top: 1px solid #2d3748;
+  border-top: 1px solid #e2e8f0;
   display: flex;
   gap: 10px;
   align-items: flex-end;
-  background: #1a202c;
+  background: #ffffff;
 }
 
 .editor-area {
@@ -130,9 +130,9 @@ function handleKeydown(e: KeyboardEvent) {
 
 textarea {
   resize: none;
-  background: #2d3748;
-  color: #e2e8f0;
-  border: 1px solid #4a5568;
+  background: #f8f9fa;
+  color: #1a202c;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 10px 12px;
   font-size: 14px;
@@ -144,11 +144,12 @@ textarea {
 }
 
 textarea:focus {
-  border-color: #3b82f6;
+  border-color: #6366f1;
+  background: #ffffff;
 }
 
 textarea::placeholder {
-  color: #718096;
+  color: #a0aec0;
 }
 
 .input-actions {
@@ -161,7 +162,7 @@ textarea::placeholder {
 input[type='file'] {
   width: 112px;
   font-size: 12px;
-  color: #a0aec0;
+  color: #718096;
 }
 
 .send-btn,
@@ -177,12 +178,12 @@ input[type='file'] {
 }
 
 .send-btn {
-  background: #3b82f6;
+  background: #6366f1;
   color: #fff;
 }
 
 .send-btn:hover:not(:disabled) {
-  background: #2563eb;
+  background: #4f46e5;
 }
 
 .send-btn:disabled {
@@ -191,12 +192,12 @@ input[type='file'] {
 }
 
 .stop-btn {
-  background: #e53e3e;
+  background: #ef4444;
   color: #fff;
 }
 
 .stop-btn:hover {
-  background: #c53030;
+  background: #dc2626;
 }
 
 .attachments {
@@ -206,17 +207,17 @@ input[type='file'] {
 }
 
 .attachment-item {
-  border: 1px solid #4a5568;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 8px;
-  background: #2d3748;
+  background: #f8f9fa;
 }
 
 .attachment-title {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  color: #cbd5e0;
+  color: #4a5568;
   font-size: 12px;
   margin-bottom: 6px;
 }
@@ -224,7 +225,7 @@ input[type='file'] {
 .remove-btn {
   border: none;
   background: transparent;
-  color: #f87171;
+  color: #ef4444;
   cursor: pointer;
   font-size: 12px;
 }
@@ -244,14 +245,14 @@ input[type='file'] {
   max-height: 200px;
   width: 100%;
   border-radius: 6px;
-  background: #111827;
+  background: #e2e8f0;
 }
 
 .preview-file {
-  color: #cbd5e0;
+  color: #718096;
   font-size: 12px;
   padding: 8px;
-  border: 1px dashed #4a5568;
+  border: 1px dashed #cbd5e0;
   border-radius: 6px;
 }
 </style>

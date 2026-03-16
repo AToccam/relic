@@ -35,12 +35,12 @@ watch(
 .message-list {
   flex: 1;
   overflow-y: auto;
-  padding: 24px 20px;
+  padding: 24px 28px;
   display: flex;
   flex-direction: column;
   gap: 4px;
   scrollbar-width: thin;
-  scrollbar-color: #4a5568 transparent;
+  scrollbar-color: #cbd5e0 transparent;
 }
 
 .empty-hint {
@@ -49,7 +49,7 @@ watch(
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #718096;
+  color: #a0aec0;
   text-align: center;
   user-select: none;
 }
@@ -57,11 +57,12 @@ watch(
 .empty-hint p {
   font-size: 22px;
   font-weight: 600;
-  color: #a0aec0;
+  color: #4a5568;
   margin: 0 0 8px;
 }
 
 .empty-hint span {
   font-size: 14px;
+  color: #a0aec0;
 }
 </style>

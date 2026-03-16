@@ -53,12 +53,13 @@ const html = computed(() =>
   font-size: 12px;
   font-weight: 600;
   flex-shrink: 0;
-  background: #4a5568;
-  color: #e2e8f0;
+  background: #e2e8f0;
+  color: #4a5568;
 }
 
 .message-item.user .avatar {
-  background: #3b82f6;
+  background: #6366f1;
+  color: #fff;
 }
 
 .bubble {
@@ -67,13 +68,13 @@ const html = computed(() =>
   border-radius: 12px;
   line-height: 1.6;
   font-size: 14px;
-  background: #2d3748;
-  color: #e2e8f0;
+  background: #f1f5f9;
+  color: #1a202c;
   word-break: break-word;
 }
 
 .message-item.user .bubble {
-  background: #1d4ed8;
+  background: #6366f1;
   color: #fff;
   border-bottom-right-radius: 4px;
 }
@@ -94,7 +95,7 @@ const html = computed(() =>
 }
 
 .attachment-preview-item {
-  background: rgba(15, 23, 42, 0.35);
+  background: rgba(0, 0, 0, 0.05);
   border-radius: 8px;
   padding: 6px;
 }
@@ -115,21 +116,21 @@ const html = computed(() =>
   width: 100%;
   max-height: 240px;
   border-radius: 6px;
-  background: #111827;
+  background: #e2e8f0;
 }
 
 .inline-file {
-  border: 1px dashed #4a5568;
+  border: 1px dashed #cbd5e0;
   border-radius: 6px;
   padding: 8px;
-  color: #cbd5e0;
+  color: #718096;
   font-size: 12px;
 }
 
 .cursor {
   display: inline-block;
   animation: blink 0.8s step-end infinite;
-  color: #90cdf4;
+  color: #6366f1;
   margin-left: 2px;
 }
 
@@ -141,7 +142,7 @@ const html = computed(() =>
 .markdown-body :deep(p) { margin: 0 0 8px; }
 .markdown-body :deep(p:last-child) { margin-bottom: 0; }
 .markdown-body :deep(pre) {
-  background: #1a202c;
+  background: #e2e8f0;
   border-radius: 6px;
   padding: 10px 12px;
   overflow-x: auto;
@@ -149,15 +150,17 @@ const html = computed(() =>
   font-size: 13px;
 }
 .markdown-body :deep(code) {
-  background: #1a202c;
+  background: #e2e8f0;
   border-radius: 4px;
   padding: 1px 4px;
   font-size: 13px;
   font-family: 'Consolas', 'Monaco', monospace;
+  color: #6366f1;
 }
 .markdown-body :deep(pre code) {
   padding: 0;
   background: none;
+  color: #1a202c;
 }
 .markdown-body :deep(ul),
 .markdown-body :deep(ol) { padding-left: 20px; margin: 6px 0; }
@@ -166,9 +169,9 @@ const html = computed(() =>
 .markdown-body :deep(h2),
 .markdown-body :deep(h3) { margin: 10px 0 6px; font-weight: 600; }
 .markdown-body :deep(blockquote) {
-  border-left: 3px solid #4a5568;
+  border-left: 3px solid #cbd5e0;
   padding-left: 10px;
-  color: #a0aec0;
+  color: #718096;
   margin: 6px 0;
 }
 </style>
