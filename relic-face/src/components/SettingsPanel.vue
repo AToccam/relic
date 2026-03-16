@@ -37,8 +37,10 @@ const multiPrompt = ref('你好，请用一句话介绍你自己')
             </div>
             <p class="mode-hint">
               {{ settings.mode === 'multi'
-                ? `${settings.multiAdvisors.join(' + ')} 协同 → ${settings.multiLeader} 聚合`
-                : 'DeepSeek 直接回答' }}
+                ? settings.multiAdvisors.length
+                  ? `${settings.multiAdvisors.join(' + ')} 协同 → ${settings.multiLeader} 聚合`
+                  : '等待后端连接以配置角色…'
+                : '单模型直接回答' }}
             </p>
           </section>
 
