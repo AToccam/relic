@@ -1,9 +1,7 @@
-import type { ChatContent } from '@/types'
-
 const BASE = '/api'
 
 export async function streamChat(
-  messages: Array<{ role: string; content: ChatContent }>,
+  messages: Array<{ role: string; content: string }>,
   onChunk: (text: string) => void,
   signal?: AbortSignal
 ): Promise<void> {

@@ -2,47 +2,8 @@ export interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
-  apiContent?: ChatContent
   streaming?: boolean
 }
-
-export interface TextPart {
-  type: 'text'
-  text: string
-}
-
-export interface ImageUrlPart {
-  type: 'image_url'
-  image_url: {
-    url: string
-  }
-}
-
-export interface InputAudioPart {
-  type: 'input_audio'
-  input_audio: {
-    data: string
-    format: string
-  }
-}
-
-export interface VideoUrlPart {
-  type: 'video_url'
-  video_url: {
-    url: string
-  }
-}
-
-export interface FileUrlPart {
-  type: 'file_url'
-  file_url: {
-    url: string
-    filename?: string
-    mime_type?: string
-  }
-}
-
-export type ChatContent = string | Array<TextPart | ImageUrlPart | InputAudioPart | VideoUrlPart | FileUrlPart>
 
 export type Mode = 'single' | 'multi'
 

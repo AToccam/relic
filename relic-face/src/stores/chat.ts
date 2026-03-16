@@ -32,7 +32,7 @@ export const useChatStore = defineStore('chat', () => {
     try {
       const payload = messages.value
         .filter(m => m.id !== assistantMsg.id)
-        .map(m => ({ role: m.role, content: m.apiContent ?? m.content }))
+        .map(m => ({ role: m.role, content: m.content }))
 
       await streamChat(
         payload,
