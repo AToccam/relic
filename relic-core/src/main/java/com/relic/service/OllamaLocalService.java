@@ -7,6 +7,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.BufferedReader;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -16,6 +19,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Locale;
+import java.util.function.Consumer;
 
 /**
  * 本地 Ollama 微型模型服务：
@@ -107,6 +111,19 @@ public class OllamaLocalService implements LocalIntentClassifier {
         }
     }
 
+    public void streamSimpleAnswer(String userMessage, Consumer<String> onChunk) {
+        String system = "你是本地离线助手。请直接给出简洁、可执行、尽量正确的回答，不要编造实时数据。";
+        String prompt = "用户问题：\n" + userMessage + "\n\n"
+                + "请给出简要回答（尽量 120 字以内）；如果需要联网实时信息，明确说明当前为离线回答。";
+
+        try {
+            streamGenerate(system, prompt, 220, 0.2, answerTimeoutMs, onChunk);
+        } catch (Exception e) {
+            log.warn("Ollama 本地流式回答失败: {}", e.getMessage());
+            onChunk.accept("当前云端 AI 暂不可用，且本地应急模型调用失败，请稍后重试。");
+        }
+    }
+
     private String generate(String system,
                             String prompt,
                             int numPredict,
@@ -147,6 +164,81 @@ public class OllamaLocalService implements LocalIntentClassifier {
         @SuppressWarnings("unchecked")
         Map<String, Object> parsed = objectMapper.readValue(response.body(), Map.class);
         return extractText(parsed);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void streamGenerate(String system,
+                                String prompt,
+                                int numPredict,
+                                double temperature,
+                                int timeoutMs,
+                                Consumer<String> onChunk)
+            throws IOException, InterruptedException {
+        Map<String, Object> body = new HashMap<>();
+        body.put("model", model);
+        body.put("system", system);
+        body.put("prompt", prompt);
+        body.put("stream", true);
+        if (disableThinking) {
+            body.put("think", false);
+        }
+        body.put("options", Map.of(
+                "temperature", temperature,
+                "num_predict", numPredict
+        ));
+
+        String jsonBody = objectMapper.writeValueAsString(body);
+
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(timeoutMs))
+                .build();
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(resolveGenerateUrl()))
+                .timeout(Duration.ofMillis(Math.max(500, timeoutMs)))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                .build();
+
+        HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            String errorBody;
+            try (BufferedReader errReader = new BufferedReader(
+                    new InputStreamReader(response.body()))) {
+                errorBody = errReader.lines().collect(java.util.stream.Collectors.joining("\n"));
+            }
+            throw new IOException("ollama-http-" + response.statusCode() + ": " + errorBody);
+        }
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(response.body()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty()) {
+                    continue;
+                }
+
+                Map<String, Object> parsed;
+                try {
+                    parsed = objectMapper.readValue(trimmed, Map.class);
+                } catch (Exception ignored) {
+                    continue;
+                }
+
+                Object chunk = parsed.get("response");
+                if (chunk != null) {
+                    String text = chunk.toString();
+                    if (!text.isEmpty()) {
+                        onChunk.accept(text);
+                    }
+                }
+
+                Object done = parsed.get("done");
+                if (done instanceof Boolean b && b) {
+                    break;
+                }
+            }
+        }
     }
 
     private String resolveGenerateUrl() {

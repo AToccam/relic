@@ -628,9 +628,8 @@ public class AiRouterService {
         String question = extractLatestUserMessage(messages);
         if (localFallbackService.isPresent()) {
             log.warn("【本地兜底-流式】检测到上游异常，转 Ollama 简答。原因: {}", reason);
-            String answer = localFallbackService.get().simpleAnswer(question);
             onChunk.accept("\n\n连接失败，当前调用本地模型。\n\n");
-            onChunk.accept(answer);
+            localFallbackService.get().streamSimpleAnswer(question, onChunk);
             return;
         }
         onChunk.accept("\n\n⚠️ 云端 AI 暂不可用，且未配置本地兜底模型。\n");
@@ -653,9 +652,8 @@ public class AiRouterService {
 
     private void streamFastLocal(List<Map<String, Object>> messages, Consumer<String> onChunk) {
         String question = extractLatestUserMessage(messages);
-        String answer = localFallbackService.get().simpleAnswer(question);
         onChunk.accept("⚡️快速模式：当前调用本地模型。\n\n");
-        onChunk.accept(answer);
+        localFallbackService.get().streamSimpleAnswer(question, onChunk);
     }
 
     private void streamFastLocalOrCloud(List<Map<String, Object>> messages,
@@ -668,7 +666,7 @@ public class AiRouterService {
             return;
         }
         onChunk.accept("⚡️快速模式：当前调用本地模型。\n\n");
-        onChunk.accept(answer);
+        localFallbackService.get().streamSimpleAnswer(question, onChunk);
     }
 
     private boolean isLocalFallbackFailureText(String text) {

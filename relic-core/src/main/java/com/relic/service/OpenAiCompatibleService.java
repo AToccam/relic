@@ -8,6 +8,15 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +45,11 @@ public abstract class OpenAiCompatibleService implements AiProvider {
     }
 
     @Override
+    public boolean supportsStream() {
+        return true;
+    }
+
+    @Override
     public String ask(String prompt) {
         return ask(List.of(Map.of("role", "user", "content", prompt)));
     }
@@ -50,6 +64,11 @@ public abstract class OpenAiCompatibleService implements AiProvider {
         } catch (Exception e) {
             return "连接 " + providerDisplayName() + " 失败：" + e.getMessage();
         }
+    }
+
+    @Override
+    public void stream(List<Map<String, Object>> messages, Consumer<String> onChunk) throws Exception {
+        streamWithTools(messages, null, onChunk);
     }
 
     @Override
@@ -69,13 +88,130 @@ public abstract class OpenAiCompatibleService implements AiProvider {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public ToolCallResult streamWithTools(List<Map<String, Object>> messages,
                                           List<Map<String, Object>> tools,
                                           Consumer<String> onChunk) throws Exception {
-        ToolCallResult result = askWithTools(messages, tools);
-        String text = result.getContentString();
-        if (text != null && !text.isEmpty()) {
-            onChunk.accept(text);
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(20))
+                .build();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(getApiKey());
+
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("model", getModel());
+        requestBody.put("messages", messages);
+        requestBody.put("temperature", 0.7);
+        requestBody.put("stream", true);
+        if (tools != null && !tools.isEmpty()) {
+            requestBody.put("tools", tools);
+        }
+
+        String jsonBody = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(requestBody);
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(getUrl()))
+                .timeout(Duration.ofSeconds(300))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + getApiKey())
+                .header("Accept", "text/event-stream")
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                .build();
+
+        HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            String errorBody;
+            try (BufferedReader errReader = new BufferedReader(
+                    new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+                errorBody = errReader.lines().collect(java.util.stream.Collectors.joining("\n"));
+            }
+            throw new RuntimeException(providerDisplayName() + " API 错误 (HTTP "
+                    + response.statusCode() + "): " + errorBody);
+        }
+
+        ToolCallResult result = new ToolCallResult();
+
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String trimmed = line.trim();
+                if (!trimmed.startsWith("data:")) {
+                    continue;
+                }
+
+                String data = trimmed.substring(5).trim();
+                if ("[DONE]".equals(data)) {
+                    break;
+                }
+
+                Map<String, Object> chunk;
+                try {
+                    chunk = new com.fasterxml.jackson.databind.ObjectMapper().readValue(data, Map.class);
+                } catch (Exception ignored) {
+                    // 跳过心跳或非 JSON 片段
+                    continue;
+                }
+
+                List<Map<String, Object>> choices = (List<Map<String, Object>>) chunk.get("choices");
+                if (choices == null || choices.isEmpty()) {
+                    continue;
+                }
+
+                Map<String, Object> choice = choices.get(0);
+                String finishReason = (String) choice.get("finish_reason");
+                if (finishReason != null) {
+                    result.setFinishReason(finishReason);
+                }
+
+                Map<String, Object> delta = (Map<String, Object>) choice.get("delta");
+                if (delta == null) {
+                    continue;
+                }
+
+                Object contentObj = delta.get("content");
+                String content = MessageHelper.extractTextContent(contentObj);
+                if (content != null && !content.isBlank()) {
+                    result.getContent().append(content);
+                    onChunk.accept(content);
+                }
+
+                List<Map<String, Object>> toolCallDeltas =
+                        (List<Map<String, Object>>) delta.get("tool_calls");
+                if (toolCallDeltas == null || toolCallDeltas.isEmpty()) {
+                    continue;
+                }
+
+                for (Map<String, Object> tcDelta : toolCallDeltas) {
+                    int index = ((Number) tcDelta.getOrDefault("index", 0)).intValue();
+                    while (result.getToolCalls().size() <= index) {
+                        result.getToolCalls().add(new ToolCallResult.ToolCall());
+                    }
+
+                    ToolCallResult.ToolCall tc = result.getToolCalls().get(index);
+                    String id = (String) tcDelta.get("id");
+                    if (id != null) {
+                        tc.setId(id);
+                    }
+
+                    Map<String, Object> function = (Map<String, Object>) tcDelta.get("function");
+                    if (function == null) {
+                        continue;
+                    }
+
+                    String name = (String) function.get("name");
+                    if (name != null) {
+                        tc.setName(name);
+                    }
+
+                    String args = (String) function.get("arguments");
+                    if (args != null) {
+                        tc.getArguments().append(args);
+                    }
+                }
+            }
         }
         return result;
     }
