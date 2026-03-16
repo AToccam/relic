@@ -2,6 +2,7 @@ package com.relic.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -30,7 +31,7 @@ public class OllamaLocalService implements LocalIntentClassifier {
     @Value("${relic.router.local-model.endpoint:http://127.0.0.1:11434}")
     private String endpoint;
 
-    @Value("${relic.router.local-model.model:qwen3.5:2B}")
+    @Value("${relic.router.local-model.model:gemma3:1b}")
     private String model;
 
     @Value("${relic.router.local-model.classify-timeout-ms:3000}")
@@ -41,6 +42,17 @@ public class OllamaLocalService implements LocalIntentClassifier {
 
     @Value("${relic.router.local-model.disable-thinking:true}")
     private boolean disableThinking;
+
+    @PostConstruct
+    public void logStartupConfiguration() {
+        log.info("========== Ollama Local Model Configuration ==========");
+        log.info("endpoint: {}", endpoint);
+        log.info("model: {}", model);
+        log.info("disableThinking: {}", disableThinking);
+        log.info("classifyTimeoutMs: {}", classifyTimeoutMs);
+        log.info("answerTimeoutMs: {}", answerTimeoutMs);
+        log.info("=====================================================");
+    }
 
     @Override
     public Optional<SemanticRouter.RoutePath> classify(String userMessage) {

@@ -8,6 +8,8 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import jakarta.annotation.PostConstruct;
+
 import java.net.ConnectException;
 import java.net.UnknownHostException;
 import java.nio.channels.UnresolvedAddressException;
@@ -57,6 +59,18 @@ public class AiRouterService {
         }
     }
 
+    @PostConstruct
+    public void logStartupConfiguration() {
+        log.info("========== AI Router Configuration ==========");
+        log.info("启动模式: {}", currentMode);
+        log.info("主力模型: {}", AGGREGATOR);
+        log.info("Advisor 列表: {}", ADVISORS);
+        log.info("已注册 Provider: {}", providerMap.keySet());
+        log.info("FAST 是否优先走本地模型: {}", fastUseLocal);
+        log.info("本地兜底服务是否可用: {}", localFallbackService.isPresent());
+        log.info("============================================");
+    }
+
     //模式管理
     public Mode getMode() { return currentMode; }
 
@@ -103,7 +117,7 @@ public class AiRouterService {
 
                 if (decision.path() == SemanticRouter.RoutePath.FAST
                         && fastUseLocal && localFallbackService.isPresent()) {
-                    streamFastLocal(messages, onChunk);
+                    streamFastLocalOrCloud(messages, onChunk);
                 } else {
                     streamSingle(messages, onChunk);
                 }
@@ -117,7 +131,7 @@ public class AiRouterService {
                 case TOOL_FIRST -> streamSingle(messages, onChunk);
                 case FAST -> {
                     if (fastUseLocal && localFallbackService.isPresent()) {
-                        streamFastLocal(messages, onChunk);
+                        streamFastLocalOrCloud(messages, onChunk);
                     } else {
                         streamSingle(messages, onChunk);
                     }
@@ -155,7 +169,7 @@ public class AiRouterService {
 
                 if (decision.path() == SemanticRouter.RoutePath.FAST
                         && fastUseLocal && localFallbackService.isPresent()) {
-                    result = askFastLocal(messages);
+                    result = askFastLocalOrCloud(messages);
                 } else {
                     List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
                     result = toolCallService.askWithTools(getProvider(AGGREGATOR), enriched);
@@ -167,7 +181,7 @@ public class AiRouterService {
                     result = askMulti(messages);
                 } else if (decision.path() == SemanticRouter.RoutePath.FAST
                         && fastUseLocal && localFallbackService.isPresent()) {
-                    result = askFastLocal(messages);
+                    result = askFastLocalOrCloud(messages);
                 } else {
                     List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
                     result = toolCallService.askWithTools(getProvider(AGGREGATOR), enriched);
@@ -419,11 +433,42 @@ public class AiRouterService {
         return "⚡️快速模式：当前调用本地模型。\n" + localFallbackService.get().simpleAnswer(question);
     }
 
+    private String askFastLocalOrCloud(List<Map<String, Object>> messages) {
+        String localAnswer = askFastLocal(messages);
+        if (isLocalFallbackFailureText(localAnswer)) {
+            log.warn("【FAST 本地失败】自动回退云端主模型");
+            List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
+            return toolCallService.askWithTools(getProvider(AGGREGATOR), enriched);
+        }
+        return localAnswer;
+    }
+
     private void streamFastLocal(List<Map<String, Object>> messages, Consumer<String> onChunk) {
         String question = extractLatestUserMessage(messages);
         String answer = localFallbackService.get().simpleAnswer(question);
         onChunk.accept("⚡️快速模式：当前调用本地模型。\n\n");
         onChunk.accept(answer);
+    }
+
+    private void streamFastLocalOrCloud(List<Map<String, Object>> messages,
+                                        Consumer<String> onChunk) throws Exception {
+        String question = extractLatestUserMessage(messages);
+        String answer = localFallbackService.get().simpleAnswer(question);
+        if (isLocalFallbackFailureText(answer)) {
+            log.warn("【FAST 本地失败-流式】自动回退云端主模型");
+            streamSingle(messages, onChunk);
+            return;
+        }
+        onChunk.accept("⚡️快速模式：当前调用本地模型。\n\n");
+        onChunk.accept(answer);
+    }
+
+    private boolean isLocalFallbackFailureText(String text) {
+        if (text == null) return true;
+        String lower = text.toLowerCase(Locale.ROOT);
+        return lower.contains("本地应急模型调用失败")
+                || lower.contains("本地模型也未返回内容")
+                || lower.contains("ollama") && lower.contains("失败");
     }
 
     private String describeThrowable(Throwable e) {

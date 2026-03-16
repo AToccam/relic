@@ -29,7 +29,7 @@ import java.util.function.Consumer;
 
 @Slf4j
 @Service
-public class DeepSeekService implements AiProvider {
+public class DeepSeekService extends OpenAiCompatibleService {
 
     private final String API_KEY = "sk-d7cbb8c351964fab8c6a7d8709e9da7b";
     private final String URL = "https://api.deepseek.com/chat/completions";
@@ -47,69 +47,23 @@ public class DeepSeekService implements AiProvider {
     public String getName() { return "deepseek"; }
 
     @Override
+    protected String getApiKey() { return API_KEY; }
+
+    @Override
+    protected String getUrl() { return URL; }
+
+    @Override
+    protected String getModel() { return "deepseek-chat"; }
+
+    @Override
+    protected String providerDisplayName() { return "DeepSeek"; }
+
+    @Override
     public boolean supportsStream() { return true; }
-
-    @Override
-    public boolean supportsTools() { return true; }
-
-    //纯文本问答
-    @Override
-    public String ask(String prompt) {
-        return ask(List.of(Map.of("role", "user", "content", prompt)));
-    }
-
-    @Override
-    @SuppressWarnings("unchecked")
-    public String ask(List<Map<String, Object>> messages) {
-        try {
-            Map<String, Object> choice = callOnce(messages, null);
-            Map<String, Object> message = (Map<String, Object>) choice.get("message");
-            return (String) message.get("content");
-        } catch (Exception e) {
-            return "连接 DeepSeek 失败：" + e.getMessage();
-        }
-    }
 
     @Override
     public void stream(List<Map<String, Object>> messages, Consumer<String> onChunk) throws Exception {
         streamRaw(messages, null, onChunk);
-    }
-
-    //带工具的单次调用（不含循环）
-    @Override
-    @SuppressWarnings("unchecked")
-    public ToolCallResult askWithTools(List<Map<String, Object>> messages,
-                                       List<Map<String, Object>> tools) {
-        try {
-            Map<String, Object> choice = callOnce(messages, tools);
-            Map<String, Object> message = (Map<String, Object>) choice.get("message");
-            String finishReason = (String) choice.get("finish_reason");
-
-            ToolCallResult result = new ToolCallResult();
-            result.setFinishReason(finishReason);
-
-            String content = (String) message.get("content");
-            if (content != null) {
-                result.getContent().append(content);
-            }
-
-            if ("tool_calls".equals(finishReason) && message.get("tool_calls") != null) {
-                List<Map<String, Object>> toolCalls = (List<Map<String, Object>>) message.get("tool_calls");
-                for (Map<String, Object> tc : toolCalls) {
-                    ToolCallResult.ToolCall call = new ToolCallResult.ToolCall();
-                    call.setId((String) tc.get("id"));
-                    Map<String, Object> function = (Map<String, Object>) tc.get("function");
-                    call.setName((String) function.get("name"));
-                    call.getArguments().append((String) function.get("arguments"));
-                    result.getToolCalls().add(call);
-                }
-            }
-
-            return result;
-        } catch (Exception e) {
-            log.error("DeepSeek askWithTools 失败", e);
-            return ToolCallResult.textOnly("连接 DeepSeek 失败：" + e.getMessage());
-        }
     }
 
     @Override
@@ -120,38 +74,12 @@ public class DeepSeekService implements AiProvider {
         return streamRaw(messages, tools, onChunk);
     }
 
-    // ==================== 底层 HTTP 调用 ====================
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> callOnce(List<Map<String, Object>> messages,
-                                          List<Map<String, Object>> tools) {
-        RestTemplate restTemplate = new RestTemplate();
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setBearerAuth(API_KEY);
-
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("model", "deepseek-chat");
-        requestBody.put("messages", messages);
-        requestBody.put("temperature", 0.7);
-        requestBody.put("stream", false);
-        if (tools != null && !tools.isEmpty()) {
-            requestBody.put("tools", tools);
-        }
-
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
-
-        Map<String, Object> response = restTemplate.postForObject(URL, entity, Map.class);
-        List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
-        return choices.get(0);
-    }
-
     @SuppressWarnings("unchecked")
     private ToolCallResult streamRaw(List<Map<String, Object>> messages,
                                       List<Map<String, Object>> tools,
                                       Consumer<String> onChunk) throws Exception {
         Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("model", "deepseek-chat");
+        requestBody.put("model", getModel());
         requestBody.put("messages", messages);
         requestBody.put("temperature", 0.7);
         requestBody.put("stream", true);
@@ -166,10 +94,10 @@ public class DeepSeekService implements AiProvider {
             .connectTimeout(Duration.ofMillis(Math.max(3000, connectTimeoutMs)))
                 .build();
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(URL))
+                .uri(URI.create(getUrl()))
             .timeout(Duration.ofMillis(Math.max(30_000, requestTimeoutMs)))
                 .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer " + API_KEY)
+                .header("Authorization", "Bearer " + getApiKey())
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
 

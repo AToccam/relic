@@ -4,12 +4,18 @@ import com.relic.dto.ToolCallResult;
 import com.relic.service.AiProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 /**
@@ -24,6 +30,15 @@ import java.util.function.Consumer;
 public class ToolCallService {
 
     private static final int MAX_TOOL_ROUNDS = 10;
+
+    @Value("${relic.stream.watchdog.enabled:true}")
+    private boolean streamWatchdogEnabled;
+
+    @Value("${relic.stream.watchdog.idle-timeout-ms:180000}")
+    private long streamWatchdogIdleTimeoutMs;
+
+    @Value("${relic.stream.watchdog.check-interval-ms:3000}")
+    private long streamWatchdogCheckIntervalMs;
 
     @Autowired
     private ToolExecutor toolExecutor;
@@ -74,7 +89,7 @@ public class ToolCallService {
                                  Consumer<String> onChunk) throws Exception {
         if (!provider.supportsTools()) {
             log.debug("Provider {} 不支持 tools，走纯流式路径", provider.getName());
-            provider.stream(messages, onChunk);
+            streamWithoutToolsWithWatchdog(provider, messages, onChunk);
             return;
         }
 
@@ -84,7 +99,7 @@ public class ToolCallService {
         boolean anyContentSent = false;
 
         for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
-            ToolCallResult result = provider.streamWithTools(conversation, tools, onChunk);
+            ToolCallResult result = streamWithWatchdog(provider, conversation, tools, onChunk);
 
             if (result.getContent().length() > 0) {
                 anyContentSent = true;
@@ -119,6 +134,91 @@ public class ToolCallService {
 
         log.warn("【工具调用-流式】达到最大轮次限制 {}", MAX_TOOL_ROUNDS);
         onChunk.accept("⚠️ 工具调用轮次超过限制，已停止处理。");
+    }
+
+    private void streamWithoutToolsWithWatchdog(AiProvider provider,
+                                                List<Map<String, Object>> messages,
+                                                Consumer<String> onChunk) throws Exception {
+        if (!streamWatchdogEnabled || streamWatchdogIdleTimeoutMs <= 0) {
+            provider.stream(messages, onChunk);
+            return;
+        }
+
+        AtomicLong lastChunkTs = new AtomicLong(System.currentTimeMillis());
+        Consumer<String> guardedOnChunk = chunk -> {
+            lastChunkTs.set(System.currentTimeMillis());
+            onChunk.accept(chunk);
+        };
+
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+            try {
+                provider.stream(messages, guardedOnChunk);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        waitWithIdleWatchdog(future, lastChunkTs, provider.getName(), false);
+    }
+
+    private ToolCallResult streamWithWatchdog(AiProvider provider,
+                                              List<Map<String, Object>> messages,
+                                              List<Map<String, Object>> tools,
+                                              Consumer<String> onChunk) throws Exception {
+        if (!streamWatchdogEnabled || streamWatchdogIdleTimeoutMs <= 0) {
+            return provider.streamWithTools(messages, tools, onChunk);
+        }
+
+        AtomicLong lastChunkTs = new AtomicLong(System.currentTimeMillis());
+        Consumer<String> guardedOnChunk = chunk -> {
+            lastChunkTs.set(System.currentTimeMillis());
+            onChunk.accept(chunk);
+        };
+
+        CompletableFuture<ToolCallResult> future = CompletableFuture.supplyAsync(() -> {
+            try {
+                return provider.streamWithTools(messages, tools, guardedOnChunk);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        waitWithIdleWatchdog(future, lastChunkTs, provider.getName(), true);
+        return future.join();
+    }
+
+    private void waitWithIdleWatchdog(CompletableFuture<?> future,
+                                      AtomicLong lastChunkTs,
+                                      String providerName,
+                                      boolean withTools) throws Exception {
+        long checkInterval = Math.max(500L, streamWatchdogCheckIntervalMs);
+
+        while (true) {
+            try {
+                future.get(checkInterval, TimeUnit.MILLISECONDS);
+                return;
+            } catch (TimeoutException ignored) {
+                long idle = System.currentTimeMillis() - lastChunkTs.get();
+                if (idle > streamWatchdogIdleTimeoutMs) {
+                    future.cancel(true);
+                    String mode = withTools ? "tools" : "plain";
+                    throw new RuntimeException("流式看门狗触发: provider=" + providerName
+                            + ", mode=" + mode + ", idleMs=" + idle);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw e;
+            } catch (ExecutionException e) {
+                Throwable cause = e.getCause();
+                if (cause instanceof RuntimeException re && re.getCause() instanceof Exception inner) {
+                    throw inner;
+                }
+                if (cause instanceof Exception ex) {
+                    throw ex;
+                }
+                throw new RuntimeException(cause);
+            }
+        }
     }
 
     // 内部辅助

@@ -27,10 +27,19 @@ relic:
     # 预留：本地小模型分类服务配置（后续实现可直接复用）
     local-model:
       endpoint: http://127.0.0.1:11434
-      model: qwen3.5:2B
+      model: gemma3:1b
       disable-thinking: true
       # 分类超时调高，降低冷启动/排队导致的误回退
       classify-timeout-ms: 8000
       answer-timeout-ms: 12000
+
+  stream:
+    watchdog:
+      # 是否启用统一流式看门狗（对所有 provider 生效）
+      enabled: true
+      # 超过该空闲时长未收到任何 chunk 则触发超时
+      idle-timeout-ms: 180000
+      # 看门狗轮询检查间隔
+      check-interval-ms: 3000
 
 #deepseek api key：sk-d7cbb8c351964fab8c6a7d8709e9da7b
