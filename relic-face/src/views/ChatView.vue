@@ -1,14 +1,17 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import TopNavBar from '@/components/TopNavBar.vue'
 import SidePanel from '@/components/SidePanel.vue'
 import MessageList from '@/components/MessageList.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import RightPanel from '@/components/RightPanel.vue'
+
+const showSettings = ref(false)
 </script>
 
 <template>
   <div class="chat-layout">
-    <TopNavBar />
+    <TopNavBar @open-settings="showSettings = true" />
     <div class="chat-body">
       <SidePanel />
       <main class="chat-main">
@@ -39,6 +42,6 @@ import RightPanel from '@/components/RightPanel.vue'
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #1a202c;
+  background: #ffffff;
 }
 </style>
