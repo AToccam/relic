@@ -5,6 +5,7 @@ import SidePanel from '@/components/SidePanel.vue'
 import MessageList from '@/components/MessageList.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import RightPanel from '@/components/RightPanel.vue'
+import SettingsPanel from '@/components/SettingsPanel.vue'
 
 const showSettings = ref(false)
 </script>
@@ -20,6 +21,7 @@ const showSettings = ref(false)
       </main>
       <RightPanel />
     </div>
+    <SettingsPanel v-if="showSettings" @close="showSettings = false" />
   </div>
 </template>
 
