@@ -9,6 +9,10 @@ onMounted(() => settings.fetchMode())
 
 <template>
   <aside class="side-panel">
+    <div class="panel-header">
+      <span class="panel-title">配置</span>
+    </div>
+
     <section class="panel-section">
       <h3 class="section-title">路由模式</h3>
       <div class="mode-btns">
@@ -61,9 +65,6 @@ onMounted(() => settings.fetchMode())
         后端未连接
       </div>
     </section>
-
-    <div class="panel-bottom">
-    </div>
   </aside>
 </template>
 
@@ -75,14 +76,29 @@ onMounted(() => settings.fetchMode())
   border-right: 1px solid #2d3748;
   display: flex;
   flex-direction: column;
-  padding: 16px 0;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: #2d3748 transparent;
 }
 
+.panel-header {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  border-bottom: 1px solid #2d3748;
+  flex-shrink: 0;
+}
+
+.panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #a0aec0;
+  letter-spacing: 0.3px;
+}
+
 .panel-section {
-  padding: 12px 18px;
+  padding: 14px 18px;
   border-bottom: 1px solid #2d3748;
 }
 
@@ -182,10 +198,5 @@ onMounted(() => settings.fetchMode())
   font-size: 12px;
   color: #4a5568;
   padding: 4px 0;
-}
-
-.panel-bottom {
-  margin-top: auto;
-  padding: 12px 18px 0;
 }
 </style>
