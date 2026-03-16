@@ -3,6 +3,7 @@ import TopNavBar from '@/components/TopNavBar.vue'
 import SidePanel from '@/components/SidePanel.vue'
 import MessageList from '@/components/MessageList.vue'
 import MessageInput from '@/components/MessageInput.vue'
+import RightPanel from '@/components/RightPanel.vue'
 </script>
 
 <template>
@@ -14,7 +15,7 @@ import MessageInput from '@/components/MessageInput.vue'
         <MessageList />
         <MessageInput />
       </main>
-      <div class="right-panel-placeholder" />
+      <RightPanel />
     </div>
   </div>
 </template>
@@ -39,12 +40,5 @@ import MessageInput from '@/components/MessageInput.vue'
   flex-direction: column;
   overflow: hidden;
   background: #1a202c;
-}
-
-.right-panel-placeholder {
-  width: 260px;
-  flex-shrink: 0;
-  background: #141920;
-  border-left: 1px solid #2d3748;
 }
 </style>
