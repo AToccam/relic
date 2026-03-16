@@ -6,6 +6,13 @@ defineEmits<{ close: [] }>()
 
 const settings = useSettingsStore()
 const multiPrompt = ref('你好，请用一句话介绍你自己')
+
+function onSingleProviderChange(event: Event) {
+  const target = event.target
+  if (target instanceof HTMLSelectElement) {
+    settings.switchSingleProvider(target.value)
+  }
+}
 </script>
 
 <template>
@@ -37,11 +44,30 @@ const multiPrompt = ref('你好，请用一句话介绍你自己')
             </div>
             <p class="mode-hint">
               {{ settings.mode === 'multi'
-                ? settings.multiAdvisors.length
-                  ? `${settings.multiAdvisors.join(' + ')} 协同 → ${settings.multiLeader} 聚合`
-                  : '等待后端连接以配置角色…'
+                ? '多AI协作竞争思考'
                 : '单模型直接回答' }}
             </p>
+          </section>
+
+          <!-- Single 模型选择 -->
+          <section v-if="settings.mode === 'single'" class="section">
+            <h3 class="section-title">Single 模型选择</h3>
+            <p class="section-desc">选择当前单模型模式使用的 AI 提供者</p>
+            <select
+              class="provider-select"
+              :value="settings.singleProvider"
+              @change="onSingleProviderChange"
+              :disabled="settings.singleProviderOptions.length === 0"
+            >
+              <option v-if="settings.singleProviderOptions.length === 0" value="">暂无可选模型</option>
+              <option
+                v-for="provider in settings.singleProviderOptions"
+                :key="provider"
+                :value="provider"
+              >
+                {{ provider }}
+              </option>
+            </select>
           </section>
 
           <!-- Multi 角色配置 -->
@@ -287,6 +313,29 @@ const multiPrompt = ref('你好，请用一句话介绍你自己')
   font-size: 12px;
   color: #a0aec0;
   line-height: 1.4;
+}
+
+.provider-select {
+  width: 100%;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #2d3748;
+  font-size: 13px;
+  padding: 0 10px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.provider-select:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.provider-select:disabled {
+  background: #f8f9fa;
+  color: #a0aec0;
 }
 
 .provider-row {

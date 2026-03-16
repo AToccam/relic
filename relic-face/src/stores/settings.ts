@@ -11,7 +11,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const singleProvider = ref('deepseek')
   const singleProviderOptions = computed(() => {
     const providerSet = new Set(providers.value)
-    return preferredSingleProviders.filter(p => providerSet.has(p))
+    const preferred = preferredSingleProviders.filter(p => providerSet.has(p))
+    const rest = providers.value.filter(p => !preferred.includes(p))
+    return [...preferred, ...rest]
   })
   const testResults = ref<Record<string, TestResult>>({})
   const multiTestResult = ref<MultiTestResult | null>(null)
@@ -27,6 +29,11 @@ export const useSettingsStore = defineStore('settings', () => {
       const data = await getMode()
       mode.value = data.mode
       providers.value = Array.from(data.availableProviders ?? [])
+      if (data.singleProvider) {
+        singleProvider.value = data.singleProvider
+      } else if (singleProviderOptions.value.length > 0 && !singleProviderOptions.value.includes(singleProvider.value)) {
+        singleProvider.value = singleProviderOptions.value[0] ?? ''
+      }
       // 首次加载时，默认全部提供者为 advisor，第一个为 leader
       if (multiAdvisors.value.length === 0 && providers.value.length > 0) {
         multiAdvisors.value = [...providers.value]
@@ -78,8 +85,8 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   return {
-    mode, providers, testResults, multiTestResult, loading, multiLoading,
+    mode, providers, singleProvider, singleProviderOptions, testResults, multiTestResult, loading, multiLoading,
     multiAdvisors, multiLeader,
-    fetchMode, switchMode, runTest, runMultiTest
+    fetchMode, switchMode, switchSingleProvider, runTest, runMultiTest
   }
 })
