@@ -1,202 +1,267 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
+import ComingSoonModal from './ComingSoonModal.vue'
 
 const settings = useSettingsStore()
-
 onMounted(() => settings.fetchMode())
+
+const modal = ref<string | null>(null)
 </script>
 
 <template>
   <aside class="side-panel">
     <div class="panel-header">
-      <span class="panel-title">配置</span>
+      <span class="panel-title">来源</span>
+      <button class="header-icon-btn" @click="modal = '折叠面板'" title="折叠">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <path d="M9 3v18" />
+        </svg>
+      </button>
     </div>
 
-    <section class="panel-section">
-      <h3 class="section-title">路由模式</h3>
-      <div class="mode-btns">
-        <button
-          :class="['mode-btn', { active: settings.mode === 'single' }]"
-          @click="settings.switchMode('single')"
-        >
-          Single
-        </button>
-        <button
-          :class="['mode-btn', { active: settings.mode === 'multi' }]"
-          @click="settings.switchMode('multi')"
-        >
-          Multi
-        </button>
-      </div>
-      <p class="mode-hint">
-        {{ settings.mode === 'multi'
-          ? 'Kimi + Qwen 协同 → DeepSeek 聚合'
-          : 'DeepSeek 直接回答' }}
-      </p>
-    </section>
+    <div class="panel-body">
+      <button class="add-source-btn" @click="modal = '添加来源'">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="12" y1="5" x2="12" y2="19" />
+          <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+        添加来源
+      </button>
 
-    <section class="panel-section">
-      <h3 class="section-title">提供者</h3>
+      <div class="search-bar" @click="modal = '搜索来源'">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+        <span class="search-placeholder">在网络中搜索新来源</span>
+      </div>
+
+      <div class="source-section-title">AI 提供者</div>
+
       <div
         v-for="p in settings.providers"
         :key="p"
-        class="provider-row"
+        class="source-item"
       >
-        <span class="provider-name">{{ p }}</span>
-        <div class="provider-right">
+        <div class="source-icon">{{ p.charAt(0).toUpperCase() }}</div>
+        <div class="source-info">
+          <span class="source-name">{{ p }}</span>
           <span
             v-if="settings.testResults[p]"
-            :class="['test-status', settings.testResults[p].status]"
+            :class="['source-status', settings.testResults[p].status]"
           >
-            {{ settings.testResults[p].status === 'ok' ? '✓' : '✗' }}
-            {{ settings.testResults[p].costMs }}ms
+            {{ settings.testResults[p].status === 'ok' ? '在线' : '异常' }}
+            · {{ settings.testResults[p].costMs }}ms
           </span>
-          <button
-            class="test-btn"
-            @click="settings.runTest(p)"
-            :disabled="settings.loading"
-          >
-            测试
-          </button>
+          <span v-else class="source-status unknown">未测试</span>
         </div>
       </div>
-      <div v-if="settings.providers.length === 0" class="no-providers">
-        后端未连接
+
+      <div v-if="settings.providers.length === 0" class="empty-hint">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+          <polyline points="13 2 13 9 20 9" />
+        </svg>
+        <p>后端未连接</p>
+        <span>已保存的来源将显示在此处</span>
       </div>
-    </section>
+    </div>
   </aside>
+
+  <ComingSoonModal
+    v-if="modal"
+    :title="modal"
+    @close="modal = null"
+  />
 </template>
 
 <style scoped>
 .side-panel {
   width: 240px;
   flex-shrink: 0;
-  background: #141920;
-  border-right: 1px solid #2d3748;
+  background: #f8f9fa;
+  border-right: 1px solid #e2e8f0;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: #2d3748 transparent;
+  overflow: hidden;
 }
 
 .panel-header {
   height: 48px;
   display: flex;
   align-items: center;
-  padding: 0 18px;
-  border-bottom: 1px solid #2d3748;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid #e2e8f0;
   flex-shrink: 0;
 }
 
 .panel-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  color: #a0aec0;
-  letter-spacing: 0.3px;
+  color: #1a202c;
 }
 
-.panel-section {
-  padding: 14px 18px;
-  border-bottom: 1px solid #2d3748;
-}
-
-.section-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: #718096;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  margin: 0 0 10px;
-}
-
-.mode-btns {
+.header-icon-btn {
+  width: 28px;
+  height: 28px;
   display: flex;
-  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #a0aec0;
+  cursor: pointer;
+  transition: all 0.15s;
 }
 
-.mode-btn {
+.header-icon-btn:hover {
+  background: #e2e8f0;
+  color: #4a5568;
+}
+
+.panel-body {
   flex: 1;
-  padding: 6px 0;
-  border-radius: 6px;
+  overflow-y: auto;
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e0 transparent;
+}
+
+.add-source-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 0;
+  border-radius: 8px;
+  border: 1.5px dashed #cbd5e0;
+  background: transparent;
+  color: #4a5568;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  border: 1px solid #4a5568;
-  background: transparent;
-  color: #718096;
-  transition: all 0.2s;
+  transition: all 0.15s;
+  font-family: inherit;
 }
 
-.mode-btn.active {
-  background: #3b82f6;
-  border-color: #3b82f6;
-  color: #fff;
+.add-source-btn:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+  background: rgba(99, 102, 241, 0.04);
 }
 
-.mode-btn:not(.active):hover {
-  border-color: #718096;
-  color: #a0aec0;
-}
-
-.mode-hint {
-  font-size: 11px;
-  color: #4a5568;
-  margin: 8px 0 0;
-  line-height: 1.4;
-}
-
-.provider-row {
+.search-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 6px 0;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #a0aec0;
+  cursor: pointer;
+  transition: border-color 0.15s;
 }
 
-.provider-name {
-  font-size: 13px;
+.search-bar:hover {
+  border-color: #6366f1;
+}
+
+.search-placeholder {
+  font-size: 12px;
   color: #a0aec0;
+}
+
+.source-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #a0aec0;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 4px 4px 0;
+}
+
+.source-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  transition: box-shadow 0.15s;
+}
+
+.source-item:hover {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+.source-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.source-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.source-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1a202c;
   text-transform: capitalize;
 }
 
-.provider-right {
+.source-status {
+  font-size: 11px;
+}
+
+.source-status.ok { color: #38a169; }
+.source-status.fail { color: #e53e3e; }
+.source-status.unknown { color: #a0aec0; }
+
+.empty-hint {
+  flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: 24px 0;
+  user-select: none;
 }
 
-.test-status {
-  font-size: 11px;
+.empty-hint p {
+  font-size: 13px;
+  font-weight: 500;
+  color: #a0aec0;
+  margin: 0;
 }
 
-.test-status.ok { color: #48bb78; }
-.test-status.fail { color: #fc8181; }
-
-.test-btn {
-  padding: 3px 8px;
-  font-size: 11px;
-  border-radius: 4px;
-  border: 1px solid #4a5568;
-  background: transparent;
-  color: #718096;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.test-btn:hover:not(:disabled) {
-  border-color: #3b82f6;
-  color: #90cdf4;
-}
-
-.test-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.no-providers {
+.empty-hint span {
   font-size: 12px;
-  color: #4a5568;
-  padding: 4px 0;
+  color: #cbd5e0;
+  line-height: 1.5;
 }
 </style>
