@@ -18,7 +18,9 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -132,6 +134,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
         }
 
         ToolCallResult result = new ToolCallResult();
+        Map<Integer, ToolCallResult.ToolCall> callByIndex = new LinkedHashMap<>();
 
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
@@ -185,12 +188,8 @@ public abstract class OpenAiCompatibleService implements AiProvider {
                 }
 
                 for (Map<String, Object> tcDelta : toolCallDeltas) {
-                    int index = ((Number) tcDelta.getOrDefault("index", 0)).intValue();
-                    while (result.getToolCalls().size() <= index) {
-                        result.getToolCalls().add(new ToolCallResult.ToolCall());
-                    }
-
-                    ToolCallResult.ToolCall tc = result.getToolCalls().get(index);
+                    int index = resolveToolCallIndex(tcDelta, callByIndex.size());
+                    ToolCallResult.ToolCall tc = callByIndex.computeIfAbsent(index, k -> new ToolCallResult.ToolCall());
                     String id = (String) tcDelta.get("id");
                     if (id != null) {
                         tc.setId(id);
@@ -213,7 +212,60 @@ public abstract class OpenAiCompatibleService implements AiProvider {
                 }
             }
         }
+
+        result.getToolCalls().clear();
+        callByIndex.entrySet().stream()
+                .sorted(Comparator.comparingInt(Map.Entry::getKey))
+                .map(Map.Entry::getValue)
+                .forEach(result.getToolCalls()::add);
+
+        if ("tool_calls".equals(result.getFinishReason()) && !hasExecutableToolCall(result)) {
+            ToolCallResult fallback = fallbackToolCallsByNonStream(messages, tools);
+            if (fallback != null && hasExecutableToolCall(fallback)) {
+                log.info("{} 流式 tool_calls 无有效工具名，已回退非流式补偿解析", providerDisplayName());
+                return fallback;
+            }
+        }
+
         return result;
+    }
+
+    private ToolCallResult fallbackToolCallsByNonStream(List<Map<String, Object>> messages,
+                                                        List<Map<String, Object>> tools) {
+        try {
+            Map<String, Object> choice = callOnce(messages, tools);
+            return parseToolCallResult(choice);
+        } catch (Exception e) {
+            log.warn("{} 非流式补偿解析失败: {}", providerDisplayName(), e.getMessage());
+            return null;
+        }
+    }
+
+    private boolean hasExecutableToolCall(ToolCallResult result) {
+        if (result == null || result.getToolCalls().isEmpty()) {
+            return false;
+        }
+        for (ToolCallResult.ToolCall tc : result.getToolCalls()) {
+            if (tc != null && tc.getName() != null && !tc.getName().isBlank()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private int resolveToolCallIndex(Map<String, Object> tcDelta, int defaultValue) {
+        Object idx = tcDelta.get("index");
+        if (idx instanceof Number number) {
+            return number.intValue();
+        }
+        if (idx instanceof String text) {
+            try {
+                return Integer.parseInt(text.trim());
+            } catch (NumberFormatException ignored) {
+                return defaultValue;
+            }
+        }
+        return defaultValue;
     }
 
     @SuppressWarnings("unchecked")

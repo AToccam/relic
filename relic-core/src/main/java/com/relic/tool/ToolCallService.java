@@ -4,19 +4,12 @@ import com.relic.dto.ToolCallResult;
 import com.relic.service.AiProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 /**
@@ -32,15 +25,6 @@ public class ToolCallService {
 
     private static final int MAX_TOOL_ROUNDS = 10;
 
-    @Value("${relic.stream.watchdog.enabled:true}")
-    private boolean streamWatchdogEnabled;
-
-    @Value("${relic.stream.watchdog.idle-timeout-ms:180000}")
-    private long streamWatchdogIdleTimeoutMs;
-
-    @Value("${relic.stream.watchdog.check-interval-ms:3000}")
-    private long streamWatchdogCheckIntervalMs;
-
     @Autowired
     private ToolExecutor toolExecutor;
 
@@ -54,21 +38,26 @@ public class ToolCallService {
     public String askWithTools(AiProvider provider, List<Map<String, Object>> messages) {
         if (!provider.supportsTools()) {
             log.debug("Provider {} 不支持 tools，走纯文本路径", provider.getName());
-            return provider.ask(ensureProviderCompatibleMessages(provider, messages));
+            return provider.ask(messages);
         }
 
-        List<Map<String, Object>> conversation = ensureProviderCompatibleMessages(provider, messages);
+        List<Map<String, Object>> conversation = new ArrayList<>(messages);
         List<Map<String, Object>> tools = ToolDefinitions.getAll();
 
         for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
             ToolCallResult result = provider.askWithTools(conversation, tools);
+            List<ToolCallResult.ToolCall> executable = filterExecutableToolCalls(result.getToolCalls());
 
-            if (result.hasToolCalls()) {
+            if (result.hasToolCalls() && !executable.isEmpty()) {
                 log.info("【工具调用】Provider={}, 第 {} 轮, {} 个工具",
-                        provider.getName(), round + 1, result.getToolCalls().size());
+                        provider.getName(), round + 1, executable.size());
 
                 conversation.add(result.toAssistantMessage());
-                executeAndAppend(result.getToolCalls(), conversation);
+                executeAndAppend(executable, conversation);
+            } else if (result.hasToolCalls()) {
+                log.warn("【工具调用】Provider={}, 第 {} 轮仅收到无效 tool_call，继续等待下一轮",
+                        provider.getName(), round + 1);
+                continue;
             } else {
                 return result.getContentString();
             }
@@ -88,33 +77,32 @@ public class ToolCallService {
     public void streamWithTools(AiProvider provider,
                                  List<Map<String, Object>> messages,
                                  Consumer<String> onChunk) throws Exception {
-        List<Map<String, Object>> normalizedMessages = ensureProviderCompatibleMessages(provider, messages);
-
         if (!provider.supportsTools()) {
             log.debug("Provider {} 不支持 tools，走纯流式路径", provider.getName());
-            streamWithoutToolsWithWatchdog(provider, normalizedMessages, onChunk);
+            provider.stream(messages, onChunk);
             return;
         }
 
-        List<Map<String, Object>> conversation = normalizedMessages;
+        List<Map<String, Object>> conversation = new ArrayList<>(messages);
         List<Map<String, Object>> tools = ToolDefinitions.getAll();
 
         boolean anyContentSent = false;
 
         for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
-            ToolCallResult result = streamWithWatchdog(provider, conversation, tools, onChunk);
+            ToolCallResult result = provider.streamWithTools(conversation, tools, onChunk);
+            List<ToolCallResult.ToolCall> executable = filterExecutableToolCalls(result.getToolCalls());
 
             if (result.getContent().length() > 0) {
                 anyContentSent = true;
             }
 
-            if (result.hasToolCalls()) {
+            if (result.hasToolCalls() && !executable.isEmpty()) {
                 log.info("【工具调用-流式】Provider={}, 第 {} 轮, {} 个工具",
-                        provider.getName(), round + 1, result.getToolCalls().size());
+                        provider.getName(), round + 1, executable.size());
 
                 conversation.add(result.toAssistantMessage());
 
-                for (ToolCallResult.ToolCall tc : result.getToolCalls()) {
+                for (ToolCallResult.ToolCall tc : executable) {
                     onChunk.accept("\n🔧 正在调用 " + tc.getName() + "...\n");
                     String toolResult = toolExecutor.execute(tc.getName(), tc.getArgumentsString());
                     logToolResult(tc.getName(), toolResult);
@@ -126,6 +114,10 @@ public class ToolCallService {
                     conversation.add(toolMsg);
                 }
                 onChunk.accept("\n");
+            } else if (result.hasToolCalls()) {
+                log.warn("【工具调用-流式】Provider={}, 第 {} 轮仅收到无效 tool_call，继续等待下一轮",
+                        provider.getName(), round + 1);
+                continue;
             } else {
                 if (!anyContentSent && result.getContent().length() == 0) {
                     log.warn("【工具调用-流式】AI 返回了空响应，finishReason={}", result.getFinishReason());
@@ -137,91 +129,6 @@ public class ToolCallService {
 
         log.warn("【工具调用-流式】达到最大轮次限制 {}", MAX_TOOL_ROUNDS);
         onChunk.accept("⚠️ 工具调用轮次超过限制，已停止处理。");
-    }
-
-    private void streamWithoutToolsWithWatchdog(AiProvider provider,
-                                                List<Map<String, Object>> messages,
-                                                Consumer<String> onChunk) throws Exception {
-        if (!streamWatchdogEnabled || streamWatchdogIdleTimeoutMs <= 0) {
-            provider.stream(messages, onChunk);
-            return;
-        }
-
-        AtomicLong lastChunkTs = new AtomicLong(System.currentTimeMillis());
-        Consumer<String> guardedOnChunk = chunk -> {
-            lastChunkTs.set(System.currentTimeMillis());
-            onChunk.accept(chunk);
-        };
-
-        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-            try {
-                provider.stream(messages, guardedOnChunk);
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        });
-
-        waitWithIdleWatchdog(future, lastChunkTs, provider.getName(), false);
-    }
-
-    private ToolCallResult streamWithWatchdog(AiProvider provider,
-                                              List<Map<String, Object>> messages,
-                                              List<Map<String, Object>> tools,
-                                              Consumer<String> onChunk) throws Exception {
-        if (!streamWatchdogEnabled || streamWatchdogIdleTimeoutMs <= 0) {
-            return provider.streamWithTools(messages, tools, onChunk);
-        }
-
-        AtomicLong lastChunkTs = new AtomicLong(System.currentTimeMillis());
-        Consumer<String> guardedOnChunk = chunk -> {
-            lastChunkTs.set(System.currentTimeMillis());
-            onChunk.accept(chunk);
-        };
-
-        CompletableFuture<ToolCallResult> future = CompletableFuture.supplyAsync(() -> {
-            try {
-                return provider.streamWithTools(messages, tools, guardedOnChunk);
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        });
-
-        waitWithIdleWatchdog(future, lastChunkTs, provider.getName(), true);
-        return future.join();
-    }
-
-    private void waitWithIdleWatchdog(CompletableFuture<?> future,
-                                      AtomicLong lastChunkTs,
-                                      String providerName,
-                                      boolean withTools) throws Exception {
-        long checkInterval = Math.max(500L, streamWatchdogCheckIntervalMs);
-
-        while (true) {
-            try {
-                future.get(checkInterval, TimeUnit.MILLISECONDS);
-                return;
-            } catch (TimeoutException ignored) {
-                long idle = System.currentTimeMillis() - lastChunkTs.get();
-                if (idle > streamWatchdogIdleTimeoutMs) {
-                    future.cancel(true);
-                    String mode = withTools ? "tools" : "plain";
-                    throw new RuntimeException("流式看门狗触发: provider=" + providerName
-                            + ", mode=" + mode + ", idleMs=" + idle);
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw e;
-            } catch (ExecutionException e) {
-                Throwable cause = e.getCause();
-                if (cause instanceof RuntimeException re && re.getCause() instanceof Exception inner) {
-                    throw inner;
-                }
-                if (cause instanceof Exception ex) {
-                    throw ex;
-                }
-                throw new RuntimeException(cause);
-            }
-        }
     }
 
     // 内部辅助
@@ -245,50 +152,24 @@ public class ToolCallService {
                 result.length() > 200 ? result.substring(0, 200) + "..." : result);
     }
 
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> ensureProviderCompatibleMessages(AiProvider provider,
-                                                                       List<Map<String, Object>> messages) {
-        if (provider.supportsMultimodal() || messages == null || messages.isEmpty()) {
-            return new ArrayList<>(messages == null ? List.of() : messages);
+    private List<ToolCallResult.ToolCall> filterExecutableToolCalls(List<ToolCallResult.ToolCall> toolCalls) {
+        if (toolCalls == null || toolCalls.isEmpty()) {
+            return List.of();
         }
 
-        List<Map<String, Object>> normalized = new ArrayList<>(messages.size());
-        int replacedPartCount = 0;
-
-        for (Map<String, Object> message : messages) {
-            Map<String, Object> copied = new HashMap<>(message);
-            Object content = message.get("content");
-            if (content instanceof List<?> list) {
-                List<Map<String, Object>> textParts = new ArrayList<>();
-                int replacedInMessage = 0;
-                for (Object item : list) {
-                    if (!(item instanceof Map<?, ?> raw)) {
-                        continue;
-                    }
-                    Map<String, Object> part = (Map<String, Object>) raw;
-                    String type = String.valueOf(part.getOrDefault("type", "")).toLowerCase(Locale.ROOT);
-                    if ("text".equals(type) && part.get("text") != null) {
-                        textParts.add(Map.of("type", "text", "text", part.get("text").toString()));
-                    } else {
-                        replacedPartCount++;
-                        replacedInMessage++;
-                    }
-                }
-
-                if (textParts.isEmpty() && replacedInMessage > 0) {
-                    copied.put("content", "[非文本多模态内容已省略，以兼容当前模型] ");
-                } else {
-                    copied.put("content", textParts);
-                }
+        List<ToolCallResult.ToolCall> executable = new ArrayList<>();
+        int ignored = 0;
+        for (ToolCallResult.ToolCall tc : toolCalls) {
+            if (tc == null || tc.getName() == null || tc.getName().isBlank()) {
+                ignored++;
+                continue;
             }
-            normalized.add(copied);
+            executable.add(tc);
         }
 
-        if (replacedPartCount > 0) {
-            log.info("【消息兼容转换】Provider={}，已省略 {} 个非文本多模态片段",
-                    provider.getName(), replacedPartCount);
+        if (ignored > 0) {
+            log.warn("【工具调用】过滤掉 {} 个无效 tool_call（缺少工具名）", ignored);
         }
-
-        return normalized;
+        return executable;
     }
 }

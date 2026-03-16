@@ -9,7 +9,7 @@ public class QwenService extends OpenAiCompatibleService {
     private final String API_KEY = "sk-8c46bed4d0324d12a6c44ba32f113d8e";
     private final String URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
 
-    @Value("${relic.qwen.model:qwen-vl-plus}")
+    @Value("${relic.qwen.model:qwen-plus}")
     private String model;
 
     @Override
@@ -37,6 +37,7 @@ public class QwenService extends OpenAiCompatibleService {
 
     @Override
     public boolean supportsMultimodal() {
-        return true;
+        String lower = model == null ? "" : model.toLowerCase();
+        return lower.contains("vl") || lower.contains("vision") || lower.contains("omni");
     }
 }

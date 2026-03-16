@@ -33,6 +33,7 @@ public class WebhookController {
     public Map<String, Object> getMode() {
         return Map.of(
                 "mode", aiRouter.getMode().name().toLowerCase(),
+                "singleProvider", aiRouter.getSingleProviderName(),
                 "availableProviders", aiRouter.getProviderNames()
         );
     }
@@ -40,12 +41,19 @@ public class WebhookController {
     @PostMapping("/mode")
     public Map<String, Object> setMode(@RequestBody Map<String, String> request) {
         String modeStr = request.getOrDefault("mode", "single");
+        String singleProvider = request.get("singleProvider");
         AiRouterService.Mode mode = "multi".equalsIgnoreCase(modeStr)
                 ? AiRouterService.Mode.MULTI
                 : AiRouterService.Mode.SINGLE;
         aiRouter.setMode(mode);
+        if (singleProvider != null && !singleProvider.isBlank()) {
+            aiRouter.setSingleProviderName(singleProvider);
+        }
         log.info("模式已切换为: {}", mode);
-        return Map.of("mode", mode.name().toLowerCase());
+        return Map.of(
+                "mode", mode.name().toLowerCase(),
+                "singleProvider", aiRouter.getSingleProviderName()
+        );
     }
 
 

@@ -52,6 +52,9 @@ public class AiRouterService {
     @Value("${relic.router.primary-provider:deepseek}")
     private String primaryProvider;
 
+    @Value("${relic.router.tool-provider:qwen}")
+    private String toolProvider;
+
     @Value("${relic.router.advisors:qwen,kimi}")
     private String advisorsConfig;
 
@@ -99,6 +102,7 @@ public class AiRouterService {
         log.info("========== AI Router Configuration ==========");
         log.info("启动模式: {}", currentMode);
         log.info("主力模型: {}", primaryProvider);
+        log.info("工具模型: {}", toolProvider);
         log.info("Advisor 列表: {}", advisors);
         log.info("多模态优先 Provider 列表: {}", multimodalProviders);
         log.info("已注册 Provider: {}", providerMap.keySet());
@@ -109,6 +113,22 @@ public class AiRouterService {
 
     public String getPrimaryProviderName() {
         return resolvePrimaryProviderName();
+    }
+
+    public String getSingleProviderName() {
+        return resolvePrimaryProviderName();
+    }
+
+    public void setSingleProviderName(String providerName) {
+        String candidate = providerName == null ? "" : providerName.trim();
+        if (candidate.isEmpty()) {
+            throw new IllegalArgumentException("single provider 不能为空");
+        }
+        if (!providerMap.containsKey(candidate)) {
+            throw new IllegalArgumentException("未知的 AI 提供者: " + candidate);
+        }
+        this.primaryProvider = candidate;
+        log.info("SINGLE 当前模型已切换为: {}", candidate);
     }
 
     public String getProviderNameForMessages(List<Map<String, Object>> messages) {
@@ -203,7 +223,7 @@ public class AiRouterService {
             Optional<SemanticRouter.RouteDecision> multimodalDecision = forcePrimaryForMultimodal(messages);
             if (multimodalDecision.isPresent()) {
                 decision = multimodalDecision.get();
-                String providerName = resolveProviderNameForMessages(messages);
+                String providerName = resolveToolProviderNameForMessages(messages);
                 log.info("【语义路由-多模态优先】path={}, reason={}, provider={}",
                         decision.path(), decision.reason(), providerName);
                 List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
@@ -220,7 +240,7 @@ public class AiRouterService {
                     result = askFastLocalOrCloud(messages);
                 } else {
                     List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
-                    result = toolCallService.askWithTools(getProvider(resolvePrimaryProviderName()), enriched);
+                    result = toolCallService.askWithTools(getProvider(resolveToolProviderNameForMessages(messages)), enriched);
                 }
             } else {
                 decision = semanticRouter.decide(messages);
@@ -232,7 +252,7 @@ public class AiRouterService {
                     result = askFastLocalOrCloud(messages);
                 } else {
                     List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
-                    result = toolCallService.askWithTools(getProvider(resolvePrimaryProviderName()), enriched);
+                    result = toolCallService.askWithTools(getProvider(resolveToolProviderNameForMessages(messages)), enriched);
                 }
             }
 
@@ -256,7 +276,7 @@ public class AiRouterService {
 
     public void streamSingle(List<Map<String, Object>> messages, Consumer<String> onChunk) throws Exception {
         List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
-        String providerName = resolveProviderNameForMessages(messages);
+        String providerName = resolveToolProviderNameForMessages(messages);
         toolCallService.streamWithTools(getProvider(providerName), enriched, onChunk);
     }
 
@@ -283,7 +303,7 @@ public class AiRouterService {
         log.info("【多AI协同】已收集 {} 个顾问回复，交由Leader聚合", advisorReplies.size());
 
         onChunk.accept("✅ 已收集完毕，正在生成最终回答...\n\n");
-        toolCallService.streamWithTools(getProvider(resolvePrimaryProviderName()), aggregatedMessages, onChunk);
+        toolCallService.streamWithTools(getProvider(resolveToolProviderNameForMessages(aggregatedMessages)), aggregatedMessages, onChunk);
     }
 
     /** 多 AI 协同同步输出（非流式） */
@@ -291,7 +311,7 @@ public class AiRouterService {
         String userQuestion = extractLatestUserMessage(messages);
         Map<String, String> advisorReplies = collectAdvisorReplies(userQuestion);
         List<Map<String, Object>> aggregatedMessages = MessageHelper.buildAggregatedMessages(messages, advisorReplies);
-        return toolCallService.askWithTools(getProvider(resolvePrimaryProviderName()), aggregatedMessages);
+        return toolCallService.askWithTools(getProvider(resolveToolProviderNameForMessages(aggregatedMessages)), aggregatedMessages);
     }
 
     /** 并行调用所有 advisor，收集回复（带心跳保活） */
@@ -720,10 +740,38 @@ public class AiRouterService {
         return resolvePrimaryProviderName();
     }
 
+    private String resolveToolProviderNameForMessages(List<Map<String, Object>> messages) {
+        String configured = toolProvider == null ? "" : toolProvider.trim();
+        if (!configured.isEmpty() && providerMap.containsKey(configured)) {
+            AiProvider provider = getProvider(configured);
+            if (hasMultimodalInput(messages) && !provider.supportsMultimodal()) {
+                String fallback = resolveProviderNameForMessages(messages);
+                log.warn("工具模型 [{}] 不支持多模态，回退到 {}", configured, fallback);
+                return fallback;
+            }
+            return configured;
+        }
+
+        String fallback = resolveProviderNameForMessages(messages);
+        log.warn("配置的工具模型 [{}] 不可用，自动回退到 {}", configured, fallback);
+        return fallback;
+    }
+
     private String resolveMultimodalProviderName() {
         for (String candidate : multimodalProviders) {
-            if (providerMap.containsKey(candidate)) {
+            if (!providerMap.containsKey(candidate)) {
+                continue;
+            }
+            AiProvider provider = getProvider(candidate);
+            if (provider.supportsMultimodal()) {
                 return candidate;
+            }
+        }
+
+        for (AiProvider provider : providerMap.values()) {
+            if (provider.supportsMultimodal()) {
+                log.warn("配置的多模态 Provider 不可用，自动回退到 {}", provider.getName());
+                return provider.getName();
             }
         }
 

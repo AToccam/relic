@@ -34,9 +34,6 @@ public class DeepSeekService extends OpenAiCompatibleService {
     private final String API_KEY = "sk-d7cbb8c351964fab8c6a7d8709e9da7b";
     private final String URL = "https://api.deepseek.com/chat/completions";
 
-    @Value("${relic.deepseek.model:deepseek-chat}")
-    private String model;
-
     @Value("${relic.deepseek.connect-timeout-ms:20000}")
     private int connectTimeoutMs;
 
@@ -56,7 +53,7 @@ public class DeepSeekService extends OpenAiCompatibleService {
     protected String getUrl() { return URL; }
 
     @Override
-    protected String getModel() { return model; }
+    protected String getModel() { return "deepseek-chat"; }
 
     @Override
     protected String providerDisplayName() { return "DeepSeek"; }
@@ -86,7 +83,9 @@ public class DeepSeekService extends OpenAiCompatibleService {
         requestBody.put("messages", messages);
         requestBody.put("temperature", 0.7);
         requestBody.put("stream", true);
-        applyToolPayload(requestBody, messages, tools);
+        if (tools != null && !tools.isEmpty()) {
+            requestBody.put("tools", tools);
+        }
 
         ObjectMapper objectMapper = new ObjectMapper();
         String jsonBody = objectMapper.writeValueAsString(requestBody);

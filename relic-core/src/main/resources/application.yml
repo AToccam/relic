@@ -17,9 +17,14 @@ relic:
     request-timeout-ms: 300000
     # 流式空闲超时，0 表示关闭空闲熔断
     idle-timeout-ms: 180000
+  qwen:
+    # 工具调用建议使用 qwen-plus；若改成 qwen-vl-plus 则更偏多模态识别
+    model: qwen-plus
   router:
     # 主模型 provider 名称（默认 deepseek）
     primary-provider: deepseek
+    # 工具调用优先使用的 provider（建议支持多模态）
+    tool-provider: qwen
     # 检测到图片/音频输入时的 provider 优先级（逗号分隔）
     multimodal-providers: qwen,kimi
     # 顾问 provider 列表（逗号分隔），用于 MULTI 模式
