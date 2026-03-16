@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
-import { useChatStore } from '@/stores/chat'
 
 const settings = useSettingsStore()
-const chat = useChatStore()
 
 const multiPrompt = ref('你好，请用一句话介绍你自己')
 
@@ -13,11 +11,6 @@ onMounted(() => settings.fetchMode())
 
 <template>
   <aside class="side-panel">
-    <div class="logo">
-      <span class="logo-text">Relic</span>
-      <span class="logo-sub">AI Gateway</span>
-    </div>
-
     <section class="panel-section">
       <h3 class="section-title">路由模式</h3>
       <div class="mode-btns">
@@ -99,43 +92,22 @@ onMounted(() => settings.fetchMode())
     </section>
 
     <div class="panel-bottom">
-      <button class="clear-btn" @click="chat.clear()">
-        清空对话
-      </button>
     </div>
   </aside>
 </template>
 
 <style scoped>
 .side-panel {
-  width: 220px;
+  width: 240px;
   flex-shrink: 0;
   background: #141920;
   border-right: 1px solid #2d3748;
   display: flex;
   flex-direction: column;
-  padding: 20px 0 16px;
-}
-
-.logo {
-  padding: 0 18px 20px;
-  border-bottom: 1px solid #2d3748;
-  margin-bottom: 8px;
-}
-
-.logo-text {
-  display: block;
-  font-size: 20px;
-  font-weight: 700;
-  color: #90cdf4;
-  letter-spacing: 0.5px;
-}
-
-.logo-sub {
-  font-size: 11px;
-  color: #4a5568;
-  text-transform: uppercase;
-  letter-spacing: 1px;
+  padding: 16px 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #2d3748 transparent;
 }
 
 .panel-section {
@@ -244,23 +216,6 @@ onMounted(() => settings.fetchMode())
 .panel-bottom {
   margin-top: auto;
   padding: 12px 18px 0;
-}
-
-.clear-btn {
-  width: 100%;
-  padding: 8px;
-  border-radius: 6px;
-  font-size: 13px;
-  border: 1px solid #4a5568;
-  background: transparent;
-  color: #718096;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.clear-btn:hover {
-  border-color: #e53e3e;
-  color: #fc8181;
 }
 
 .multi-test-section {
