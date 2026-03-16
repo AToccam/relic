@@ -69,9 +69,6 @@ public class AiRouterService {
     private final SemanticRouter semanticRouter;
     private final Optional<OllamaLocalService> localFallbackService;
 
-    @Value("${relic.router.fast-use-local:true}")
-    private boolean fastUseLocal;
-
     @Autowired
     private ToolCallService toolCallService;
 
@@ -106,7 +103,6 @@ public class AiRouterService {
         log.info("Advisor 列表: {}", advisors);
         log.info("多模态优先 Provider 列表: {}", multimodalProviders);
         log.info("已注册 Provider: {}", providerMap.keySet());
-        log.info("FAST 是否优先走本地模型: {}", fastUseLocal);
         log.info("本地兜底服务是否可用: {}", localFallbackService.isPresent());
         log.info("============================================");
     }
@@ -163,7 +159,7 @@ public class AiRouterService {
 
     //自动模式调度
     //根据当前模式自动选择流式输出方式
-    //SINGLE: 强制快车道；MULTI: 智能分流（快车道/工具优先/多专家）
+    //SINGLE: 主模型直答；MULTI: 智能分流（简单/工具优先/多专家）
     public void streamAuto(List<Map<String, Object>> messages, Consumer<String> onChunk) throws Exception {
         SemanticRouter.RouteDecision decision = null;
         try {
@@ -181,12 +177,7 @@ public class AiRouterService {
                 decision = semanticRouter.decide(messages);
                 log.info("【语义路由-SINGLE】path={}, reason={}", decision.path(), decision.reason());
 
-                if (decision.path() == SemanticRouter.RoutePath.FAST
-                        && fastUseLocal && localFallbackService.isPresent()) {
-                    streamFastLocalOrCloud(messages, onChunk);
-                } else {
-                    streamSingle(messages, onChunk);
-                }
+                streamSingle(messages, onChunk);
                 return;
             }
 
@@ -195,19 +186,11 @@ public class AiRouterService {
 
             switch (decision.path()) {
                 case TOOL_FIRST -> streamSingle(messages, onChunk);
-                case FAST -> {
-                    if (fastUseLocal && localFallbackService.isPresent()) {
-                        streamFastLocalOrCloud(messages, onChunk);
-                    } else {
-                        streamSingle(messages, onChunk);
-                    }
-                }
+                case FAST -> streamSingle(messages, onChunk);
                 case DEEP -> streamMulti(messages, onChunk);
             }
         } catch (Exception e) {
-            if (decision != null
-                    && decision.path() == SemanticRouter.RoutePath.FAST
-                    && isUpstreamConnectivityIssue(e)) {
+            if (isUpstreamConnectivityIssue(e)) {
                 fallbackStreamAnswer(messages, onChunk, describeThrowable(e));
                 return;
             }
@@ -235,37 +218,25 @@ public class AiRouterService {
                 decision = semanticRouter.decide(messages);
                 log.info("【语义路由-SINGLE】path={}, reason={}", decision.path(), decision.reason());
 
-                if (decision.path() == SemanticRouter.RoutePath.FAST
-                        && fastUseLocal && localFallbackService.isPresent()) {
-                    result = askFastLocalOrCloud(messages);
-                } else {
-                    List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
-                    result = toolCallService.askWithTools(getProvider(resolveToolProviderNameForMessages(messages)), enriched);
-                }
+                List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
+                result = toolCallService.askWithTools(getProvider(resolveToolProviderNameForMessages(messages)), enriched);
             } else {
                 decision = semanticRouter.decide(messages);
                 log.info("【语义路由】path={}, reason={}", decision.path(), decision.reason());
                 if (decision.path() == SemanticRouter.RoutePath.DEEP) {
                     result = askMulti(messages);
-                } else if (decision.path() == SemanticRouter.RoutePath.FAST
-                        && fastUseLocal && localFallbackService.isPresent()) {
-                    result = askFastLocalOrCloud(messages);
                 } else {
                     List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
                     result = toolCallService.askWithTools(getProvider(resolveToolProviderNameForMessages(messages)), enriched);
                 }
             }
 
-            if (decision != null
-                    && decision.path() == SemanticRouter.RoutePath.FAST
-                    && isUpstreamFailureText(result)) {
+            if (isUpstreamFailureText(result)) {
                 return fallbackTextAnswer(messages, result);
             }
             return result;
         } catch (Exception e) {
-            if (decision != null
-                    && decision.path() == SemanticRouter.RoutePath.FAST
-                    && isUpstreamConnectivityIssue(e)) {
+            if (isUpstreamConnectivityIssue(e)) {
                 return fallbackTextAnswer(messages, describeThrowable(e));
             }
             throw e;
@@ -653,48 +624,6 @@ public class AiRouterService {
             return;
         }
         onChunk.accept("\n\n⚠️ 云端 AI 暂不可用，且未配置本地兜底模型。\n");
-    }
-
-    private String askFastLocal(List<Map<String, Object>> messages) {
-        String question = extractLatestUserMessage(messages);
-        return "⚡️快速模式：当前调用本地模型。\n" + localFallbackService.get().simpleAnswer(question);
-    }
-
-    private String askFastLocalOrCloud(List<Map<String, Object>> messages) {
-        String localAnswer = askFastLocal(messages);
-        if (isLocalFallbackFailureText(localAnswer)) {
-            log.warn("【FAST 本地失败】自动回退云端主模型");
-            List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
-            return toolCallService.askWithTools(getProvider(resolvePrimaryProviderName()), enriched);
-        }
-        return localAnswer;
-    }
-
-    private void streamFastLocal(List<Map<String, Object>> messages, Consumer<String> onChunk) {
-        String question = extractLatestUserMessage(messages);
-        onChunk.accept("⚡️快速模式：当前调用本地模型。\n\n");
-        localFallbackService.get().streamSimpleAnswer(question, onChunk);
-    }
-
-    private void streamFastLocalOrCloud(List<Map<String, Object>> messages,
-                                        Consumer<String> onChunk) throws Exception {
-        String question = extractLatestUserMessage(messages);
-        String answer = localFallbackService.get().simpleAnswer(question);
-        if (isLocalFallbackFailureText(answer)) {
-            log.warn("【FAST 本地失败-流式】自动回退云端主模型");
-            streamSingle(messages, onChunk);
-            return;
-        }
-        onChunk.accept("⚡️快速模式：当前调用本地模型。\n\n");
-        localFallbackService.get().streamSimpleAnswer(question, onChunk);
-    }
-
-    private boolean isLocalFallbackFailureText(String text) {
-        if (text == null) return true;
-        String lower = text.toLowerCase(Locale.ROOT);
-        return lower.contains("本地应急模型调用失败")
-                || lower.contains("本地模型也未返回内容")
-                || lower.contains("ollama") && lower.contains("失败");
     }
 
     private String describeThrowable(Throwable e) {

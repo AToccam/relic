@@ -34,13 +34,11 @@ relic:
     advisors: deepseek,kimi
     # 开启后会优先调用 LocalIntentClassifier（若存在实现 Bean）
     enable-local-classifier: true
-    # FAST 路由是否默认走本地模型（true: 本地快速回复，false: 仍走云端主模型 Qwen）
-    fast-use-local: true
     # 本地语义分类最长等待时间，建议 >= classify-timeout-ms
     local-classifier-budget-ms: 9000
     # 超过该长度且不属于闲聊时，默认视为深度问题
     deep-question-min-chars: 80
-    # 预留：本地小模型分类服务配置（后续实现可直接复用）
+    # 本地模型仅用于语义分类和云端断连时的兜底回答
     local-model:
       endpoint: http://127.0.0.1:11434
       model: gemma3:1b
