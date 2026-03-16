@@ -23,9 +23,9 @@
    ```powershell
    irm https://ollama.com/install.ps1 | iex
    ```
-2. 安装完成后，在控制台拉起并运行 qwen3.5:2b：
+2. 安装完成后，在控制台拉起并运行 gemma3:1b：
    ```powershell
-   ollama run qwen3.5:2b
+   ollama run gemma3:1b
    ```
    首次运行会自动下载模型，下载完成后即可开始对话。
 
