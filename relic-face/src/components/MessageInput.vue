@@ -25,7 +25,7 @@ function handleKeydown(e: KeyboardEvent) {
 <template>
   <div class="input-area">
     <div v-if="sources.hasFiles" class="file-tip">
-      已附加 {{ sources.files.filter(f => !f.uploadError).length }} 个文件。发送后会优先按多模态读取，不支持时自动尝试工具读取。
+      已附加 {{ sources.files.filter(f => !f.uploadError).length }} 个文件。发送后会优先调用本地工具读取，不支持时会使用多模态模型。
     </div>
     <textarea
       v-model="input"

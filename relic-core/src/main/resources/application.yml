@@ -8,6 +8,8 @@ spring:
 relic:
   workspace:
     path: ${user.home}/.openclaw/workspace
+    # true 时 read_file 允许读取工作区外绝对路径文件
+    allow-outside-read: true
   deepseek:
     # DeepSeek 模型名，可切换为支持多模态输入的模型版本
     model: deepseek-chat

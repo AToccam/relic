@@ -22,6 +22,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +44,9 @@ public class ToolExecutor {
 
     @Value("${relic.workspace.path:#{systemProperties['user.home'] + '/.openclaw/workspace'}}")
     private String workspacePath;
+
+    @Value("${relic.workspace.allow-outside-read:true}")
+    private boolean allowOutsideRead;
 
     @PostConstruct
     public void init() {
@@ -164,7 +168,7 @@ public class ToolExecutor {
                 return "文件内容过大，最大支持 1MB";
             }
 
-            Path filePath = resolveAndValidatePath(filename);
+            Path filePath = resolveAndValidateWritePath(filename);
             Files.createDirectories(filePath.getParent());
 
             boolean exists = Files.exists(filePath);
@@ -181,7 +185,7 @@ public class ToolExecutor {
 
     private String readFile(String filename) {
         try {
-            Path filePath = resolveAndValidatePath(filename);
+            Path filePath = resolveReadPath(filename);
 
             if (!Files.exists(filePath)) {
                 return "文件不存在: " + filename;
@@ -263,7 +267,7 @@ public class ToolExecutor {
             if (subPath == null || subPath.isEmpty()) {
                 dirPath = Path.of(workspacePath).toAbsolutePath().normalize();
             } else {
-                dirPath = resolveAndValidatePath(subPath);
+                dirPath = resolveAndValidateWritePath(subPath);
             }
 
             if (!Files.exists(dirPath)) {
@@ -287,12 +291,37 @@ public class ToolExecutor {
         }
     }
 
-    // 路径安全校验， 防止路径遍历攻击，确保路径不超出工作区范围
-    private Path resolveAndValidatePath(String filename) {
+    // 写入路径仍限制在工作区，防止越权写文件
+    private Path resolveAndValidateWritePath(String filename) {
         Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
         Path resolved = workspace.resolve(filename).normalize();
 
         if (!resolved.startsWith(workspace)) {
+            throw new SecurityException("路径不允许超出工作区范围: " + filename);
+        }
+
+        return resolved;
+    }
+
+    // 读取路径支持绝对路径；当 allowOutsideRead=true 时可读取工作区外文件
+    private Path resolveReadPath(String filename) {
+        if (filename == null || filename.isBlank()) {
+            throw new SecurityException("文件路径不能为空");
+        }
+
+        Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
+        Path candidate;
+        try {
+            candidate = Path.of(filename);
+        } catch (InvalidPathException e) {
+            throw new SecurityException("非法路径: " + filename);
+        }
+
+        Path resolved = candidate.isAbsolute()
+                ? candidate.normalize()
+                : workspace.resolve(filename).normalize();
+
+        if (!allowOutsideRead && !resolved.startsWith(workspace)) {
             throw new SecurityException("路径不允许超出工作区范围: " + filename);
         }
 

@@ -1,5 +1,7 @@
 package com.relic.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.relic.tool.ToolExecutor;
 import com.relic.tool.ToolCallService;
 import com.relic.util.MessageHelper;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +20,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
 
 /**
  * AI 路由服务：管理所有 AiProvider，统一调度。
@@ -28,6 +31,9 @@ import java.util.function.Consumer;
 @Slf4j
 @Service
 public class AiRouterService {
+
+    private static final Pattern LOCAL_READABLE_FILE_PATTERN = Pattern.compile(
+            "(?i)^.+\\.(txt|md|markdown|json|xml|yaml|yml|csv|log|pdf|doc|docx)$");
 
     private static final Set<String> READABLE_TEXT_EXTENSIONS = Set.of(
         "txt", "md", "markdown", "json", "xml", "yaml", "yml", "csv", "log",
@@ -68,9 +74,13 @@ public class AiRouterService {
     private final Map<String, AiProvider> providerMap = new LinkedHashMap<>();
     private final SemanticRouter semanticRouter;
     private final Optional<OllamaLocalService> localFallbackService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
     private ToolCallService toolCallService;
+
+    @Autowired
+    private ToolExecutor toolExecutor;
 
     @Autowired
     public AiRouterService(List<AiProvider> providers,
@@ -161,37 +171,38 @@ public class AiRouterService {
     //根据当前模式自动选择流式输出方式
     //SINGLE: 主模型直答；MULTI: 智能分流（简单/工具优先/多专家）
     public void streamAuto(List<Map<String, Object>> messages, Consumer<String> onChunk) throws Exception {
+        List<Map<String, Object>> preprocessed = preprocessMessagesForLocalRead(messages);
         SemanticRouter.RouteDecision decision = null;
         try {
-            Optional<SemanticRouter.RouteDecision> multimodalDecision = forcePrimaryForMultimodal(messages);
+            Optional<SemanticRouter.RouteDecision> multimodalDecision = forcePrimaryForMultimodal(preprocessed);
             if (multimodalDecision.isPresent()) {
                 decision = multimodalDecision.get();
-                String providerName = resolveToolProviderNameForMessages(messages);
+                String providerName = resolveToolProviderNameForMessages(preprocessed);
                 log.info("【语义路由-多模态优先】path={}, reason={}, provider={}",
                         decision.path(), decision.reason(), providerName);
-                streamSingle(messages, onChunk);
+                streamSingle(preprocessed, onChunk);
                 return;
             }
 
             if (currentMode == Mode.SINGLE) {
-                decision = semanticRouter.decide(messages);
+                decision = semanticRouter.decide(preprocessed);
                 log.info("【语义路由-SINGLE】path={}, reason={}", decision.path(), decision.reason());
 
-                streamSingle(messages, onChunk);
+                streamSingle(preprocessed, onChunk);
                 return;
             }
 
-            decision = semanticRouter.decide(messages);
+            decision = semanticRouter.decide(preprocessed);
             log.info("【语义路由】path={}, reason={}", decision.path(), decision.reason());
 
             switch (decision.path()) {
-                case TOOL_FIRST -> streamSingle(messages, onChunk);
-                case FAST -> streamSingle(messages, onChunk);
-                case DEEP -> streamMulti(messages, onChunk);
+                case TOOL_FIRST -> streamSingle(preprocessed, onChunk);
+                case FAST -> streamSingle(preprocessed, onChunk);
+                case DEEP -> streamMulti(preprocessed, onChunk);
             }
         } catch (Exception e) {
             if (isUpstreamConnectivityIssue(e)) {
-                fallbackStreamAnswer(messages, onChunk, describeThrowable(e));
+                fallbackStreamAnswer(preprocessed, onChunk, describeThrowable(e));
                 return;
             }
             throw e;
@@ -200,34 +211,35 @@ public class AiRouterService {
 
     //根据当前模式自动选择同步问答方式
     public String askAuto(List<Map<String, Object>> messages) {
+        List<Map<String, Object>> preprocessed = preprocessMessagesForLocalRead(messages);
         SemanticRouter.RouteDecision decision = null;
         try {
             String result;
-            Optional<SemanticRouter.RouteDecision> multimodalDecision = forcePrimaryForMultimodal(messages);
+            Optional<SemanticRouter.RouteDecision> multimodalDecision = forcePrimaryForMultimodal(preprocessed);
             if (multimodalDecision.isPresent()) {
                 decision = multimodalDecision.get();
-                String providerName = resolveToolProviderNameForMessages(messages);
+                String providerName = resolveToolProviderNameForMessages(preprocessed);
                 log.info("【语义路由-多模态优先】path={}, reason={}, provider={}",
                         decision.path(), decision.reason(), providerName);
-                List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
+                List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(preprocessed);
                 result = toolCallService.askWithTools(getProvider(providerName), enriched);
                 return result;
             }
 
             if (currentMode == Mode.SINGLE) {
-                decision = semanticRouter.decide(messages);
+                decision = semanticRouter.decide(preprocessed);
                 log.info("【语义路由-SINGLE】path={}, reason={}", decision.path(), decision.reason());
 
-                List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
-                result = toolCallService.askWithTools(getProvider(resolveToolProviderNameForMessages(messages)), enriched);
+                List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(preprocessed);
+                result = toolCallService.askWithTools(getProvider(resolveToolProviderNameForMessages(preprocessed)), enriched);
             } else {
-                decision = semanticRouter.decide(messages);
+                decision = semanticRouter.decide(preprocessed);
                 log.info("【语义路由】path={}, reason={}", decision.path(), decision.reason());
                 if (decision.path() == SemanticRouter.RoutePath.DEEP) {
-                    result = askMulti(messages);
+                    result = askMulti(preprocessed);
                 } else {
-                    List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
-                    result = toolCallService.askWithTools(getProvider(resolveToolProviderNameForMessages(messages)), enriched);
+                    List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(preprocessed);
+                    result = toolCallService.askWithTools(getProvider(resolveToolProviderNameForMessages(preprocessed)), enriched);
                 }
             }
 
@@ -237,7 +249,7 @@ public class AiRouterService {
             return result;
         } catch (Exception e) {
             if (isUpstreamConnectivityIssue(e)) {
-                return fallbackTextAnswer(messages, describeThrowable(e));
+                return fallbackTextAnswer(preprocessed, describeThrowable(e));
             }
             throw e;
         }
@@ -467,6 +479,102 @@ public class AiRouterService {
 
         // 文件部件但无法确定类型时，默认走多模态以提升识别成功率。
         return true;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> preprocessMessagesForLocalRead(List<Map<String, Object>> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return messages;
+        }
+
+        boolean changed = false;
+        List<Map<String, Object>> out = new ArrayList<>(messages.size());
+        for (Map<String, Object> msg : messages) {
+            if (!"user".equals(msg.get("role"))) {
+                out.add(msg);
+                continue;
+            }
+
+            Object content = msg.get("content");
+            if (!(content instanceof List<?> list)) {
+                out.add(msg);
+                continue;
+            }
+
+            List<Map<String, Object>> newParts = new ArrayList<>();
+            for (Object item : list) {
+                if (!(item instanceof Map<?, ?> raw)) {
+                    continue;
+                }
+                Map<String, Object> part = new HashMap<>((Map<String, Object>) raw);
+                String filePath = extractInputFilePathForLocalRead(part);
+                if (filePath == null) {
+                    newParts.add(part);
+                    continue;
+                }
+
+                String readResult = tryReadLocalFile(filePath);
+                if (isReadFileSuccess(readResult)) {
+                    changed = true;
+                    newParts.add(Map.of(
+                            "type", "text",
+                            "text", "【本地 read_file 已读取: " + filePath + "】\n" + readResult
+                    ));
+                } else {
+                    newParts.add(part);
+                }
+            }
+
+            if (changed) {
+                Map<String, Object> newMsg = new HashMap<>(msg);
+                newMsg.put("content", newParts);
+                out.add(newMsg);
+            } else {
+                out.add(msg);
+            }
+        }
+        return changed ? out : messages;
+    }
+
+    private String extractInputFilePathForLocalRead(Map<String, Object> part) {
+        String type = String.valueOf(part.getOrDefault("type", "")).toLowerCase(Locale.ROOT);
+        if (!("input_file".equals(type) || type.contains("file") || type.contains("document")
+                || part.containsKey("input_file") || part.containsKey("file_url"))) {
+            return null;
+        }
+
+        String filePath = extractFileNameOrUrl(part);
+        if (filePath == null || filePath.isBlank()) {
+            return null;
+        }
+
+        if (!LOCAL_READABLE_FILE_PATTERN.matcher(filePath).matches()) {
+            return null;
+        }
+
+        return filePath;
+    }
+
+    private String tryReadLocalFile(String filePath) {
+        try {
+            String args = objectMapper.writeValueAsString(Map.of("filename", filePath));
+            return toolExecutor.execute("read_file", args);
+        } catch (Exception e) {
+            return "读取文件失败: " + e.getMessage();
+        }
+    }
+
+    private boolean isReadFileSuccess(String result) {
+        if (result == null || result.isBlank()) {
+            return false;
+        }
+        String text = result.trim();
+        return !text.startsWith("文件不存在")
+                && !text.startsWith("读取文件失败")
+                && !text.startsWith("安全错误")
+                && !text.startsWith("该文件可能是二进制文件")
+                && !text.startsWith("工具执行出错")
+                && !text.startsWith("未知工具");
     }
 
     @SuppressWarnings("unchecked")
