@@ -1,48 +1,34 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import ComingSoonModal from './ComingSoonModal.vue'
+import { useSourcesStore } from '@/stores/sources'
 
 const modal = ref<string | null>(null)
-
-interface SourceFile {
-  id: string
-  name: string
-  size: string
-}
-
-const files = ref<SourceFile[]>([])
+const sources = useSourcesStore()
 const fileInput = ref<HTMLInputElement | null>(null)
 const isDragging = ref(false)
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+async function addFiles(fileList: FileList) {
+  await sources.addFiles(fileList)
 }
 
-function addFiles(fileList: FileList) {
-  for (const file of Array.from(fileList)) {
-    files.value.push({
-      id: `${Date.now()}-${Math.random()}`,
-      name: file.name,
-      size: formatSize(file.size),
-    })
-  }
-}
-
-function onFileChange(e: Event) {
+async function onFileChange(e: Event) {
   const target = e.target as HTMLInputElement
-  if (target.files?.length) addFiles(target.files)
+  if (target.files?.length) {
+    await addFiles(target.files)
+  }
   if (fileInput.value) fileInput.value.value = ''
 }
 
-function onDrop(e: DragEvent) {
+async function onDrop(e: DragEvent) {
   isDragging.value = false
-  if (e.dataTransfer?.files.length) addFiles(e.dataTransfer.files)
+  if (e.dataTransfer?.files.length) {
+    await addFiles(e.dataTransfer.files)
+  }
 }
 
 function removeFile(id: string) {
-  files.value = files.value.filter(f => f.id !== id)
+  sources.removeFile(id)
 }
 </script>
 
@@ -70,7 +56,7 @@ function removeFile(id: string) {
           ref="fileInput"
           type="file"
           multiple
-          accept=".pdf,.doc,.docx,.txt,.md,.ppt,.pptx,.xls,.xlsx,.csv"
+          accept=".pdf,.doc,.docx,.txt,.md,.ppt,.pptx,.xls,.xlsx,.csv,.json,.xml,.yaml,.yml,image/*,audio/*"
           style="display:none"
           @change="onFileChange"
         />
@@ -83,13 +69,15 @@ function removeFile(id: string) {
         <span class="drop-hint">支持 PDF、Word、TXT、Excel 等格式</span>
       </div>
 
+      <div v-if="sources.uploading" class="uploading">正在上传文件...</div>
+
       <!-- 文件列表 -->
-      <template v-if="files.length">
-        <div class="source-section-title">已添加来源 · {{ files.length }}</div>
+      <template v-if="sources.files.length">
+        <div class="source-section-title">已添加来源 · {{ sources.files.length }}</div>
         <div
-          v-for="file in files"
+          v-for="file in sources.files"
           :key="file.id"
-          class="source-item"
+          :class="['source-item', { error: !!file.uploadError }]"
         >
           <div class="file-icon">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -99,7 +87,9 @@ function removeFile(id: string) {
           </div>
           <div class="file-info">
             <span class="file-name" :title="file.name">{{ file.name }}</span>
-            <span class="file-size">{{ file.size }}</span>
+            <span class="file-size">{{ file.sizeLabel }}</span>
+            <span v-if="file.uploadError" class="file-error">{{ file.uploadError }}</span>
+            <span v-else class="file-path">{{ file.relativePath }}</span>
           </div>
           <button class="remove-btn" @click="removeFile(file.id)" title="移除">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -248,6 +238,10 @@ function removeFile(id: string) {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 
+.source-item.error {
+  border-color: #fca5a5;
+}
+
 .file-icon {
   width: 28px;
   height: 28px;
@@ -280,6 +274,25 @@ function removeFile(id: string) {
 .file-size {
   font-size: 11px;
   color: #a0aec0;
+}
+
+.file-path {
+  font-size: 10px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-error {
+  font-size: 10px;
+  color: #dc2626;
+}
+
+.uploading {
+  font-size: 12px;
+  color: #6366f1;
+  text-align: center;
 }
 
 .remove-btn {

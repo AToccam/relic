@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useChatStore } from '@/stores/chat'
+import { useSourcesStore } from '@/stores/sources'
 
 const chat = useChatStore()
+const sources = useSourcesStore()
 const input = ref('')
 
 function handleSend() {
   if (chat.isStreaming) return
-  if (!input.value.trim()) return
+  if (!input.value.trim() && !sources.hasFiles) return
   chat.send(input.value.trim())
   input.value = ''
 }
@@ -22,6 +24,9 @@ function handleKeydown(e: KeyboardEvent) {
 
 <template>
   <div class="input-area">
+    <div v-if="sources.hasFiles" class="file-tip">
+      已附加 {{ sources.files.filter(f => !f.uploadError).length }} 个文件。发送后会优先按多模态读取，不支持时自动尝试工具读取。
+    </div>
     <textarea
       v-model="input"
       placeholder="输入消息… (Enter 发送，Shift+Enter 换行)"
@@ -33,7 +38,7 @@ function handleKeydown(e: KeyboardEvent) {
         v-if="!chat.isStreaming"
         class="send-btn"
         @click="handleSend"
-        :disabled="!input.trim()"
+        :disabled="!input.trim() && !sources.hasFiles"
       >
         发送
       </button>
@@ -49,9 +54,28 @@ function handleKeydown(e: KeyboardEvent) {
   padding: 12px 20px 16px;
   border-top: 1px solid #e2e8f0;
   display: flex;
+  flex-direction: column;
   gap: 10px;
-  align-items: flex-end;
+  align-items: stretch;
   background: #ffffff;
+}
+
+.file-tip {
+  font-size: 12px;
+  color: #4f46e5;
+  background: rgba(79, 70, 229, 0.08);
+  border: 1px solid rgba(79, 70, 229, 0.2);
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+textarea,
+.input-actions {
+  align-self: stretch;
+}
+
+.input-actions {
+  align-items: flex-end;
 }
 
 textarea {

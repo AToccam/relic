@@ -1,7 +1,9 @@
+import type { MessageContent } from '@/types'
+
 const BASE = '/api'
 
 export async function streamChat(
-  messages: Array<{ role: string; content: string }>,
+  messages: Array<{ role: string; content: MessageContent }>,
   onChunk: (text: string) => void,
   signal?: AbortSignal
 ): Promise<void> {
