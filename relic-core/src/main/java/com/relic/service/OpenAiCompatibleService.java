@@ -7,6 +7,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.HttpStatusCodeException;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
@@ -43,6 +44,15 @@ public abstract class OpenAiCompatibleService implements AiProvider {
 
     protected boolean toolCallEnabled() {
         return true;
+    }
+
+    // 429/overloaded 的额外重试次数（总尝试次数 = 1 + retry）
+    protected int getOverloadRetryTimes() {
+        return 2;
+    }
+
+    protected long getOverloadRetryBaseDelayMs() {
+        return 1200L;
     }
 
     @Override
@@ -124,22 +134,43 @@ public abstract class OpenAiCompatibleService implements AiProvider {
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
 
-        HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+        int maxAttempts = Math.max(1, getOverloadRetryTimes() + 1);
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                return parseStreamResponse(response.body(), onChunk, messages, tools);
+            }
+
             String errorBody;
             try (BufferedReader errReader = new BufferedReader(
                     new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
                 errorBody = errReader.lines().collect(java.util.stream.Collectors.joining("\n"));
             }
+
+            if (isRetryableOverload(response.statusCode(), errorBody) && attempt < maxAttempts) {
+                long delayMs = getOverloadRetryBaseDelayMs() * attempt;
+                log.warn("{} 发生 429/overloaded，第 {}/{} 次重试，{}ms 后继续", providerDisplayName(), attempt, maxAttempts, delayMs);
+                sleepQuietly(delayMs);
+                continue;
+            }
+
             throw new RuntimeException(providerDisplayName() + " API 错误 (HTTP "
                     + response.statusCode() + "): " + errorBody);
         }
 
+        throw new RuntimeException(providerDisplayName() + " 服务暂时繁忙，请稍后重试");
+    }
+
+    @SuppressWarnings("unchecked")
+    private ToolCallResult parseStreamResponse(InputStream responseBody,
+                                               Consumer<String> onChunk,
+                                               List<Map<String, Object>> messages,
+                                               List<Map<String, Object>> tools) throws Exception {
         ToolCallResult result = new ToolCallResult();
         Map<Integer, ToolCallResult.ToolCall> callByIndex = new LinkedHashMap<>();
 
         try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+                new InputStreamReader(responseBody, StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 String trimmed = line.trim();
@@ -287,9 +318,42 @@ public abstract class OpenAiCompatibleService implements AiProvider {
         applyToolPayload(requestBody, messages, tools);
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
-        Map<String, Object> response = restTemplate.postForObject(getUrl(), entity, Map.class);
-        List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
-        return choices.get(0);
+        int maxAttempts = Math.max(1, getOverloadRetryTimes() + 1);
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                Map<String, Object> response = restTemplate.postForObject(getUrl(), entity, Map.class);
+                List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
+                return choices.get(0);
+            } catch (HttpStatusCodeException e) {
+                String body = e.getResponseBodyAsString();
+                int status = e.getStatusCode().value();
+                if (isRetryableOverload(status, body) && attempt < maxAttempts) {
+                    long delayMs = getOverloadRetryBaseDelayMs() * attempt;
+                    log.warn("{} 非流式请求遇到 429/overloaded，第 {}/{} 次重试，{}ms 后继续", providerDisplayName(), attempt, maxAttempts, delayMs);
+                    sleepQuietly(delayMs);
+                    continue;
+                }
+                throw new RuntimeException(providerDisplayName() + " API 错误 (HTTP " + status + "): " + body, e);
+            }
+        }
+
+        throw new RuntimeException(providerDisplayName() + " 服务暂时繁忙，请稍后重试");
+    }
+
+    protected boolean isRetryableOverload(int statusCode, String responseBody) {
+        if (statusCode != 429) {
+            return false;
+        }
+        String body = responseBody == null ? "" : responseBody.toLowerCase(Locale.ROOT);
+        return body.isBlank() || body.contains("overload") || body.contains("engine_overloaded");
+    }
+
+    protected void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(Math.max(0L, millis));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     protected void applyToolPayload(Map<String, Object> requestBody,

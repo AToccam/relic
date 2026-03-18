@@ -24,8 +24,8 @@ function handleKeydown(e: KeyboardEvent) {
 
 <template>
   <div class="input-area">
-    <div v-if="sources.hasFiles" class="file-tip">
-      已附加 {{ sources.files.filter(f => !f.uploadError).length }} 个文件。发送后会优先调用本地工具读取，不支持时会使用多模态模型。
+    <div v-if="sources.usableFiles.length" class="file-tip">
+      已勾选 {{ sources.selectedUsableFiles.length }}/{{ sources.usableFiles.length }} 个文件，发送时仅会读取勾选项。
     </div>
     <textarea
       v-model="input"
@@ -38,7 +38,7 @@ function handleKeydown(e: KeyboardEvent) {
         v-if="!chat.isStreaming"
         class="send-btn"
         @click="handleSend"
-        :disabled="!input.trim() && !sources.hasFiles"
+        :disabled="!input.trim() && sources.selectedUsableFiles.length === 0"
       >
         发送
       </button>

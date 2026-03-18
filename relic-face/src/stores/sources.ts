@@ -9,6 +9,7 @@ export interface SourceFileItem {
   sizeBytes: number
   mimeType: string
   relativePath: string
+  selected: boolean
   dataUrl?: string
   uploadError?: string
 }
@@ -25,7 +26,10 @@ export const useSourcesStore = defineStore('sources', () => {
   const files = ref<SourceFileItem[]>([])
   const uploading = ref(false)
 
-  const hasFiles = computed(() => files.value.some(f => !f.uploadError))
+  const usableFiles = computed(() => files.value.filter(f => !f.uploadError))
+  const selectedUsableFiles = computed(() => usableFiles.value.filter(f => f.selected))
+  const hasFiles = computed(() => selectedUsableFiles.value.length > 0)
+  const allUsableSelected = computed(() => usableFiles.value.length > 0 && selectedUsableFiles.value.length === usableFiles.value.length)
 
   async function addFiles(fileList: FileList): Promise<UploadResult> {
     const incoming = Array.from(fileList)
@@ -48,7 +52,8 @@ export const useSourcesStore = defineStore('sources', () => {
             sizeLabel: formatSize(uploaded.size || file.size),
             sizeBytes: uploaded.size || file.size,
             mimeType,
-            relativePath: uploaded.relativePath
+            relativePath: uploaded.relativePath,
+            selected: true
           }
 
           if (isImage(mimeType) || isAudio(mimeType)) {
@@ -67,6 +72,7 @@ export const useSourcesStore = defineStore('sources', () => {
             sizeBytes: file.size,
             mimeType: file.type || 'application/octet-stream',
             relativePath: '',
+            selected: false,
             uploadError: msg
           })
         }
@@ -82,6 +88,20 @@ export const useSourcesStore = defineStore('sources', () => {
     files.value = files.value.filter(f => f.id !== id)
   }
 
+  function toggleFileSelection(id: string) {
+    const item = files.value.find(f => f.id === id)
+    if (!item || item.uploadError) return
+    item.selected = !item.selected
+  }
+
+  function setAllUsableSelection(selected: boolean) {
+    for (const file of files.value) {
+      if (!file.uploadError) {
+        file.selected = selected
+      }
+    }
+  }
+
   function clearAll() {
     files.value = []
   }
@@ -89,9 +109,14 @@ export const useSourcesStore = defineStore('sources', () => {
   return {
     files,
     hasFiles,
+    usableFiles,
+    selectedUsableFiles,
+    allUsableSelected,
     uploading,
     addFiles,
     removeFile,
+    toggleFileSelection,
+    setAllUsableSelection,
     clearAll
   }
 })

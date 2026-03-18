@@ -30,6 +30,14 @@ async function onDrop(e: DragEvent) {
 function removeFile(id: string) {
   sources.removeFile(id)
 }
+
+function toggleSelection(id: string) {
+  sources.toggleFileSelection(id)
+}
+
+function toggleSelectAll() {
+  sources.setAllUsableSelection(!sources.allUsableSelected)
+}
 </script>
 
 <template>
@@ -73,12 +81,33 @@ function removeFile(id: string) {
 
       <!-- 文件列表 -->
       <template v-if="sources.files.length">
-        <div class="source-section-title">已添加来源 · {{ sources.files.length }}</div>
+        <div class="source-section-title-row">
+          <div class="source-section-title">已添加来源 · {{ sources.files.length }}</div>
+          <button
+            v-if="sources.usableFiles.length"
+            class="section-action-btn"
+            @click="toggleSelectAll"
+          >
+            {{ sources.allUsableSelected ? '取消全选' : '全选' }}
+          </button>
+        </div>
+        <div v-if="sources.usableFiles.length" class="selection-tip">
+          已勾选 {{ sources.selectedUsableFiles.length }}/{{ sources.usableFiles.length }}，仅勾选文件会发送给 AI。
+        </div>
         <div
           v-for="file in sources.files"
           :key="file.id"
-          :class="['source-item', { error: !!file.uploadError }]"
+          :class="['source-item', { error: !!file.uploadError, selected: file.selected && !file.uploadError }]"
+          @click="toggleSelection(file.id)"
         >
+          <label v-if="!file.uploadError" class="select-box" @click.stop>
+            <input
+              type="checkbox"
+              :checked="file.selected"
+              @change="toggleSelection(file.id)"
+            />
+          </label>
+          <div v-else class="select-box placeholder"></div>
           <div class="file-icon">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -91,7 +120,7 @@ function removeFile(id: string) {
             <span v-if="file.uploadError" class="file-error">{{ file.uploadError }}</span>
             <span v-else class="file-path">{{ file.relativePath }}</span>
           </div>
-          <button class="remove-btn" @click="removeFile(file.id)" title="移除">
+          <button class="remove-btn" @click.stop="removeFile(file.id)" title="移除">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -223,6 +252,30 @@ function removeFile(id: string) {
   padding: 4px 4px 0;
 }
 
+.source-section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-action-btn {
+  border: none;
+  background: transparent;
+  color: #6366f1;
+  font-size: 11px;
+  padding: 4px;
+  cursor: pointer;
+}
+
+.selection-tip {
+  font-size: 11px;
+  color: #64748b;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
 .source-item {
   display: flex;
   align-items: center;
@@ -232,14 +285,40 @@ function removeFile(id: string) {
   background: #ffffff;
   border: 1px solid #e2e8f0;
   transition: box-shadow 0.15s;
+  cursor: pointer;
 }
 
 .source-item:hover {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 
+.source-item.selected {
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.06);
+}
+
 .source-item.error {
   border-color: #fca5a5;
+  cursor: default;
+}
+
+.select-box {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.select-box input {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.select-box.placeholder {
+  opacity: 0.3;
 }
 
 .file-icon {

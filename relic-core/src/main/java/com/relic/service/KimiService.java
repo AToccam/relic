@@ -3,6 +3,9 @@ package com.relic.service;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+import java.util.Map;
+
 @Service
 public class KimiService extends OpenAiCompatibleService {
     @Override
@@ -43,5 +46,12 @@ public class KimiService extends OpenAiCompatibleService {
     @Override
     public boolean supportsMultimodal() {
         return true;
+    }
+
+    @Override
+    protected boolean shouldForceToolChoice(List<Map<String, Object>> messages) {
+        // Moonshot/Kimi 在开启 thinking 时不接受 tool_choice=required。
+        // 保持 tools 透传并让服务端自动决定是否调用工具。
+        return false;
     }
 }

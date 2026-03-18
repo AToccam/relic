@@ -24,11 +24,11 @@ export const useChatStore = defineStore('chat', () => {
 
   async function send(userText: string) {
     if (isStreaming.value) return
-    const usableFiles = sources.files.filter(f => !f.uploadError)
-    if (!userText.trim() && usableFiles.length === 0) return
+    const selectedFiles = sources.selectedUsableFiles
+    if (!userText.trim() && selectedFiles.length === 0) return
 
-    const content = buildUserMessageContent(userText.trim(), usableFiles)
-    const displayText = buildUserDisplayText(userText.trim(), usableFiles)
+    const content = buildUserMessageContent(userText.trim(), selectedFiles)
+    const displayText = buildUserDisplayText(userText.trim(), selectedFiles)
 
     addMessage('user', displayText, content)
     const assistantMsg = addMessage('assistant', '')
