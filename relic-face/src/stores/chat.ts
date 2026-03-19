@@ -1,12 +1,16 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { streamChat } from '@/api/chat'
+import { getConversationHistory, listConversations, streamChat } from '@/api/chat'
 import { useSourcesStore } from '@/stores/sources'
 import type { Message, MessageContent, MessagePart } from '@/types'
+import type { ConversationSummary, PersistedMessage } from '@/api/chat'
 
 export const useChatStore = defineStore('chat', () => {
   const sources = useSourcesStore()
   const messages = ref<Message[]>([])
+  const conversations = ref<ConversationSummary[]>([])
+  const currentConversationId = ref('')
+  const loadingHistory = ref(false)
   const isStreaming = ref(false)
   let abortController: AbortController | null = null
 
@@ -44,8 +48,11 @@ export const useChatStore = defineStore('chat', () => {
       await streamChat(
         payload,
         (chunk) => { assistantMsg.content += chunk },
+        currentConversationId.value,
         abortController.signal
       )
+
+      await refreshConversations()
     } catch (e: unknown) {
       if (e instanceof Error && e.name !== 'AbortError') {
         assistantMsg.content += '\n\n⚠️ 连接失败：' + e.message
@@ -62,11 +69,115 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function clear() {
+    currentConversationId.value = buildConversationId()
     messages.value = []
+    conversations.value = [
+      {
+        conversationId: currentConversationId.value,
+        updatedAt: new Date().toISOString(),
+        messageCount: 0,
+        lastPreview: ''
+      },
+      ...conversations.value.filter(c => c.conversationId !== currentConversationId.value)
+    ]
   }
 
-  return { messages, isStreaming, send, stop, clear }
+  async function init() {
+    loadingHistory.value = true
+    try {
+      await refreshConversations()
+      const first = conversations.value.length > 0 ? conversations.value[0] : undefined
+      if (first) {
+        await selectConversation(first.conversationId)
+      } else {
+        clear()
+      }
+    } finally {
+      loadingHistory.value = false
+    }
+  }
+
+  async function refreshConversations() {
+    conversations.value = await listConversations()
+  }
+
+  async function selectConversation(conversationId: string) {
+    const id = (conversationId || '').trim()
+    if (!id) return
+
+    loadingHistory.value = true
+    try {
+      const history = await getConversationHistory(id)
+      currentConversationId.value = id
+      messages.value = history
+        .filter(item => item.role === 'user' || item.role === 'assistant')
+        .map(item => toUiMessage(item))
+    } finally {
+      loadingHistory.value = false
+    }
+  }
+
+  function newConversation() {
+    clear()
+  }
+
+  return {
+    messages,
+    conversations,
+    currentConversationId,
+    loadingHistory,
+    isStreaming,
+    send,
+    stop,
+    clear,
+    init,
+    refreshConversations,
+    selectConversation,
+    newConversation
+  }
 })
+
+function buildConversationId(): string {
+  return `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+}
+
+function toUiMessage(item: PersistedMessage): Message {
+  const payload = item.content
+  return {
+    id: item.id || `${Date.now()}-${Math.random()}`,
+    role: item.role,
+    payloadContent: payload,
+    content: toDisplayContent(payload),
+    streaming: false
+  }
+}
+
+function toDisplayContent(content: MessageContent): string {
+  if (typeof content === 'string') {
+    return content
+  }
+
+  const parts = Array.isArray(content) ? content : []
+  const lines: string[] = []
+  for (const part of parts) {
+    if (part.type === 'text') {
+      lines.push(part.text)
+      continue
+    }
+    if (part.type === 'input_file') {
+      lines.push(`附件: ${part.input_file.filename}`)
+      continue
+    }
+    if (part.type === 'image_url') {
+      lines.push('附件: 图片')
+      continue
+    }
+    if (part.type === 'input_audio') {
+      lines.push('附件: 音频')
+    }
+  }
+  return lines.join('\n').trim()
+}
 
 function buildUserDisplayText(userText: string, files: Array<{ name: string; relativePath: string }>): string {
   const lines: string[] = []

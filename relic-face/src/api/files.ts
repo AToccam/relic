@@ -8,6 +8,14 @@ export interface UploadFileResponse {
   size: number
 }
 
+export interface PersistedFileResponse {
+  filename: string
+  relativePath: string
+  mimeType: string
+  size: number
+  updatedAt: string
+}
+
 export async function uploadSourceFile(file: File): Promise<UploadFileResponse> {
   const form = new FormData()
   form.append('file', file)
@@ -22,4 +30,14 @@ export async function uploadSourceFile(file: File): Promise<UploadFileResponse> 
   }
 
   return response.json()
+}
+
+export async function listSourceFiles(): Promise<PersistedFileResponse[]> {
+  const response = await fetch(`${BASE}/files/list`)
+  if (!response.ok) {
+    throw new Error(`读取文件列表失败: HTTP ${response.status}`)
+  }
+
+  const json = await response.json()
+  return Array.isArray(json.items) ? json.items : []
 }

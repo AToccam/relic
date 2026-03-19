@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { uploadSourceFile } from '@/api/files'
+import { listSourceFiles, uploadSourceFile } from '@/api/files'
 
 export interface SourceFileItem {
   id: string
@@ -84,6 +84,28 @@ export const useSourcesStore = defineStore('sources', () => {
     return { okCount, errorCount }
   }
 
+  async function loadPersistedFiles() {
+    const items = await listSourceFiles()
+    const existing = new Set(files.value.map(f => f.relativePath))
+
+    for (const item of items) {
+      if (!item.relativePath || existing.has(item.relativePath)) {
+        continue
+      }
+
+      files.value.push({
+        id: `${Date.now()}-${Math.random()}`,
+        name: item.filename,
+        sizeLabel: formatSize(item.size || 0),
+        sizeBytes: item.size || 0,
+        mimeType: item.mimeType || 'application/octet-stream',
+        relativePath: item.relativePath,
+        selected: false
+      })
+      existing.add(item.relativePath)
+    }
+  }
+
   function removeFile(id: string) {
     files.value = files.value.filter(f => f.id !== id)
   }
@@ -117,7 +139,8 @@ export const useSourcesStore = defineStore('sources', () => {
     removeFile,
     toggleFileSelection,
     setAllUsableSelection,
-    clearAll
+    clearAll,
+    loadPersistedFiles
   }
 })
 

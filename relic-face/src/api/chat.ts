@@ -2,15 +2,30 @@ import type { MessageContent } from '@/types'
 
 const BASE = '/api'
 
+export interface ConversationSummary {
+  conversationId: string
+  updatedAt: string
+  messageCount: number
+  lastPreview: string
+}
+
+export interface PersistedMessage {
+  id?: string
+  role: 'user' | 'assistant'
+  content: MessageContent
+  createdAt?: string
+}
+
 export async function streamChat(
   messages: Array<{ role: string; content: MessageContent }>,
   onChunk: (text: string) => void,
+  conversationId?: string,
   signal?: AbortSignal
 ): Promise<void> {
   const response = await fetch(`${BASE}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, stream: true }),
+    body: JSON.stringify({ messages, stream: true, conversationId }),
     signal
   })
 
@@ -44,4 +59,24 @@ export async function streamChat(
       }
     }
   }
+}
+
+export async function listConversations(): Promise<ConversationSummary[]> {
+  const response = await fetch(`${BASE}/chat/conversations`)
+  if (!response.ok) {
+    throw new Error(`获取会话列表失败: HTTP ${response.status}`)
+  }
+
+  const json = await response.json()
+  return Array.isArray(json.items) ? json.items : []
+}
+
+export async function getConversationHistory(conversationId: string): Promise<PersistedMessage[]> {
+  const response = await fetch(`${BASE}/chat/history?conversationId=${encodeURIComponent(conversationId)}`)
+  if (!response.ok) {
+    throw new Error(`获取聊天记录失败: HTTP ${response.status}`)
+  }
+
+  const json = await response.json()
+  return Array.isArray(json.messages) ? json.messages : []
 }

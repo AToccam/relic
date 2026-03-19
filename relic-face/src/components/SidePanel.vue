@@ -2,9 +2,11 @@
 import { ref } from 'vue'
 import ComingSoonModal from './ComingSoonModal.vue'
 import { useSourcesStore } from '@/stores/sources'
+import { useChatStore } from '@/stores/chat'
 
 const modal = ref<string | null>(null)
 const sources = useSourcesStore()
+const chat = useChatStore()
 const fileInput = ref<HTMLInputElement | null>(null)
 const isDragging = ref(false)
 
@@ -38,6 +40,25 @@ function toggleSelection(id: string) {
 function toggleSelectAll() {
   sources.setAllUsableSelection(!sources.allUsableSelected)
 }
+
+async function openConversation(conversationId: string) {
+  await chat.selectConversation(conversationId)
+}
+
+function newConversation() {
+  chat.newConversation()
+}
+
+function formatTime(value: string): string {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const mm = `${date.getMonth() + 1}`.padStart(2, '0')
+  const dd = `${date.getDate()}`.padStart(2, '0')
+  const hh = `${date.getHours()}`.padStart(2, '0')
+  const min = `${date.getMinutes()}`.padStart(2, '0')
+  return `${mm}-${dd} ${hh}:${min}`
+}
 </script>
 
 <template>
@@ -52,87 +73,116 @@ function toggleSelectAll() {
     </div>
 
     <div class="panel-body">
-      <!-- 拖拽上传区 -->
-      <div
-        :class="['drop-zone', { dragging: isDragging }]"
-        @dragover.prevent="isDragging = true"
-        @dragleave="isDragging = false"
-        @drop.prevent="onDrop"
-        @click="fileInput?.click()"
-      >
-        <input
-          ref="fileInput"
-          type="file"
-          multiple
-          accept=".pdf,.doc,.docx,.txt,.md,.ppt,.pptx,.xls,.xlsx,.csv,.json,.xml,.yaml,.yml,image/*,audio/*"
-          style="display:none"
-          @change="onFileChange"
-        />
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="17 8 12 3 7 8" />
-          <line x1="12" y1="3" x2="12" y2="15" />
-        </svg>
-        <p class="drop-title">点击或拖拽上传文件</p>
-        <span class="drop-hint">支持 PDF、Word、TXT、Excel 等格式</span>
-      </div>
-
-      <div v-if="sources.uploading" class="uploading">正在上传文件...</div>
-
-      <!-- 文件列表 -->
-      <template v-if="sources.files.length">
+      <section class="section history-section">
         <div class="source-section-title-row">
-          <div class="source-section-title">已添加来源 · {{ sources.files.length }}</div>
-          <button
-            v-if="sources.usableFiles.length"
-            class="section-action-btn"
-            @click="toggleSelectAll"
-          >
-            {{ sources.allUsableSelected ? '取消全选' : '全选' }}
-          </button>
+          <div class="source-section-title">聊天记录</div>
+          <button class="section-action-btn" @click="newConversation">新对话</button>
         </div>
-        <div v-if="sources.usableFiles.length" class="selection-tip">
-          已勾选 {{ sources.selectedUsableFiles.length }}/{{ sources.usableFiles.length }}，仅勾选文件会发送给 AI。
-        </div>
-        <div
-          v-for="file in sources.files"
-          :key="file.id"
-          :class="['source-item', { error: !!file.uploadError, selected: file.selected && !file.uploadError }]"
-          @click="toggleSelection(file.id)"
-        >
-          <label v-if="!file.uploadError" class="select-box" @click.stop>
-            <input
-              type="checkbox"
-              :checked="file.selected"
-              @change="toggleSelection(file.id)"
-            />
-          </label>
-          <div v-else class="select-box placeholder"></div>
-          <div class="file-icon">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-            </svg>
-          </div>
-          <div class="file-info">
-            <span class="file-name" :title="file.name">{{ file.name }}</span>
-            <span class="file-size">{{ file.sizeLabel }}</span>
-            <span v-if="file.uploadError" class="file-error">{{ file.uploadError }}</span>
-            <span v-else class="file-path">{{ file.relativePath }}</span>
-          </div>
-          <button class="remove-btn" @click.stop="removeFile(file.id)" title="移除">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-      </template>
 
-      <!-- 空状态 -->
-      <div v-else class="empty-hint">
-        <p>已保存的来源将显示在此处</p>
-        <span>点击上方区域添加 PDF、文本等文件</span>
-      </div>
+        <div v-if="chat.loadingHistory" class="uploading">正在加载聊天记录...</div>
+
+        <template v-else-if="chat.conversations.length">
+          <button
+            v-for="item in chat.conversations"
+            :key="item.conversationId"
+            :class="['history-item', { active: item.conversationId === chat.currentConversationId }]"
+            @click="openConversation(item.conversationId)"
+          >
+            <span class="history-title">{{ item.lastPreview || '新对话' }}</span>
+            <span class="history-meta">
+              {{ item.messageCount }} 条 · {{ formatTime(item.updatedAt) || '刚刚' }}
+            </span>
+          </button>
+        </template>
+
+        <div v-else class="empty-hint compact">
+          <p>暂无聊天记录</p>
+          <span>发送第一条消息后会自动保存</span>
+        </div>
+      </section>
+
+      <section class="section files-section">
+        <div class="source-section-title">上传文件</div>
+
+        <div
+          :class="['drop-zone', { dragging: isDragging }]"
+          @dragover.prevent="isDragging = true"
+          @dragleave="isDragging = false"
+          @drop.prevent="onDrop"
+          @click="fileInput?.click()"
+        >
+          <input
+            ref="fileInput"
+            type="file"
+            multiple
+            accept=".pdf,.doc,.docx,.txt,.md,.ppt,.pptx,.xls,.xlsx,.csv,.json,.xml,.yaml,.yml,image/*,audio/*"
+            style="display:none"
+            @change="onFileChange"
+          />
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+          <p class="drop-title">点击或拖拽上传文件</p>
+          <span class="drop-hint">支持 PDF、Word、TXT、Excel 等格式</span>
+        </div>
+
+        <div v-if="sources.uploading" class="uploading">正在上传文件...</div>
+
+        <template v-if="sources.files.length">
+          <div class="source-section-title-row">
+            <div class="source-section-title">已上传文件 · {{ sources.files.length }}</div>
+            <button
+              v-if="sources.usableFiles.length"
+              class="section-action-btn"
+              @click="toggleSelectAll"
+            >
+              {{ sources.allUsableSelected ? '取消全选' : '全选' }}
+            </button>
+          </div>
+          <div v-if="sources.usableFiles.length" class="selection-tip">
+            已勾选 {{ sources.selectedUsableFiles.length }}/{{ sources.usableFiles.length }}，仅勾选文件会发送给 AI。
+          </div>
+          <div
+            v-for="file in sources.files"
+            :key="file.id"
+            :class="['source-item', { error: !!file.uploadError, selected: file.selected && !file.uploadError }]"
+            @click="toggleSelection(file.id)"
+          >
+            <label v-if="!file.uploadError" class="select-box" @click.stop>
+              <input
+                type="checkbox"
+                :checked="file.selected"
+                @change="toggleSelection(file.id)"
+              />
+            </label>
+            <div v-else class="select-box placeholder"></div>
+            <div class="file-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+            </div>
+            <div class="file-info">
+              <span class="file-name" :title="file.name">{{ file.name }}</span>
+              <span class="file-size">{{ file.sizeLabel }}</span>
+              <span v-if="file.uploadError" class="file-error">{{ file.uploadError }}</span>
+              <span v-else class="file-path">{{ file.relativePath }}</span>
+            </div>
+            <button class="remove-btn" @click.stop="removeFile(file.id)" title="移除">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </template>
+
+        <div v-else class="empty-hint compact">
+          <p>暂无上传文件</p>
+          <span>上传后会自动保留在后端工作区</span>
+        </div>
+      </section>
     </div>
   </aside>
 
@@ -192,13 +242,74 @@ function toggleSelectAll() {
 
 .panel-body {
   flex: 1;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 14px 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   scrollbar-width: thin;
   scrollbar-color: #cbd5e0 transparent;
+}
+
+.section {
+  min-height: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+}
+
+.history-section {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.files-section {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.history-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.history-item + .history-item {
+  margin-top: 8px;
+}
+
+.history-item:hover {
+  border-color: #6366f1;
+  background: #eef2ff;
+}
+
+.history-item.active {
+  border-color: #4f46e5;
+  background: #e0e7ff;
+}
+
+.history-title {
+  font-size: 12px;
+  color: #1e293b;
+  width: 100%;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-meta {
+  font-size: 10px;
+  color: #64748b;
 }
 
 .drop-zone {
@@ -404,6 +515,10 @@ function toggleSelectAll() {
   text-align: center;
   padding: 16px 0;
   user-select: none;
+}
+
+.empty-hint.compact {
+  min-height: 80px;
 }
 
 .empty-hint p {

@@ -7,11 +7,19 @@ import MessageInput from '@/components/MessageInput.vue'
 import RightPanel from '@/components/RightPanel.vue'
 import SettingsPanel from '@/components/SettingsPanel.vue'
 import { useSettingsStore } from '@/stores/settings'
+import { useChatStore } from '@/stores/chat'
+import { useSourcesStore } from '@/stores/sources'
 
 const showSettings = ref(false)
 const settings = useSettingsStore()
+const chat = useChatStore()
+const sources = useSourcesStore()
 
-onMounted(() => settings.fetchMode())
+onMounted(async () => {
+  await settings.fetchMode()
+  await chat.init()
+  await sources.loadPersistedFiles()
+})
 </script>
 
 <template>
