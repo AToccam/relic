@@ -2,16 +2,23 @@ import type { ModeResponse, TestResult, Mode, MultiTestResult } from '@/types'
 
 const BASE = '/api'
 
+export interface ModeUpdateRequest {
+  mode?: Mode
+  singleProvider?: string
+  multiLeader?: string
+  multiAdvisors?: string[]
+}
+
 export async function getMode(): Promise<ModeResponse> {
   const res = await fetch(`${BASE}/mode`)
   return res.json()
 }
 
-export async function setMode(mode: Mode, singleProvider?: string): Promise<ModeResponse> {
+export async function setMode(payload: ModeUpdateRequest): Promise<ModeResponse> {
   const res = await fetch(`${BASE}/mode`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode, singleProvider })
+    body: JSON.stringify(payload)
   })
   return res.json()
 }

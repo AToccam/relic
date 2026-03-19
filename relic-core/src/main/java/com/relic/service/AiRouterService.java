@@ -64,7 +64,7 @@ public class AiRouterService {
     @Value("${relic.router.advisors:qwen,kimi}")
     private String advisorsConfig;
 
-    private List<String> advisors = List.of("qwen", "kimi");
+    private volatile List<String> advisors = List.of("qwen", "kimi");
 
     @Value("${relic.router.multimodal-providers:qwen,kimi}")
     private String multimodalProvidersConfig;
@@ -135,6 +135,56 @@ public class AiRouterService {
         }
         this.primaryProvider = candidate;
         log.info("SINGLE 当前模型已切换为: {}", candidate);
+    }
+
+    public String getMultiLeaderProviderName() {
+        String configured = toolProvider == null ? "" : toolProvider.trim();
+        if (!configured.isEmpty() && providerMap.containsKey(configured)) {
+            return configured;
+        }
+        return resolvePrimaryProviderName();
+    }
+
+    public void setMultiLeaderProviderName(String providerName) {
+        String candidate = providerName == null ? "" : providerName.trim();
+        if (candidate.isEmpty()) {
+            throw new IllegalArgumentException("multi leader 不能为空");
+        }
+        if (!providerMap.containsKey(candidate)) {
+            throw new IllegalArgumentException("未知的 AI 提供者: " + candidate);
+        }
+        this.toolProvider = candidate;
+        log.info("MULTI Leader 已切换为: {}", candidate);
+    }
+
+    public List<String> getAdvisors() {
+        return List.copyOf(advisors);
+    }
+
+    public void setAdvisors(List<String> advisorNames) {
+        if (advisorNames == null || advisorNames.isEmpty()) {
+            throw new IllegalArgumentException("advisor 列表不能为空");
+        }
+
+        List<String> normalized = advisorNames.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .distinct()
+                .toList();
+
+        if (normalized.isEmpty()) {
+            throw new IllegalArgumentException("advisor 列表不能为空");
+        }
+
+        for (String advisor : normalized) {
+            if (!providerMap.containsKey(advisor)) {
+                throw new IllegalArgumentException("未知的 AI 提供者: " + advisor);
+            }
+        }
+
+        this.advisors = List.copyOf(normalized);
+        log.info("MULTI Advisors 已更新: {}", this.advisors);
     }
 
     public String getProviderNameForMessages(List<Map<String, Object>> messages) {

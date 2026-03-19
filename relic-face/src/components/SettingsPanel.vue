@@ -13,6 +13,25 @@ function onSingleProviderChange(event: Event) {
     settings.switchSingleProvider(target.value)
   }
 }
+
+function onAdvisorToggle(provider: string, event: Event) {
+  const target = event.target
+  if (!(target instanceof HTMLInputElement)) {
+    return
+  }
+
+  const selected = new Set(settings.multiAdvisors)
+  if (target.checked) {
+    selected.add(provider)
+  } else {
+    selected.delete(provider)
+  }
+  settings.switchMultiAdvisors(Array.from(selected))
+}
+
+function onLeaderChange(provider: string) {
+  settings.switchMultiLeader(provider)
+}
 </script>
 
 <template>
@@ -77,7 +96,7 @@ function onSingleProviderChange(event: Event) {
 
             <div class="current-leader-row">
               <span class="current-leader-label">当前后端 Leader</span>
-              <span class="current-leader-value">{{ settings.singleProvider || '—' }}</span>
+              <span class="current-leader-value">{{ settings.multiLeader || '—' }}</span>
             </div>
 
             <div class="role-group">
@@ -93,8 +112,9 @@ function onSingleProviderChange(event: Event) {
                 >
                   <input
                     type="checkbox"
-                    :value="p"
-                    v-model="settings.multiAdvisors"
+                    :checked="settings.multiAdvisors.includes(p)"
+                    :disabled="settings.roleSaving"
+                    @change="onAdvisorToggle(p, $event)"
                   />
                   <span class="role-name">{{ p }}</span>
                 </label>
@@ -114,16 +134,24 @@ function onSingleProviderChange(event: Event) {
                 >
                   <input
                     type="radio"
-                    :value="p"
-                    v-model="settings.multiLeader"
+                    name="multi-leader"
+                    :checked="settings.multiLeader === p"
+                    :disabled="settings.roleSaving"
+                    @change="onLeaderChange(p)"
                   />
                   <span class="role-name">{{ p }}</span>
                 </label>
               </div>
             </div>
 
-            <p class="role-tip">
-              * 接口已预留，后端对接后生效
+            <p
+              v-if="settings.roleSaving || settings.roleSaveError"
+              class="role-tip"
+              :class="{ error: !!settings.roleSaveError }"
+            >
+              {{ settings.roleSaving
+                ? '正在同步到后端...'
+                : settings.roleSaveError }}
             </p>
           </section>
 
@@ -597,6 +625,10 @@ function onSingleProviderChange(event: Event) {
   font-size: 11px;
   color: #cbd5e0;
   margin-top: -2px;
+}
+
+.role-tip.error {
+  color: #e53e3e;
 }
 
 .current-leader-row {

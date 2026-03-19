@@ -42,6 +42,8 @@ export type Mode = 'single' | 'multi'
 export interface ModeResponse {
   mode: Mode
   singleProvider?: string
+  multiLeader?: string
+  multiAdvisors?: string[]
   availableProviders: string[]
 }
 

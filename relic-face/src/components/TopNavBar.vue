@@ -23,7 +23,7 @@ defineEmits<{ openSettings: [] }>()
     <div class="nav-right">
       <span :class="['mode-badge', settings.mode]">
         {{ settings.mode === 'multi'
-          ? `Multi · ${settings.singleProvider || '…'}`
+          ? `Multi · ${settings.multiLeader || '…'}`
           : `Single · ${settings.singleProvider || '…'}` }}
       </span>
       <button class="icon-btn" @click="$emit('openSettings')" title="设置">

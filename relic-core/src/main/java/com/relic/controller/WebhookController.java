@@ -14,8 +14,10 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
@@ -38,25 +40,55 @@ public class WebhookController {
         return Map.of(
                 "mode", aiRouter.getMode().name().toLowerCase(),
                 "singleProvider", aiRouter.getSingleProviderName(),
+                "multiLeader", aiRouter.getMultiLeaderProviderName(),
+                "multiAdvisors", aiRouter.getAdvisors(),
                 "availableProviders", aiRouter.getProviderNames()
         );
     }
 
     @PostMapping("/mode")
-    public Map<String, Object> setMode(@RequestBody Map<String, String> request) {
-        String modeStr = request.getOrDefault("mode", "single");
-        String singleProvider = request.get("singleProvider");
+    public Map<String, Object> setMode(@RequestBody Map<String, Object> request) {
+        String modeStr = Objects.toString(request.getOrDefault("mode", "single"), "single");
+        String singleProvider = request.get("singleProvider") == null
+                ? null
+                : request.get("singleProvider").toString();
+        String multiLeader = request.get("multiLeader") == null
+                ? null
+                : request.get("multiLeader").toString();
+
         AiRouterService.Mode mode = "multi".equalsIgnoreCase(modeStr)
                 ? AiRouterService.Mode.MULTI
                 : AiRouterService.Mode.SINGLE;
         aiRouter.setMode(mode);
+
         if (singleProvider != null && !singleProvider.isBlank()) {
             aiRouter.setSingleProviderName(singleProvider);
         }
+
+        if (multiLeader != null && !multiLeader.isBlank()) {
+            aiRouter.setMultiLeaderProviderName(multiLeader);
+        }
+
+        Object advisorsObj = request.get("multiAdvisors");
+        if (advisorsObj instanceof List<?> rawList) {
+            List<String> advisors = new ArrayList<>();
+            for (Object item : rawList) {
+                if (item != null) {
+                    advisors.add(item.toString());
+                }
+            }
+            if (!advisors.isEmpty()) {
+                aiRouter.setAdvisors(advisors);
+            }
+        }
+
         log.info("模式已切换为: {}", mode);
         return Map.of(
                 "mode", mode.name().toLowerCase(),
-                "singleProvider", aiRouter.getSingleProviderName()
+                "singleProvider", aiRouter.getSingleProviderName(),
+                "multiLeader", aiRouter.getMultiLeaderProviderName(),
+                "multiAdvisors", aiRouter.getAdvisors(),
+                "availableProviders", aiRouter.getProviderNames()
         );
     }
 
