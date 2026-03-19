@@ -85,7 +85,13 @@ export const useSourcesStore = defineStore('sources', () => {
   }
 
   async function loadPersistedFiles() {
-    const items = await listSourceFiles()
+    let items
+    try {
+      items = await listSourceFiles()
+    } catch {
+      // 后端不可达时静默忽略
+      return
+    }
     const existing = new Set(files.value.map(f => f.relativePath))
 
     for (const item of items) {
