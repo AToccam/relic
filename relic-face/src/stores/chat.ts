@@ -1,6 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { getConversationHistory, listConversations, streamChat } from '@/api/chat'
+import {
+  deleteConversation as deleteConversationApi,
+  getConversationHistory,
+  listConversations,
+  renameConversation as renameConversationApi,
+  streamChat
+} from '@/api/chat'
 import { useSourcesStore } from '@/stores/sources'
 import type { Message, MessageContent, MessagePart } from '@/types'
 import type { ConversationSummary, PersistedMessage } from '@/api/chat'
@@ -121,6 +127,33 @@ export const useChatStore = defineStore('chat', () => {
     clear()
   }
 
+  async function renameConversation(conversationId: string, newName: string) {
+    const ok = await renameConversationApi(conversationId, newName)
+    if (!ok) return false
+    await refreshConversations()
+    return true
+  }
+
+  async function deleteConversation(conversationId: string) {
+    const ok = await deleteConversationApi(conversationId)
+    if (!ok) return false
+
+    const deletingCurrent = currentConversationId.value === conversationId
+    await refreshConversations()
+
+    if (deletingCurrent) {
+      const first = conversations.value.length > 0 ? conversations.value[0] : undefined
+      if (first) {
+        await selectConversation(first.conversationId)
+      } else {
+        clear()
+      }
+    } else {
+      messages.value = [...messages.value]
+    }
+    return true
+  }
+
   return {
     messages,
     conversations,
@@ -133,7 +166,9 @@ export const useChatStore = defineStore('chat', () => {
     init,
     refreshConversations,
     selectConversation,
-    newConversation
+    newConversation,
+    renameConversation,
+    deleteConversation
   }
 })
 

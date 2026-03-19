@@ -17,6 +17,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @Slf4j
@@ -103,6 +104,7 @@ public class ChatHistoryService {
 
                             Map<String, Object> item = new LinkedHashMap<>();
                             item.put("conversationId", conversationId);
+                            item.put("title", String.valueOf(doc.getOrDefault("title", "")));
                             item.put("updatedAt", String.valueOf(doc.getOrDefault("updatedAt", "")));
                             item.put("messageCount", messages.size());
                             item.put("lastPreview", lastPreview);
@@ -116,6 +118,41 @@ public class ChatHistoryService {
 
         result.sort(Comparator.comparing((Map<String, Object> m) -> String.valueOf(m.getOrDefault("updatedAt", ""))).reversed());
         return result;
+    }
+
+    public synchronized boolean renameConversation(String conversationId, String newName) {
+        String safeId = normalizeConversationId(conversationId);
+        String trimmed = newName == null ? "" : newName.trim();
+        if (trimmed.isEmpty()) {
+            return false;
+        }
+
+        try {
+            Map<String, Object> doc = readConversationDoc(safeId);
+            doc.put("title", trimmed);
+            doc.put("updatedAt", Instant.now().toString());
+            writeConversationDoc(safeId, doc);
+            return true;
+        } catch (Exception e) {
+            log.warn("重命名会话失败: conversationId={}, error={}", safeId, e.getMessage());
+            return false;
+        }
+    }
+
+    public synchronized boolean deleteConversation(String conversationId) {
+        String safeId = normalizeConversationId(conversationId);
+        Path dir = getConversationDir();
+        Path file = dir.resolve(safeId + ".json").normalize();
+        if (!file.startsWith(dir)) {
+            return false;
+        }
+
+        try {
+            return Files.deleteIfExists(file);
+        } catch (IOException e) {
+            log.warn("删除会话失败: conversationId={}, error={}", safeId, e.getMessage());
+            return false;
+        }
     }
 
     private String toPreviewText(Object content) {
@@ -163,12 +200,19 @@ public class ChatHistoryService {
         if (!Files.exists(file)) {
             Map<String, Object> doc = new LinkedHashMap<>();
             doc.put("conversationId", conversationId);
+            doc.put("title", "");
             doc.put("updatedAt", Instant.now().toString());
             doc.put("messages", new ArrayList<>());
             return doc;
         }
 
-        return objectMapper.readValue(Files.readString(file), MAP_TYPE);
+        Map<String, Object> doc = objectMapper.readValue(Files.readString(file), MAP_TYPE);
+        if (!doc.containsKey("title") || doc.get("title") == null) {
+            doc.put("title", "");
+        } else {
+            doc.put("title", Objects.toString(doc.get("title"), ""));
+        }
+        return doc;
     }
 
     private void writeConversationDoc(String conversationId, Map<String, Object> doc) throws IOException {

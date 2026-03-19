@@ -4,6 +4,7 @@ const BASE = '/api'
 
 export interface ConversationSummary {
   conversationId: string
+  title?: string
   updatedAt: string
   messageCount: number
   lastPreview: string
@@ -79,4 +80,28 @@ export async function getConversationHistory(conversationId: string): Promise<Pe
 
   const json = await response.json()
   return Array.isArray(json.messages) ? json.messages : []
+}
+
+export async function renameConversation(conversationId: string, newName: string): Promise<boolean> {
+  const response = await fetch(`${BASE}/chat/conversations/rename`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conversationId, newName })
+  })
+  if (!response.ok) {
+    throw new Error(`重命名失败: HTTP ${response.status}`)
+  }
+  const json = await response.json()
+  return !!json.ok
+}
+
+export async function deleteConversation(conversationId: string): Promise<boolean> {
+  const response = await fetch(`${BASE}/chat/conversations?conversationId=${encodeURIComponent(conversationId)}`, {
+    method: 'DELETE'
+  })
+  if (!response.ok) {
+    throw new Error(`删除失败: HTTP ${response.status}`)
+  }
+  const json = await response.json()
+  return !!json.ok
 }

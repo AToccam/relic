@@ -240,6 +240,21 @@ public class WebhookController {
         return Map.of("items", chatHistoryService.listConversations());
     }
 
+    @PostMapping("/chat/conversations/rename")
+    public Map<String, Object> renameConversation(@RequestBody Map<String, String> request) {
+        String conversationId = chatHistoryService.normalizeConversationId(request.get("conversationId"));
+        String newName = request.getOrDefault("newName", "");
+        boolean ok = chatHistoryService.renameConversation(conversationId, newName);
+        return Map.of("ok", ok);
+    }
+
+    @DeleteMapping("/chat/conversations")
+    public Map<String, Object> deleteConversation(@RequestParam("conversationId") String conversationId) {
+        String normalized = chatHistoryService.normalizeConversationId(conversationId);
+        boolean ok = chatHistoryService.deleteConversation(normalized);
+        return Map.of("ok", ok);
+    }
+
     @GetMapping("/chat/history")
     public Map<String, Object> getHistory(@RequestParam("conversationId") String conversationId) {
         String normalized = chatHistoryService.normalizeConversationId(conversationId);

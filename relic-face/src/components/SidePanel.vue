@@ -9,6 +9,7 @@ const sources = useSourcesStore()
 const chat = useChatStore()
 const fileInput = ref<HTMLInputElement | null>(null)
 const isDragging = ref(false)
+const openHistoryMenuId = ref<string | null>(null)
 
 async function addFiles(fileList: FileList) {
   await sources.addFiles(fileList)
@@ -43,10 +44,31 @@ function toggleSelectAll() {
 
 async function openConversation(conversationId: string) {
   await chat.selectConversation(conversationId)
+  openHistoryMenuId.value = null
 }
 
 function newConversation() {
   chat.newConversation()
+}
+
+function toggleHistoryMenu(conversationId: string) {
+  openHistoryMenuId.value = openHistoryMenuId.value === conversationId ? null : conversationId
+}
+
+async function renameHistoryItem(conversationId: string, currentName: string) {
+  const name = window.prompt('请输入新的会话名称', currentName || '')
+  if (name === null) return
+  const trimmed = name.trim()
+  if (!trimmed) return
+  await chat.renameConversation(conversationId, trimmed)
+  openHistoryMenuId.value = null
+}
+
+async function deleteHistoryItem(conversationId: string) {
+  const ok = window.confirm('确认删除这个会话记录吗？删除后不可恢复。')
+  if (!ok) return
+  await chat.deleteConversation(conversationId)
+  openHistoryMenuId.value = null
 }
 
 function formatTime(value: string): string {
@@ -88,10 +110,21 @@ function formatTime(value: string): string {
             :class="['history-item', { active: item.conversationId === chat.currentConversationId }]"
             @click="openConversation(item.conversationId)"
           >
-            <span class="history-title">{{ item.lastPreview || '新对话' }}</span>
-            <span class="history-meta">
-              {{ item.messageCount }} 条 · {{ formatTime(item.updatedAt) || '刚刚' }}
-            </span>
+            <div class="history-row">
+              <span class="history-title">{{ item.title || item.lastPreview || '新对话' }}</span>
+              <button class="history-menu-btn" @click.stop="toggleHistoryMenu(item.conversationId)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="12" cy="5" r="1.5" />
+                  <circle cx="12" cy="12" r="1.5" />
+                  <circle cx="12" cy="19" r="1.5" />
+                </svg>
+              </button>
+            </div>
+            <span class="history-meta">{{ item.messageCount }} 条 · {{ formatTime(item.updatedAt) || '刚刚' }}</span>
+            <div v-if="openHistoryMenuId === item.conversationId" class="history-menu" @click.stop>
+              <button class="history-menu-item" @click="renameHistoryItem(item.conversationId, item.title || item.lastPreview || '')">重命名</button>
+              <button class="history-menu-item danger" @click="deleteHistoryItem(item.conversationId)">删除</button>
+            </div>
           </button>
         </template>
 
@@ -272,6 +305,7 @@ function formatTime(value: string): string {
 }
 
 .history-item {
+  position: relative;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   background: #f8fafc;
@@ -281,6 +315,69 @@ function formatTime(value: string): string {
   gap: 4px;
   align-items: flex-start;
   cursor: pointer;
+}
+
+.history-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.history-menu-btn {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  background: transparent;
+  cursor: pointer;
+}
+
+.history-menu-btn:hover {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.history-menu {
+  position: absolute;
+  right: 8px;
+  top: 30px;
+  min-width: 96px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+  z-index: 10;
+  padding: 4px;
+}
+
+.history-menu-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.history-menu-item:hover {
+  background: #f1f5f9;
+}
+
+.history-menu-item.danger {
+  color: #dc2626;
+}
+
+.history-menu-item.danger:hover {
+  background: #fee2e2;
 }
 
 .history-item + .history-item {

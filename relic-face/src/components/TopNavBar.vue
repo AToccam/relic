@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { useChatStore } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 
-const chat = useChatStore()
 const settings = useSettingsStore()
 
 defineEmits<{ openSettings: [] }>()
@@ -26,14 +24,6 @@ defineEmits<{ openSettings: [] }>()
       <span :class="['mode-badge', settings.mode]">
         {{ settings.mode === 'multi' ? 'Multi' : 'Single' }}
       </span>
-      <button class="icon-btn" @click="chat.clear()" title="清空对话">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="3 6 5 6 21 6" />
-          <path d="M19 6l-1 14H6L5 6" />
-          <path d="M10 11v6M14 11v6" />
-          <path d="M9 6V4h6v2" />
-        </svg>
-      </button>
       <button class="icon-btn" @click="$emit('openSettings')" title="设置">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="3" />
