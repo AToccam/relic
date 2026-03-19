@@ -5,7 +5,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -22,7 +24,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 @Slf4j
 @RestController
@@ -50,7 +51,7 @@ public class FileController {
         }
         Files.createDirectories(uploadDir);
 
-        String storedName = buildStoredName(originalFilename);
+        String storedName = buildStoredName(uploadDir, originalFilename);
         Path storedPath = uploadDir.resolve(storedName).normalize();
         if (!storedPath.startsWith(workspace)) {
             throw new SecurityException("非法文件路径");
@@ -114,12 +115,80 @@ public class FileController {
         return Map.of("items", files);
     }
 
-    private String buildStoredName(String originalFilename) {
+    @DeleteMapping
+    public Map<String, Object> deleteFile(@RequestParam("relativePath") String relativePath) throws IOException {
+        return deleteUploadedFileByRelativePath(relativePath);
+    }
+
+    @PostMapping("/delete")
+    public Map<String, Object> deleteFileByBody(@RequestBody Map<String, String> request) throws IOException {
+        return deleteUploadedFileByRelativePath(request.get("relativePath"));
+    }
+
+    private Map<String, Object> deleteUploadedFileByRelativePath(String relativePath) throws IOException {
+        if (!StringUtils.hasText(relativePath)) {
+            throw new IllegalArgumentException("relativePath 不能为空");
+        }
+
+        Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
+        Path uploadRoot = workspace.resolve("uploads").normalize();
+        Path target = workspace.resolve(relativePath).normalize();
+
+        if (!target.startsWith(uploadRoot)) {
+            throw new SecurityException("非法删除路径");
+        }
+
+        if (!Files.exists(target)) {
+            return Map.of("ok", true, "deleted", false, "message", "文件不存在");
+        }
+        if (!Files.isRegularFile(target)) {
+            throw new IllegalArgumentException("仅支持删除文件");
+        }
+
+        Files.delete(target);
+        cleanupEmptyDirectories(target.getParent(), uploadRoot);
+
+        log.info("删除上传文件成功: {}", relativePath);
+        return Map.of("ok", true, "deleted", true);
+    }
+
+    private String buildStoredName(Path uploadDir, String originalFilename) {
+        String base = originalFilename;
         int dot = originalFilename.lastIndexOf('.');
         String ext = dot > 0 && dot < originalFilename.length() - 1
                 ? originalFilename.substring(dot)
                 : "";
-        return UUID.randomUUID().toString().replace("-", "") + ext;
+        if (!ext.isEmpty()) {
+            base = originalFilename.substring(0, dot);
+        }
+
+        String candidate = originalFilename;
+        int index = 1;
+        while (Files.exists(uploadDir.resolve(candidate))) {
+            candidate = base + "(" + index + ")" + ext;
+            index++;
+        }
+        return candidate;
+    }
+
+    private void cleanupEmptyDirectories(Path dir, Path stopAt) {
+        Path current = dir;
+        while (current != null && current.startsWith(stopAt) && !current.equals(stopAt)) {
+            try (var stream = Files.list(current)) {
+                if (stream.findAny().isPresent()) {
+                    return;
+                }
+            } catch (IOException e) {
+                return;
+            }
+
+            try {
+                Files.deleteIfExists(current);
+            } catch (IOException e) {
+                return;
+            }
+            current = current.getParent();
+        }
     }
 
     private String sanitizeFilename(String filename) {

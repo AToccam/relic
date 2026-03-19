@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { listSourceFiles, uploadSourceFile } from '@/api/files'
+import { deleteSourceFile, listSourceFiles, uploadSourceFile } from '@/api/files'
 
 export interface SourceFileItem {
   id: string
@@ -106,7 +106,16 @@ export const useSourcesStore = defineStore('sources', () => {
     }
   }
 
-  function removeFile(id: string) {
+  async function removeFile(id: string) {
+    const item = files.value.find(f => f.id === id)
+    if (!item) {
+      return
+    }
+
+    if (item.relativePath) {
+      await deleteSourceFile(item.relativePath)
+    }
+
     files.value = files.value.filter(f => f.id !== id)
   }
 

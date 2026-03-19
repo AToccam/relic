@@ -41,3 +41,18 @@ export async function listSourceFiles(): Promise<PersistedFileResponse[]> {
   const json = await response.json()
   return Array.isArray(json.items) ? json.items : []
 }
+
+export async function deleteSourceFile(relativePath: string): Promise<boolean> {
+  const response = await fetch(`${BASE}/files/delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ relativePath })
+  })
+
+  if (!response.ok) {
+    throw new Error(`删除文件失败: HTTP ${response.status}`)
+  }
+
+  const json = await response.json()
+  return !!json.ok
+}

@@ -30,8 +30,16 @@ async function onDrop(e: DragEvent) {
   }
 }
 
-function removeFile(id: string) {
-  sources.removeFile(id)
+async function removeFile(id: string) {
+  const ok = window.confirm('确认删除这个文件吗？将同时删除上传目录中的文件。')
+  if (!ok) return
+
+  try {
+    await sources.removeFile(id)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '删除失败'
+    window.alert(message)
+  }
 }
 
 function toggleSelection(id: string) {
