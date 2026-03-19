@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -14,8 +15,12 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Instant;
 import java.text.Normalizer;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -67,6 +72,46 @@ public class FileController {
                 "mimeType", mimeType,
                 "size", file.getSize()
         );
+    }
+
+    @GetMapping("/list")
+    public Map<String, Object> listFiles() throws IOException {
+        Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
+        Path uploadRoot = workspace.resolve("uploads").normalize();
+
+        if (!uploadRoot.startsWith(workspace)) {
+            throw new SecurityException("非法文件目录");
+        }
+
+        if (!Files.exists(uploadRoot)) {
+            return Map.of("items", List.of());
+        }
+
+        List<Map<String, Object>> files = new ArrayList<>();
+        try (var stream = Files.walk(uploadRoot)) {
+            stream.filter(Files::isRegularFile).forEach(path -> {
+                try {
+                    String relativePath = workspace.relativize(path).toString().replace('\\', '/');
+                    String mimeType = Files.probeContentType(path);
+                    if (!StringUtils.hasText(mimeType)) {
+                        mimeType = "application/octet-stream";
+                    }
+
+                    Map<String, Object> item = Map.of(
+                            "filename", path.getFileName().toString(),
+                            "relativePath", relativePath,
+                            "mimeType", mimeType,
+                            "size", Files.size(path),
+                            "updatedAt", Instant.ofEpochMilli(Files.getLastModifiedTime(path).toMillis()).toString()
+                    );
+                    files.add(item);
+                } catch (Exception ignored) {
+                }
+            });
+        }
+
+        files.sort(Comparator.comparing((Map<String, Object> m) -> String.valueOf(m.getOrDefault("updatedAt", ""))).reversed());
+        return Map.of("items", files);
     }
 
     private String buildStoredName(String originalFilename) {

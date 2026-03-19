@@ -3,6 +3,7 @@ package com.relic.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.relic.dto.OpenClawRequest;
 import com.relic.service.AiRouterService;
+import com.relic.service.ChatHistoryService;
 import com.relic.util.MessageHelper;
 import com.relic.util.OpenAiResponseBuilder;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +26,9 @@ public class WebhookController {
 
     @Autowired
     private AiRouterService aiRouter;
+
+    @Autowired
+    private ChatHistoryService chatHistoryService;
 
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -137,6 +141,7 @@ public class WebhookController {
     @PostMapping(value = "/v1/chat/completions")
     @SuppressWarnings("unchecked")
     public SseEmitter handleOpenAIRequest(@RequestBody Map<String, Object> request) {
+        String conversationId = chatHistoryService.normalizeConversationId((String) request.get("conversationId"));
         List<Map<String, Object>> rawMessages = (List<Map<String, Object>>) request.get("messages");
         List<Map<String, Object>> messages = MessageHelper.cleanRawMessages(rawMessages);
 
@@ -148,12 +153,21 @@ public class WebhookController {
         log.info("【最终发送给 AI 的记忆条数】: {}", messages.size());
         log.info("【当前最新提问】: {}", messages.get(messages.size() - 1).get("content"));
 
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Map<String, Object> msg = messages.get(i);
+            if ("user".equals(msg.get("role"))) {
+                chatHistoryService.appendMessage(conversationId, "user", msg.get("content"));
+                break;
+            }
+        }
+
         final List<Map<String, Object>> finalMessages = messages;
         SseEmitter emitter = new SseEmitter(180_000L);
         String chatId = "chatcmpl-" + System.currentTimeMillis();
         String modelName = aiRouter.getProviderNameForMessages(finalMessages);
         long created = System.currentTimeMillis() / 1000;
         AtomicBoolean emitterActive = new AtomicBoolean(true);
+        StringBuilder assistantOutput = new StringBuilder();
 
         emitter.onCompletion(() -> {
             emitterActive.set(false);
@@ -167,6 +181,7 @@ public class WebhookController {
                     if (!emitterActive.get()) {
                         throw new UncheckedIOException(new IOException("SSE 连接已关闭，终止流式输出"));
                     }
+                    assistantOutput.append(content);
                     try {
                         Map<String, Object> chunk = OpenAiResponseBuilder.buildChunk(
                             chatId, created, modelName, Map.of("content", content), null);
@@ -183,6 +198,7 @@ public class WebhookController {
                 emitter.send(SseEmitter.event()
                         .data(mapper.writeValueAsString(stopChunk), MediaType.APPLICATION_JSON));
                 emitter.send(SseEmitter.event().data("[DONE]", MediaType.TEXT_PLAIN));
+                chatHistoryService.appendMessage(conversationId, "assistant", assistantOutput.toString());
                 emitter.complete();
                 log.info("【流式响应完成】");
             } catch (Exception e) {
@@ -217,5 +233,19 @@ public class WebhookController {
         });
 
         return emitter;
+    }
+
+    @GetMapping("/chat/conversations")
+    public Map<String, Object> listConversations() {
+        return Map.of("items", chatHistoryService.listConversations());
+    }
+
+    @GetMapping("/chat/history")
+    public Map<String, Object> getHistory(@RequestParam("conversationId") String conversationId) {
+        String normalized = chatHistoryService.normalizeConversationId(conversationId);
+        return Map.of(
+                "conversationId", normalized,
+                "messages", chatHistoryService.getHistory(normalized)
+        );
     }
 }
