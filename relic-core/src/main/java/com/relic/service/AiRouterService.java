@@ -196,7 +196,10 @@ public class AiRouterService {
             log.info("【语义路由】path={}, reason={}", decision.path(), decision.reason());
 
             switch (decision.path()) {
-                case TOOL_FIRST -> streamSingle(preprocessed, onChunk);
+                case TOOL_FIRST -> {
+                    log.info("【语义路由】TOOL_FIRST 在 MULTI 模式下走多 AI 协同");
+                    streamMulti(preprocessed, onChunk);
+                }
                 case FAST -> streamSingle(preprocessed, onChunk);
                 case DEEP -> streamMulti(preprocessed, onChunk);
             }
@@ -235,7 +238,11 @@ public class AiRouterService {
             } else {
                 decision = semanticRouter.decide(preprocessed);
                 log.info("【语义路由】path={}, reason={}", decision.path(), decision.reason());
-                if (decision.path() == SemanticRouter.RoutePath.DEEP) {
+                if (decision.path() == SemanticRouter.RoutePath.DEEP
+                        || decision.path() == SemanticRouter.RoutePath.TOOL_FIRST) {
+                    if (decision.path() == SemanticRouter.RoutePath.TOOL_FIRST) {
+                        log.info("【语义路由】TOOL_FIRST 在 MULTI 模式下走多 AI 协同");
+                    }
                     result = askMulti(preprocessed);
                 } else {
                     List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(preprocessed);
@@ -267,9 +274,8 @@ public class AiRouterService {
 
     /**
      * 多 AI 协同流式输出：
-     * 1. 提取用户最新提问
-     * 2. Kimi + Qwen 并行处理（期间发心跳保活）
-    * 3. 将各方观点注入 system prompt，交给主模型流式聚合输出
+     * 1. 并行收集 advisor 回复（advisor 也允许调用工具）
+     * 2. 将可用观点注入 system prompt，交给 leader 聚合输出
      */
     public void streamMulti(List<Map<String, Object>> messages, Consumer<String> onChunk) throws Exception {
         String userQuestion = extractLatestUserMessage(messages);
@@ -279,7 +285,7 @@ public class AiRouterService {
         onChunk.accept("🤔 正在收集多个 AI 的观点，请稍候...\n\n");
 
         // 并行收集 advisor 回复，同时发心跳保活
-        Map<String, String> advisorReplies = collectAdvisorRepliesWithHeartbeat(userQuestion, onChunk);
+        Map<String, String> advisorReplies = collectAdvisorRepliesWithHeartbeat(messages, onChunk);
 
         // 构建包含多方观点的消息列表，传给主模型流式输出
         List<Map<String, Object>> aggregatedMessages = MessageHelper.buildAggregatedMessages(messages, advisorReplies);
@@ -291,14 +297,14 @@ public class AiRouterService {
 
     /** 多 AI 协同同步输出（非流式） */
     public String askMulti(List<Map<String, Object>> messages) {
-        String userQuestion = extractLatestUserMessage(messages);
-        Map<String, String> advisorReplies = collectAdvisorReplies(userQuestion);
+        Map<String, String> advisorReplies = collectAdvisorReplies(messages);
         List<Map<String, Object>> aggregatedMessages = MessageHelper.buildAggregatedMessages(messages, advisorReplies);
         return toolCallService.askWithTools(getProvider(resolveToolProviderNameForMessages(aggregatedMessages)), aggregatedMessages);
     }
 
     /** 并行调用所有 advisor，收集回复（带心跳保活） */
-    private Map<String, String> collectAdvisorRepliesWithHeartbeat(String userQuestion, Consumer<String> onChunk) {
+    private Map<String, String> collectAdvisorRepliesWithHeartbeat(List<Map<String, Object>> messages,
+                                                                   Consumer<String> onChunk) {
         Map<String, String> replies = new ConcurrentHashMap<>();
 
         CompletableFuture<Void> allDone = CompletableFuture.allOf(
@@ -308,13 +314,16 @@ public class AiRouterService {
                             try {
                                 long start = System.currentTimeMillis();
                                 log.info("【多AI协同】正在请求 {} ...", name);
-                                String reply = getProvider(name).ask(userQuestion);
+                                String reply = askAdvisorWithTools(name, messages);
                                 long cost = System.currentTimeMillis() - start;
+                                if (isIgnorableAdvisorReply(reply)) {
+                                    log.warn("【多AI协同】{} 回复不可用（疑似工具调用失败/拒绝），已忽略", name);
+                                    return;
+                                }
                                 log.info("【多AI协同】{} 回复完成，耗时 {} ms", name, cost);
                                 replies.put(name, reply);
                             } catch (Exception e) {
                                 log.error("【多AI协同】{} 调用失败", name, e);
-                                replies.put(name, "（" + name + " 未能给出回复）");
                             }
                         }))
                         .toArray(CompletableFuture[]::new)
@@ -338,6 +347,11 @@ public class AiRouterService {
 
     //并行调用所有 advisor，收集回复（对外暴露，可用于测试） 
     public Map<String, String> collectAdvisorReplies(String userQuestion) {
+        return collectAdvisorReplies(MessageHelper.buildSingleTurnMessages(userQuestion));
+    }
+
+    //并行调用所有 advisor，收集回复（advisor 可调用工具）
+    public Map<String, String> collectAdvisorReplies(List<Map<String, Object>> messages) {
         Map<String, String> replies = new ConcurrentHashMap<>();
 
         List<CompletableFuture<Void>> futures = advisors.stream()
@@ -346,13 +360,16 @@ public class AiRouterService {
                     try {
                         long start = System.currentTimeMillis();
                         log.info("【多AI协同】正在请求 {} ...", name);
-                        String reply = getProvider(name).ask(userQuestion);
+                        String reply = askAdvisorWithTools(name, messages);
                         long cost = System.currentTimeMillis() - start;
+                        if (isIgnorableAdvisorReply(reply)) {
+                            log.warn("【多AI协同】{} 回复不可用（疑似工具调用失败/拒绝），已忽略", name);
+                            return;
+                        }
                         log.info("【多AI协同】{} 回复完成，耗时 {} ms", name, cost);
                         replies.put(name, reply);
                     } catch (Exception e) {
                         log.error("【多AI协同】{} 调用失败", name, e);
-                        replies.put(name, "（" + name + " 未能给出回复）");
                     }
                 }))
                 .toList();
@@ -360,6 +377,30 @@ public class AiRouterService {
         // 等待所有 advisor 完成
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
         return replies;
+    }
+
+    private String askAdvisorWithTools(String advisorName, List<Map<String, Object>> messages) {
+        List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
+        return toolCallService.askWithTools(getProvider(advisorName), enriched);
+    }
+
+    private boolean isIgnorableAdvisorReply(String reply) {
+        if (reply == null || reply.isBlank()) {
+            return true;
+        }
+
+        String lower = reply.toLowerCase(Locale.ROOT);
+        return lower.contains("无法调用")
+                || lower.contains("不能调用")
+                || lower.contains("无法使用工具")
+                || lower.contains("工具调用失败")
+                || lower.contains("未能给出回复")
+                || lower.contains("unknown tool")
+                || lower.contains("unknown function")
+                || lower.contains("tool call failed")
+                || lower.contains("tool calling is not supported")
+                || lower.contains("do not have access to tools")
+                || lower.contains("i cannot call tools");
     }
 
     private String extractLatestUserMessage(List<Map<String, Object>> messages) {
