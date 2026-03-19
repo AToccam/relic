@@ -104,7 +104,11 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function refreshConversations() {
-    conversations.value = await listConversations()
+    try {
+      conversations.value = await listConversations()
+    } catch {
+      // 后端不可达时静默忽略，保持当前会话列表不变
+    }
   }
 
   async function selectConversation(conversationId: string) {

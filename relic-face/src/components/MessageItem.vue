@@ -57,7 +57,7 @@ function renderMd(text: string): string {
             <span class="seg-text">{{ seg.text.slice(2).trim() }}</span>
           </div>
           <div v-else-if="seg.type === 'status'" class="seg-status">
-            <span class="seg-icon">{{ seg.text[0] }}</span>
+            <span class="seg-icon">{{ [...seg.text][0] }}</span>
             <span class="seg-text">{{ seg.text.slice(2).trim() }}</span>
           </div>
           <div v-else-if="seg.type === 'warning'" class="seg-warning">
