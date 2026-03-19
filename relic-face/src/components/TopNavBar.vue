@@ -12,12 +12,12 @@ defineEmits<{ openSettings: [] }>()
       <span class="logo-icon">R</span>
       <div class="logo-text">
         <span class="logo-name">Relic</span>
-        <span class="logo-sub">AI Gateway</span>
+        <span class="logo-sub">AI Agent</span>
       </div>
     </div>
 
     <div class="nav-center">
-      <span class="nav-title">对话</span>
+      <span class="nav-title">信息予你无限，Relic重塑未来</span>
     </div>
 
     <div class="nav-right">
@@ -84,7 +84,6 @@ defineEmits<{ openSettings: [] }>()
 .logo-sub {
   font-size: 10px;
   color: #a0aec0;
-  text-transform: uppercase;
   letter-spacing: 1px;
 }
 
@@ -98,6 +97,10 @@ defineEmits<{ openSettings: [] }>()
   font-size: 15px;
   font-weight: 500;
   color: #4a5568;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .nav-right {
