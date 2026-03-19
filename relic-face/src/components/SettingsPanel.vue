@@ -75,6 +75,11 @@ function onSingleProviderChange(event: Event) {
             <h3 class="section-title">Multi 模式角色分配</h3>
             <p class="section-desc">选择参与协同的 Advisor 模型和负责聚合的 Leader 模型</p>
 
+            <div class="current-leader-row">
+              <span class="current-leader-label">当前后端 Leader</span>
+              <span class="current-leader-value">{{ settings.singleProvider || '—' }}</span>
+            </div>
+
             <div class="role-group">
               <div class="role-label">
                 <span class="role-tag advisor-tag">Advisor</span>
@@ -592,5 +597,29 @@ function onSingleProviderChange(event: Event) {
   font-size: 11px;
   color: #cbd5e0;
   margin-top: -2px;
+}
+
+.current-leader-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.06);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.current-leader-label {
+  font-size: 12px;
+  color: #92400e;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.current-leader-value {
+  font-size: 12px;
+  font-weight: 700;
+  color: #d97706;
+  text-transform: capitalize;
 }
 </style>
