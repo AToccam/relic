@@ -385,8 +385,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
                 || latestUserText.contains("列出工作区")
                 || latestUserText.contains("list_files")
                 || latestUserText.contains("read_file")
-                || latestUserText.contains("create_text_file")
-                || latestUserText.contains("web_search");
+            || latestUserText.contains("create_text_file");
     }
 
     private boolean hasToolInteraction(List<Map<String, Object>> messages) {

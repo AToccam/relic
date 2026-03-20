@@ -121,8 +121,8 @@ Gateway 是**无状态**的，它通过 OpenClaw SDK 连接客户端，所有业
 
 #### Tool 层（工具调用系统）
 
-- ToolDefinitions.java — 定义 4 个工具：`web_search`、`create_text_file`、`read_file`、`list_files`
-- ToolExecutor.java — 工具执行器（DuckDuckGo 搜索、文件读写、目录列举），含路径遍历防护
+- ToolDefinitions.java — 定义 3 个工具：`create_text_file`、`read_file`、`list_files`
+- ToolExecutor.java — 工具执行器（文件读写、目录列举），含路径遍历防护
 - ToolCallService.java — **工具调用循环引擎**，最多 10 轮迭代，直到模型不再请求工具
 
 #### Util 层

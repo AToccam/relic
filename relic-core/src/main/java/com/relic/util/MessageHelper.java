@@ -130,11 +130,10 @@ public final class MessageHelper {
     //工具引导 system prompt，供 SINGLE 模式注入
     private static final String TOOL_SYSTEM_PROMPT =
             "你是一个强大的 AI 助手。你可以使用以下工具来辅助回答用户的问题：\n"
-            + "- web_search: 搜索互联网获取最新信息、新闻、技术资料等\n"
             + "- create_text_file: 在工作区创建文本文件\n"
             + "- read_file: 读取工作区中的文件内容\n"
             + "- list_files: 列出工作区中的文件和文件夹\n"
-            + "当用户的问题需要实时信息或文件操作时，请主动调用相应工具。";
+            + "当用户的问题需要文件操作时，请主动调用相应工具。";
 
     /**
      * 确保消息列表包含工具引导的 system prompt。
@@ -167,8 +166,7 @@ public final class MessageHelper {
         StringBuilder sb = new StringBuilder();
         sb.append("你是一个智能聚合助手。其他 AI 助手已经针对用户的问题给出了各自的分析，请你综合参考它们的观点，")
           .append("给出更全面、更准确的最终回答。如果某个助手的回答有明显错误，请指出并纠正。\n")
-          .append("你同时拥有以下工具能力，当你认为需要额外信息（尤其是实时信息）时请主动调用：\n")
-          .append("- web_search: 搜索互联网获取最新信息\n")
+                    .append("你同时拥有以下工具能力，当你认为需要额外文件信息时请主动调用：\n")
           .append("- create_text_file: 创建文本文件\n")
           .append("- read_file: 读取文件内容\n")
           .append("- list_files: 列出文件和文件夹\n")

@@ -12,18 +12,6 @@ public final class ToolDefinitions {
 
     public static List<Map<String, Object>> getAll() {
         return List.of(
-                buildTool("web_search",
-                        "搜索互联网获取最新信息、新闻、技术资料等",
-                        Map.of(
-                                "type", "object",
-                                "properties", Map.of(
-                                        "query", Map.of(
-                                                "type", "string",
-                                                "description", "搜索关键词"
-                                        )
-                                ),
-                                "required", List.of("query")
-                        )),
                 buildTool("create_text_file",
                         "在用户的工作区目录中创建或覆盖一个文本文件",
                         Map.of(
