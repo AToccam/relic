@@ -75,7 +75,17 @@ async function renameHistoryItem(conversationId: string, currentName: string) {
 async function deleteHistoryItem(conversationId: string) {
   const ok = window.confirm('确认删除这个会话记录吗？删除后不可恢复。')
   if (!ok) return
-  await chat.deleteConversation(conversationId)
+  try {
+    const deleted = await chat.deleteConversation(conversationId)
+    if (!deleted) {
+      window.alert('删除会话失败，请稍后重试。')
+      return
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '删除会话失败'
+    window.alert(message)
+    return
+  }
   openHistoryMenuId.value = null
 }
 

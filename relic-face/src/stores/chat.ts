@@ -211,12 +211,32 @@ export const useChatStore = defineStore('chat', () => {
     abortControllers.get(conversationId)?.abort()
     abortControllers.delete(conversationId)
     setConversationStreaming(conversationId, false)
+
+    const deletingCurrent = currentConversationId.value === conversationId
+    const isDraftConversation = isLocalDraftConversation(conversationId)
+
+    if (isDraftConversation) {
+      messageCacheByConversation.delete(conversationId)
+      conversations.value = conversations.value.filter(item => item.conversationId !== conversationId)
+
+      if (deletingCurrent) {
+        const first = conversations.value.length > 0 ? conversations.value[0] : undefined
+        if (first) {
+          await selectConversation(first.conversationId)
+        } else {
+          clear()
+        }
+      } else {
+        messages.value = [...messages.value]
+      }
+      return true
+    }
+
     messageCacheByConversation.delete(conversationId)
 
     const ok = await deleteConversationApi(conversationId)
     if (!ok) return false
 
-    const deletingCurrent = currentConversationId.value === conversationId
     await refreshConversations()
 
     if (deletingCurrent) {
@@ -230,6 +250,21 @@ export const useChatStore = defineStore('chat', () => {
       messages.value = [...messages.value]
     }
     return true
+  }
+
+  function isLocalDraftConversation(conversationId: string): boolean {
+    const id = (conversationId || '').trim()
+    if (!id) return false
+
+    const summary = conversations.value.find(item => item.conversationId === id)
+    if (!summary) return false
+
+    const title = (summary.title || '').trim()
+    const preview = (summary.lastPreview || '').trim()
+    const messageCount = Number(summary.messageCount || 0)
+    const cachedMessages = messageCacheByConversation.get(id)
+
+    return !title && !preview && messageCount === 0 && (!cachedMessages || cachedMessages.length === 0)
   }
 
   return {
