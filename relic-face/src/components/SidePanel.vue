@@ -89,6 +89,10 @@ function formatTime(value: string): string {
   const min = `${date.getMinutes()}`.padStart(2, '0')
   return `${mm}-${dd} ${hh}:${min}`
 }
+
+function isPendingConversation(conversationId: string): boolean {
+  return chat.pendingConversationIds.includes(conversationId)
+}
 </script>
 
 <template>
@@ -128,7 +132,10 @@ function formatTime(value: string): string {
                 </svg>
               </button>
             </div>
-            <span class="history-meta">{{ item.messageCount }} 条 · {{ formatTime(item.updatedAt) || '刚刚' }}</span>
+            <span class="history-meta">
+              {{ item.messageCount }} 条 · {{ formatTime(item.updatedAt) || '刚刚' }}
+              <span v-if="isPendingConversation(item.conversationId)" class="history-pending">处理中</span>
+            </span>
             <div v-if="openHistoryMenuId === item.conversationId" class="history-menu" @click.stop>
               <button class="history-menu-item" @click="renameHistoryItem(item.conversationId, item.title || item.lastPreview || '')">重命名</button>
               <button class="history-menu-item danger" @click="deleteHistoryItem(item.conversationId)">删除</button>
@@ -415,6 +422,16 @@ function formatTime(value: string): string {
 .history-meta {
   font-size: 10px;
   color: #64748b;
+}
+
+.history-pending {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  color: #7c3aed;
+  border: 1px solid rgba(124, 58, 237, 0.28);
+  background: rgba(124, 58, 237, 0.08);
 }
 
 .drop-zone {

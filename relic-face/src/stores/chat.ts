@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { reactive, ref } from 'vue'
 import {
   deleteConversation as deleteConversationApi,
   getConversationHistory,
@@ -17,10 +17,58 @@ export const useChatStore = defineStore('chat', () => {
   const conversations = ref<ConversationSummary[]>([])
   const currentConversationId = ref('')
   const loadingHistory = ref(false)
-  const isStreaming = ref(false)
-  let abortController: AbortController | null = null
+  const streamingByConversation = ref<Record<string, boolean>>({})
+  const pendingConversationIds = ref<string[]>([])
+  const abortControllers = new Map<string, AbortController>()
+  const messageCacheByConversation = new Map<string, Message[]>()
+
+  function toMessageArray(history: PersistedMessage[]): Message[] {
+    return history
+      .filter(item => item.role === 'user' || item.role === 'assistant')
+      .map(item => toUiMessage(item))
+  }
+
+  function createConversationBuffer(initial?: Message[]): Message[] {
+    return reactive(initial ? [...initial] : []) as Message[]
+  }
+
+  function getOrCreateConversationBuffer(conversationId: string): Message[] {
+    const id = (conversationId || '').trim()
+    if (!id) return []
+    const existing = messageCacheByConversation.get(id)
+    if (existing) {
+      return existing
+    }
+    const created = createConversationBuffer()
+    messageCacheByConversation.set(id, created)
+    return created
+  }
+
+  function isConversationStreaming(conversationId: string): boolean {
+    const id = (conversationId || '').trim()
+    if (!id) return false
+    return !!streamingByConversation.value[id]
+  }
+
+  function setConversationStreaming(conversationId: string, value: boolean) {
+    const id = (conversationId || '').trim()
+    if (!id) return
+
+    const next = { ...streamingByConversation.value }
+    if (value) {
+      next[id] = true
+      if (!pendingConversationIds.value.includes(id)) {
+        pendingConversationIds.value = [...pendingConversationIds.value, id]
+      }
+    } else {
+      delete next[id]
+      pendingConversationIds.value = pendingConversationIds.value.filter(item => item !== id)
+    }
+    streamingByConversation.value = next
+  }
 
   function addMessage(role: 'user' | 'assistant', content: string, payloadContent?: MessageContent): Message {
+    const buffer = getOrCreateConversationBuffer(currentConversationId.value)
     const msg: Message = {
       id: `${Date.now()}-${Math.random()}`,
       role,
@@ -28,12 +76,22 @@ export const useChatStore = defineStore('chat', () => {
       payloadContent,
       streaming: false
     }
-    messages.value.push(msg)
-    return messages.value[messages.value.length - 1]!
+    buffer.push(msg)
+    if (currentConversationId.value) {
+      messages.value = buffer
+    }
+    return buffer[buffer.length - 1]!
   }
 
   async function send(userText: string) {
-    if (isStreaming.value) return
+    const targetConversationId = currentConversationId.value || buildConversationId()
+    if (!currentConversationId.value) {
+      currentConversationId.value = targetConversationId
+      messages.value = getOrCreateConversationBuffer(targetConversationId)
+    }
+
+    if (isConversationStreaming(targetConversationId)) return
+
     const selectedFiles = sources.selectedUsableFiles
     if (!userText.trim() && selectedFiles.length === 0) return
 
@@ -43,8 +101,9 @@ export const useChatStore = defineStore('chat', () => {
     addMessage('user', displayText, content)
     const assistantMsg = addMessage('assistant', '')
     assistantMsg.streaming = true
-    isStreaming.value = true
-    abortController = new AbortController()
+    setConversationStreaming(targetConversationId, true)
+    const abortController = new AbortController()
+    abortControllers.set(targetConversationId, abortController)
 
     try {
       const payload = messages.value
@@ -54,7 +113,7 @@ export const useChatStore = defineStore('chat', () => {
       await streamChat(
         payload,
         (chunk) => { assistantMsg.content += chunk },
-        currentConversationId.value,
+        targetConversationId,
         abortController.signal
       )
 
@@ -65,18 +124,22 @@ export const useChatStore = defineStore('chat', () => {
       }
     } finally {
       assistantMsg.streaming = false
-      isStreaming.value = false
-      abortController = null
+      abortControllers.delete(targetConversationId)
+      setConversationStreaming(targetConversationId, false)
     }
   }
 
   function stop() {
-    abortController?.abort()
+    const id = currentConversationId.value
+    if (!id) return
+    abortControllers.get(id)?.abort()
   }
 
   function clear() {
     currentConversationId.value = buildConversationId()
-    messages.value = []
+    const buffer = createConversationBuffer()
+    messageCacheByConversation.set(currentConversationId.value, buffer)
+    messages.value = buffer
     conversations.value = [
       {
         conversationId: currentConversationId.value,
@@ -117,11 +180,17 @@ export const useChatStore = defineStore('chat', () => {
 
     loadingHistory.value = true
     try {
+      if (isConversationStreaming(id)) {
+        currentConversationId.value = id
+        messages.value = getOrCreateConversationBuffer(id)
+        return
+      }
+
       const history = await getConversationHistory(id)
+      const buffer = createConversationBuffer(toMessageArray(history))
+      messageCacheByConversation.set(id, buffer)
       currentConversationId.value = id
-      messages.value = history
-        .filter(item => item.role === 'user' || item.role === 'assistant')
-        .map(item => toUiMessage(item))
+      messages.value = buffer
     } finally {
       loadingHistory.value = false
     }
@@ -139,6 +208,11 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function deleteConversation(conversationId: string) {
+    abortControllers.get(conversationId)?.abort()
+    abortControllers.delete(conversationId)
+    setConversationStreaming(conversationId, false)
+    messageCacheByConversation.delete(conversationId)
+
     const ok = await deleteConversationApi(conversationId)
     if (!ok) return false
 
@@ -163,7 +237,9 @@ export const useChatStore = defineStore('chat', () => {
     conversations,
     currentConversationId,
     loadingHistory,
-    isStreaming,
+    streamingByConversation,
+    pendingConversationIds,
+    isConversationStreaming,
     send,
     stop,
     clear,

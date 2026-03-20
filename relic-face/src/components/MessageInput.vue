@@ -8,7 +8,7 @@ const sources = useSourcesStore()
 const input = ref('')
 
 function handleSend() {
-  if (chat.isStreaming) return
+  if (chat.isConversationStreaming(chat.currentConversationId)) return
   if (!input.value.trim() && !sources.hasFiles) return
   chat.send(input.value.trim())
   input.value = ''
@@ -35,7 +35,7 @@ function handleKeydown(e: KeyboardEvent) {
     />
     <div class="input-actions">
       <button
-        v-if="!chat.isStreaming"
+        v-if="!chat.isConversationStreaming(chat.currentConversationId)"
         class="send-btn"
         @click="handleSend"
         :disabled="!input.trim() && sources.selectedUsableFiles.length === 0"
