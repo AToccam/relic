@@ -1,8 +1,22 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import ComingSoonModal from './ComingSoonModal.vue'
+import { useStudioStore } from '@/stores/studio'
 
 const modal = ref<string | null>(null)
+const studio = useStudioStore()
+
+async function removeGeneratedFile(id: string) {
+  const ok = window.confirm('确认删除这个 AI 生成文件吗？')
+  if (!ok) return
+
+  try {
+    await studio.removeFile(id)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '删除失败'
+    window.alert(message)
+  }
+}
 
 const cards = [
   { title: '音频概览', icon: 'M9 19V6l12-3v13M9 19c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm12-3c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2z' },
@@ -41,12 +55,40 @@ const cards = [
         </button>
       </div>
 
-      <div class="studio-empty">
+      <div class="generated-header">AI 生成文件 · {{ studio.files.length }}</div>
+
+      <div v-if="studio.loading" class="studio-loading">正在同步文件...</div>
+
+      <template v-else-if="studio.hasFiles">
+        <div
+          v-for="file in studio.files"
+          :key="file.id"
+          class="generated-item"
+        >
+          <div class="file-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+          </div>
+          <div class="file-info">
+            <span class="file-name" :title="file.name">{{ file.name }}</span>
+            <span class="file-size">{{ file.sizeLabel }}</span>
+            <span class="file-path">{{ file.relativePath }}</span>
+          </div>
+          <button class="remove-btn" @click="removeGeneratedFile(file.id)" title="删除">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      </template>
+
+      <div v-else class="studio-empty">
         <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
         </svg>
-        <p>Studio 输出将保存在此处</p>
-        <span>添加来源后，点击上方卡片开始生成内容。</span>
+        <p>暂未发现工作文档</p>
       </div>
     </div>
   </aside>
@@ -148,6 +190,90 @@ const cards = [
   border-color: #6366f1;
   box-shadow: 0 2px 8px rgba(99, 102, 241, 0.12);
   background: #fafafe;
+}
+
+.generated-header {
+  margin-top: 2px;
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4a5568;
+}
+
+.studio-loading {
+  font-size: 12px;
+  color: #94a3b8;
+  padding: 6px 2px;
+}
+
+.generated-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.file-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8fafc;
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.file-info {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.file-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1f2937;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-size {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.file-path {
+  font-size: 11px;
+  color: #94a3b8;
+  word-break: break-all;
+}
+
+.remove-btn {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.remove-btn:hover {
+  background: #fee2e2;
+  color: #dc2626;
 }
 
 .card-icon {

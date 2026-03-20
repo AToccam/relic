@@ -1,9 +1,11 @@
 package com.relic.controller;
 
+import com.relic.service.GeneratedFileRegistryService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.util.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -29,6 +31,9 @@ import java.util.Map;
 @RestController
 @RequestMapping("/files")
 public class FileController {
+
+    @Autowired
+    private GeneratedFileRegistryService generatedFileRegistryService;
 
     @Value("${relic.workspace.path:#{systemProperties['user.home'] + '/.openclaw/workspace'}}")
     private String workspacePath;
@@ -115,6 +120,11 @@ public class FileController {
         return Map.of("items", files);
     }
 
+    @GetMapping("/generated/list")
+    public Map<String, Object> listGeneratedFiles() {
+        return Map.of("items", generatedFileRegistryService.listGeneratedFiles());
+    }
+
     @DeleteMapping
     public Map<String, Object> deleteFile(@RequestParam("relativePath") String relativePath) throws IOException {
         return deleteUploadedFileByRelativePath(relativePath);
@@ -123,6 +133,11 @@ public class FileController {
     @PostMapping("/delete")
     public Map<String, Object> deleteFileByBody(@RequestBody Map<String, String> request) throws IOException {
         return deleteUploadedFileByRelativePath(request.get("relativePath"));
+    }
+
+    @PostMapping("/generated/delete")
+    public Map<String, Object> deleteGeneratedFileByBody(@RequestBody Map<String, String> request) throws IOException {
+        return deleteWorkspaceFileByRelativePath(request.get("relativePath"));
     }
 
     private Map<String, Object> deleteUploadedFileByRelativePath(String relativePath) throws IOException {
@@ -149,6 +164,34 @@ public class FileController {
         cleanupEmptyDirectories(target.getParent(), uploadRoot);
 
         log.info("删除上传文件成功: {}", relativePath);
+        return Map.of("ok", true, "deleted", true);
+    }
+
+    private Map<String, Object> deleteWorkspaceFileByRelativePath(String relativePath) throws IOException {
+        if (!StringUtils.hasText(relativePath)) {
+            throw new IllegalArgumentException("relativePath 不能为空");
+        }
+
+        Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
+        Path target = workspace.resolve(relativePath).normalize();
+
+        if (!target.startsWith(workspace)) {
+            throw new SecurityException("非法删除路径");
+        }
+
+        if (!Files.exists(target)) {
+            generatedFileRegistryService.removeGeneratedFile(relativePath);
+            return Map.of("ok", true, "deleted", false, "message", "文件不存在");
+        }
+        if (!Files.isRegularFile(target)) {
+            throw new IllegalArgumentException("仅支持删除文件");
+        }
+
+        Files.delete(target);
+        generatedFileRegistryService.removeGeneratedFile(relativePath);
+        cleanupEmptyDirectories(target.getParent(), workspace);
+
+        log.info("删除 AI 生成文件成功: {}", relativePath);
         return Map.of("ok", true, "deleted", true);
     }
 

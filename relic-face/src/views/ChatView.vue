@@ -9,16 +9,19 @@ import SettingsPanel from '@/components/SettingsPanel.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useChatStore } from '@/stores/chat'
 import { useSourcesStore } from '@/stores/sources'
+import { useStudioStore } from '@/stores/studio'
 
 const showSettings = ref(false)
 const settings = useSettingsStore()
 const chat = useChatStore()
 const sources = useSourcesStore()
+const studio = useStudioStore()
 
 onMounted(async () => {
   await settings.fetchMode()
   await chat.init()
   await sources.loadPersistedFiles()
+  await studio.loadPersistedFiles()
 })
 </script>
 

@@ -16,6 +16,14 @@ export interface PersistedFileResponse {
   updatedAt: string
 }
 
+export interface GeneratedFileResponse {
+  filename: string
+  relativePath: string
+  mimeType: string
+  size: number
+  updatedAt: string
+}
+
 export async function uploadSourceFile(file: File): Promise<UploadFileResponse> {
   const form = new FormData()
   form.append('file', file)
@@ -51,6 +59,31 @@ export async function deleteSourceFile(relativePath: string): Promise<boolean> {
 
   if (!response.ok) {
     throw new Error(`删除文件失败: HTTP ${response.status}`)
+  }
+
+  const json = await response.json()
+  return !!json.ok
+}
+
+export async function listGeneratedFiles(): Promise<GeneratedFileResponse[]> {
+  const response = await fetch(`${BASE}/files/generated/list`)
+  if (!response.ok) {
+    throw new Error(`读取 AI 文件列表失败: HTTP ${response.status}`)
+  }
+
+  const json = await response.json()
+  return Array.isArray(json.items) ? json.items : []
+}
+
+export async function deleteGeneratedFile(relativePath: string): Promise<boolean> {
+  const response = await fetch(`${BASE}/files/generated/delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ relativePath })
+  })
+
+  if (!response.ok) {
+    throw new Error(`删除 AI 文件失败: HTTP ${response.status}`)
   }
 
   const json = await response.json()

@@ -2,6 +2,7 @@ package com.relic.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
+import com.relic.service.GeneratedFileRegistryService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -42,6 +43,12 @@ public class ToolExecutor {
 
     @Value("${relic.workspace.allow-outside-read:true}")
     private boolean allowOutsideRead;
+
+    private final GeneratedFileRegistryService generatedFileRegistryService;
+
+    public ToolExecutor(GeneratedFileRegistryService generatedFileRegistryService) {
+        this.generatedFileRegistryService = generatedFileRegistryService;
+    }
 
     @PostConstruct
     public void init() {
@@ -87,6 +94,10 @@ public class ToolExecutor {
 
             boolean exists = Files.exists(filePath);
             Files.writeString(filePath, content == null ? "" : content, StandardCharsets.UTF_8);
+
+            Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
+            String relativePath = workspace.relativize(filePath).toString().replace('\\', '/');
+            generatedFileRegistryService.registerGeneratedFile(relativePath);
 
             log.info("【创建文件】{} ({})", filePath, exists ? "已覆盖" : "新建");
             return (exists ? "文件已覆盖: " : "文件已创建: ") + filename;

@@ -8,11 +8,13 @@ import {
   streamChat
 } from '@/api/chat'
 import { useSourcesStore } from '@/stores/sources'
+import { useStudioStore } from '@/stores/studio'
 import type { Message, MessageContent, MessagePart } from '@/types'
 import type { ConversationSummary, PersistedMessage } from '@/api/chat'
 
 export const useChatStore = defineStore('chat', () => {
   const sources = useSourcesStore()
+  const studio = useStudioStore()
   const messages = ref<Message[]>([])
   const conversations = ref<ConversationSummary[]>([])
   const currentConversationId = ref('')
@@ -126,6 +128,11 @@ export const useChatStore = defineStore('chat', () => {
       assistantMsg.streaming = false
       abortControllers.delete(targetConversationId)
       setConversationStreaming(targetConversationId, false)
+      try {
+        await studio.loadPersistedFiles()
+      } catch {
+        // 后端不可达时静默忽略
+      }
     }
   }
 
