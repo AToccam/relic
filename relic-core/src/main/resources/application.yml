@@ -38,8 +38,6 @@ relic:
     enable-local-classifier: true
     # 本地语义分类最长等待时间，建议 >= classify-timeout-ms
     local-classifier-budget-ms: 9000
-    # 超过该长度且不属于闲聊时，默认视为深度问题
-    deep-question-min-chars: 80
     # 本地模型仅用于语义分类和云端断连时的兜底回答
     local-model:
       endpoint: http://127.0.0.1:11434

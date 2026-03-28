@@ -60,12 +60,11 @@ public class OllamaLocalService implements LocalIntentClassifier {
 
     @Override
     public Optional<SemanticRouter.RoutePath> classify(String userMessage) {
-        String system = "你是路由分类器。只能输出 FAST、TOOL_FIRST 或 DEEP 之一，不要输出其他任何字符。";
+        String system = "你是路由分类器。只能输出 FAST 或 TOOL_FIRST 之一，不要输出其他任何字符。";
         String prompt = "用户请求：\n" + userMessage + "\n\n"
                 + "分类规则：\n"
                 + "- 需要查实时信息、搜索、文件读写、列目录等操作 => TOOL_FIRST\n"
-                + "- 闲聊、问候、简单问答 => FAST\n"
-                + "- 复杂架构分析、深度设计、长文推理 => DEEP\n\n"
+                + "- 闲聊、问候、简单问答、分析设计类问题 => FAST\n\n"
                 + "请直接输出分类标签：";
 
         try {
@@ -81,10 +80,6 @@ public class OllamaLocalService implements LocalIntentClassifier {
                 case "TOOL_FIRST" -> {
                     log.info("Ollama 本地分类完成: TOOL_FIRST, cost={} ms", cost);
                     yield Optional.of(SemanticRouter.RoutePath.TOOL_FIRST);
-                }
-                case "DEEP" -> {
-                    log.info("Ollama 本地分类完成: DEEP, cost={} ms", cost);
-                    yield Optional.of(SemanticRouter.RoutePath.DEEP);
                 }
                 default -> Optional.empty();
             };
@@ -256,15 +251,11 @@ public class OllamaLocalService implements LocalIntentClassifier {
         if (raw == null) return "";
         String t = raw.trim().toUpperCase(Locale.ROOT);
         if (t.contains("TOOL_FIRST")) return "TOOL_FIRST";
-        if (t.contains("DEEP")) return "DEEP";
         if (t.contains("FAST")) return "FAST";
 
         String lower = raw.trim().toLowerCase(Locale.ROOT);
         if (lower.contains("tool") || lower.contains("工具") || lower.contains("搜索") || lower.contains("文件")) {
             return "TOOL_FIRST";
-        }
-        if (lower.contains("deep") || lower.contains("复杂") || lower.contains("深度") || lower.contains("架构") || lower.contains("分析")) {
-            return "DEEP";
         }
         if (lower.contains("fast") || lower.contains("闲聊") || lower.contains("问候") || lower.contains("简单")) {
             return "FAST";

@@ -52,7 +52,7 @@ public class AiRouterService {
 
     public enum Mode { SINGLE, MULTI }
 
-    private volatile Mode currentMode = Mode.MULTI; //默认多 AI 协同模式
+    private volatile Mode currentMode = Mode.SINGLE; //默认单 AI 模式
     //SINGLE 模式下，直接使用主模型；MULTI 模式下，先让 advisor 分析，再由主模型聚合输出
 
     @Value("${relic.router.primary-provider:deepseek}")
@@ -251,7 +251,6 @@ public class AiRouterService {
                     streamMulti(preprocessed, onChunk);
                 }
                 case FAST -> streamSingle(preprocessed, onChunk);
-                case DEEP -> streamMulti(preprocessed, onChunk);
             }
         } catch (Exception e) {
             if (isUpstreamConnectivityIssue(e)) {
@@ -288,11 +287,8 @@ public class AiRouterService {
             } else {
                 decision = semanticRouter.decide(preprocessed);
                 log.info("【语义路由】path={}, reason={}", decision.path(), decision.reason());
-                if (decision.path() == SemanticRouter.RoutePath.DEEP
-                        || decision.path() == SemanticRouter.RoutePath.TOOL_FIRST) {
-                    if (decision.path() == SemanticRouter.RoutePath.TOOL_FIRST) {
-                        log.info("【语义路由】TOOL_FIRST 在 MULTI 模式下走多 AI 协同");
-                    }
+                if (decision.path() == SemanticRouter.RoutePath.TOOL_FIRST) {
+                    log.info("【语义路由】TOOL_FIRST 在 MULTI 模式下走多 AI 协同");
                     result = askMulti(preprocessed);
                 } else {
                     List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(preprocessed);
@@ -467,7 +463,7 @@ public class AiRouterService {
             return Optional.empty();
         }
         return Optional.of(new SemanticRouter.RouteDecision(
-                SemanticRouter.RoutePath.DEEP,
+                SemanticRouter.RoutePath.FAST,
                 "multimodal-primary"));
     }
 

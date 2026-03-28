@@ -28,21 +28,10 @@ public class DefaultSemanticRouter implements SemanticRouter {
             "\\.(txt|md|markdown|json|csv|log|yaml|yml|xml|java|py|js|ts)\\b",
             Pattern.CASE_INSENSITIVE);
 
-    private static final Pattern DEEP_PATTERN = Pattern.compile(
-            "(架构|设计|优化|方案|权衡|trade-?off|对比|比较|分析|推导|重构|路线图|性能瓶颈|高并发|系统设计|完整代码|长文)",
-            Pattern.CASE_INSENSITIVE);
-
-    private static final Pattern FAST_PATTERN = Pattern.compile(
-            "^(你好|您好|hi|hello|早上好|晚上好|在吗|谢谢|ok|好的|收到)[!,.?，。！？ ]*$",
-            Pattern.CASE_INSENSITIVE);
-
     private final Optional<LocalIntentClassifier> localClassifier;
 
     @Value("${relic.router.enable-local-classifier:false}")
     private boolean enableLocalClassifier;
-
-    @Value("${relic.router.deep-question-min-chars:80}")
-    private int deepQuestionMinChars;
 
     @Value("${relic.router.local-classifier-budget-ms:5000}")
     private int localClassifierBudgetMs;
@@ -68,7 +57,7 @@ public class DefaultSemanticRouter implements SemanticRouter {
                 if (localDecision.isPresent()) {
                     RoutePath localPath = localDecision.get();
 
-                    // 护栏：规则已经判定为工具/深度时，不允许被本地分类器降级到 FAST
+                    // 护栏：规则已经判定为工具时，不允许被本地分类器降级到 FAST
                     if (localPath == RoutePath.FAST && ruleDecision.path() != RoutePath.FAST) {
                         log.info("本地分类器命中 FAST，但规则路由为 {}，保留规则结果", ruleDecision.path());
                         return new RouteDecision(ruleDecision.path(), "local-guardrail-preserve-rule");
@@ -97,26 +86,12 @@ public class DefaultSemanticRouter implements SemanticRouter {
             return new RouteDecision(RoutePath.TOOL_FIRST, "tool-intent");
         }
 
-        if (isDeepQuestion(userMessage)) {
-            return new RouteDecision(RoutePath.DEEP, "deep-question");
-        }
-
         return new RouteDecision(RoutePath.FAST, "default-fast");
     }
 
     private boolean looksLikeToolIntent(String userMessage) {
         return TOOL_PATTERN.matcher(userMessage).find()
                 || FILE_EXT_PATTERN.matcher(userMessage).find();
-    }
-
-    private boolean isDeepQuestion(String userMessage) {
-        if (FAST_PATTERN.matcher(userMessage).matches()) {
-            return false;
-        }
-        if (DEEP_PATTERN.matcher(userMessage).find()) {
-            return true;
-        }
-        return userMessage.length() >= deepQuestionMinChars || userMessage.contains("\n");
     }
 
     private String extractLatestUserMessage(List<Map<String, Object>> messages) {

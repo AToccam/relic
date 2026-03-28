@@ -12,8 +12,7 @@ public interface SemanticRouter {
 
     enum RoutePath {
         FAST,
-        TOOL_FIRST,
-        DEEP
+        TOOL_FIRST
     }
 
     record RouteDecision(RoutePath path, String reason) {}
