@@ -1,6 +1,10 @@
 package com.relic.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.relic.dto.ChatCompletionRequest;
+import com.relic.rag.model.Citation;
+import com.relic.rag.model.RetrievalResult;
+import com.relic.rag.retrieve.Retriever;
 import com.relic.tool.ToolExecutor;
 import com.relic.tool.ToolCallService;
 import com.relic.util.MessageHelper;
@@ -71,10 +75,18 @@ public class AiRouterService {
 
     private List<String> multimodalProviders = List.of("qwen", "kimi");
 
+    @Value("${relic.rag.enabled:true}")
+    private boolean ragEnabled;
+
+    @Value("${relic.rag.retrieval.top-k:4}")
+    private int ragTopK;
+
     private final Map<String, AiProvider> providerMap = new LinkedHashMap<>();
     private final SemanticRouter semanticRouter;
     private final Optional<OllamaLocalService> localFallbackService;
+    private final Optional<Retriever> retriever;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ThreadLocal<RagRuntime> ragRuntime = ThreadLocal.withInitial(() -> new RagRuntime("", List.of()));
 
     @Autowired
     private ToolCallService toolCallService;
@@ -85,9 +97,11 @@ public class AiRouterService {
     @Autowired
     public AiRouterService(List<AiProvider> providers,
                            SemanticRouter semanticRouter,
-                           ObjectProvider<OllamaLocalService> localFallbackProvider) {
+                           ObjectProvider<OllamaLocalService> localFallbackProvider,
+                           ObjectProvider<Retriever> retrieverProvider) {
         this.semanticRouter = semanticRouter;
         this.localFallbackService = Optional.ofNullable(localFallbackProvider.getIfAvailable());
+        this.retriever = Optional.ofNullable(retrieverProvider.getIfAvailable());
         for (AiProvider p : providers) {
             providerMap.put(p.getName(), p);
             log.info("注册 AI 提供者: {}", p.getName());
@@ -114,7 +128,15 @@ public class AiRouterService {
         log.info("多模态优先 Provider 列表: {}", multimodalProviders);
         log.info("已注册 Provider: {}", providerMap.keySet());
         log.info("本地兜底服务是否可用: {}", localFallbackService.isPresent());
+        log.info("RAG 功能是否启用: {}, Retriever 是否可用: {}", ragEnabled, retriever.isPresent());
         log.info("============================================");
+    }
+
+    private record RagRuntime(String contextPrompt, List<Citation> citations) {
+    }
+
+    public List<Citation> getCurrentCitations() {
+        return ragRuntime.get().citations();
     }
 
     public String getPrimaryProviderName() {
@@ -221,7 +243,15 @@ public class AiRouterService {
     //根据当前模式自动选择流式输出方式
     //SINGLE: 主模型直答；MULTI: 智能分流（简单/工具优先/多专家）
     public void streamAuto(List<Map<String, Object>> messages, Consumer<String> onChunk) throws Exception {
+        streamAuto(messages, null, onChunk);
+    }
+
+    //自动模式调度（支持 RAG 配置）
+    public void streamAuto(List<Map<String, Object>> messages,
+                           ChatCompletionRequest.RagConfig ragConfig,
+                           Consumer<String> onChunk) throws Exception {
         List<Map<String, Object>> preprocessed = preprocessMessagesForLocalRead(messages);
+        prepareRagRuntime(preprocessed, ragConfig);
         SemanticRouter.RouteDecision decision = null;
         try {
             Optional<SemanticRouter.RouteDecision> multimodalDecision = forcePrimaryForMultimodal(preprocessed);
@@ -258,12 +288,20 @@ public class AiRouterService {
                 return;
             }
             throw e;
+        } finally {
+            clearRagRuntime();
         }
     }
 
     //根据当前模式自动选择同步问答方式
     public String askAuto(List<Map<String, Object>> messages) {
+        return askAuto(messages, null);
+    }
+
+    //根据当前模式自动选择同步问答方式（支持 RAG 配置）
+    public String askAuto(List<Map<String, Object>> messages, ChatCompletionRequest.RagConfig ragConfig) {
         List<Map<String, Object>> preprocessed = preprocessMessagesForLocalRead(messages);
+        prepareRagRuntime(preprocessed, ragConfig);
         SemanticRouter.RouteDecision decision = null;
         try {
             String result;
@@ -274,6 +312,7 @@ public class AiRouterService {
                 log.info("【语义路由-多模态优先】path={}, reason={}, provider={}",
                         decision.path(), decision.reason(), providerName);
                 List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(preprocessed);
+                enriched = withRagContext(enriched);
                 result = toolCallService.askWithTools(getProvider(providerName), enriched);
                 return result;
             }
@@ -283,6 +322,7 @@ public class AiRouterService {
                 log.info("【语义路由-SINGLE】path={}, reason={}", decision.path(), decision.reason());
 
                 List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(preprocessed);
+                enriched = withRagContext(enriched);
                 result = toolCallService.askWithTools(getProvider(resolveToolProviderNameForMessages(preprocessed)), enriched);
             } else {
                 decision = semanticRouter.decide(preprocessed);
@@ -292,6 +332,7 @@ public class AiRouterService {
                     result = askMulti(preprocessed);
                 } else {
                     List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(preprocessed);
+                    enriched = withRagContext(enriched);
                     result = toolCallService.askWithTools(getProvider(resolveToolProviderNameForMessages(preprocessed)), enriched);
                 }
             }
@@ -305,6 +346,8 @@ public class AiRouterService {
                 return fallbackTextAnswer(preprocessed, describeThrowable(e));
             }
             throw e;
+        } finally {
+            clearRagRuntime();
         }
     }
 
@@ -312,6 +355,7 @@ public class AiRouterService {
 
     public void streamSingle(List<Map<String, Object>> messages, Consumer<String> onChunk) throws Exception {
         List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
+        enriched = withRagContext(enriched);
         String providerName = resolveToolProviderNameForMessages(messages);
         toolCallService.streamWithTools(getProvider(providerName), enriched, onChunk);
     }
@@ -335,6 +379,7 @@ public class AiRouterService {
 
         // 构建包含多方观点的消息列表，传给主模型流式输出
         List<Map<String, Object>> aggregatedMessages = MessageHelper.buildAggregatedMessages(messages, advisorReplies);
+        aggregatedMessages = withRagContext(aggregatedMessages);
         log.info("【多AI协同】已收集 {} 个顾问回复，交由Leader聚合", advisorReplies.size());
 
         onChunk.accept("✅ 已收集完毕，正在生成最终回答...\n\n");
@@ -345,6 +390,7 @@ public class AiRouterService {
     public String askMulti(List<Map<String, Object>> messages) {
         Map<String, String> advisorReplies = collectAdvisorReplies(messages);
         List<Map<String, Object>> aggregatedMessages = MessageHelper.buildAggregatedMessages(messages, advisorReplies);
+        aggregatedMessages = withRagContext(aggregatedMessages);
         return toolCallService.askWithTools(getProvider(resolveToolProviderNameForMessages(aggregatedMessages)), aggregatedMessages);
     }
 
@@ -427,7 +473,128 @@ public class AiRouterService {
 
     private String askAdvisorWithTools(String advisorName, List<Map<String, Object>> messages) {
         List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
+        enriched = withRagContext(enriched);
         return toolCallService.askWithTools(getProvider(advisorName), enriched);
+    }
+
+    private void prepareRagRuntime(List<Map<String, Object>> messages, ChatCompletionRequest.RagConfig ragConfig) {
+        ragRuntime.set(new RagRuntime("", List.of()));
+
+        if (!ragEnabled) {
+            return;
+        }
+        if (ragConfig == null || !Boolean.TRUE.equals(ragConfig.getEnabled())) {
+            return;
+        }
+        if (retriever.isEmpty()) {
+            log.warn("【RAG】ragConfig 已开启，但 Retriever 未注册，降级为普通对话");
+            return;
+        }
+
+        Set<String> sourceIds = normalizeSourceIds(ragConfig.getSourceIds());
+        if (sourceIds.isEmpty()) {
+            return;
+        }
+
+        String query = extractLatestUserMessage(messages);
+        if (query == null || query.isBlank()) {
+            return;
+        }
+
+        try {
+            int topK = Math.max(1, ragTopK);
+            List<RetrievalResult> hits = retriever.get().retrieve(query, topK, sourceIds);
+            if (hits == null || hits.isEmpty()) {
+                log.info("【RAG】未检索到可用片段，query={}", query);
+                return;
+            }
+
+            String contextPrompt = buildRagContextPrompt(hits);
+            List<Citation> citations = buildCitations(hits);
+            ragRuntime.set(new RagRuntime(contextPrompt, citations));
+            log.info("【RAG】检索命中: sources={}, hits={}", sourceIds.size(), hits.size());
+        } catch (Exception e) {
+            log.warn("【RAG】检索增强失败，已降级为普通对话: {}", e.getMessage());
+            ragRuntime.set(new RagRuntime("", List.of()));
+        }
+    }
+
+    private List<Map<String, Object>> withRagContext(List<Map<String, Object>> messages) {
+        RagRuntime runtime = ragRuntime.get();
+        if (runtime == null || runtime.contextPrompt() == null || runtime.contextPrompt().isBlank()) {
+            return messages;
+        }
+
+        if (!messages.isEmpty()
+                && "system".equals(messages.get(0).get("role"))
+                && Objects.equals(messages.get(0).get("content"), runtime.contextPrompt())) {
+            return messages;
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        result.add(Map.of("role", "system", "content", runtime.contextPrompt()));
+        result.addAll(messages);
+        return result;
+    }
+
+    private String buildRagContextPrompt(List<RetrievalResult> hits) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("以下是与当前问题相关的参考资料片段。请优先基于这些资料回答，若资料不足请明确说明。\n");
+        sb.append("<context>\n");
+        int idx = 1;
+        for (RetrievalResult hit : hits) {
+            String sourceId = hit.getChunk() == null ? "unknown" : String.valueOf(hit.getChunk().getSourceId());
+            String content = hit.getChunk() == null ? "" : String.valueOf(hit.getChunk().getContent());
+            sb.append("[").append(idx).append("] ")
+                    .append("sourceId=").append(sourceId)
+                    .append(", score=").append(String.format(Locale.ROOT, "%.4f", hit.getScore()))
+                    .append("\n")
+                    .append(content)
+                    .append("\n\n");
+            idx++;
+        }
+        sb.append("</context>");
+        return sb.toString();
+    }
+
+    private List<Citation> buildCitations(List<RetrievalResult> hits) {
+        List<Citation> citations = new ArrayList<>();
+        int idx = 1;
+        for (RetrievalResult hit : hits) {
+            if (hit.getChunk() == null) {
+                continue;
+            }
+            String content = String.valueOf(hit.getChunk().getContent());
+            String snippet = content.replace('\n', ' ').trim();
+            if (snippet.length() > 200) {
+                snippet = snippet.substring(0, 200) + "...";
+            }
+            citations.add(Citation.builder()
+                    .id(String.valueOf(idx))
+                    .sourceId(String.valueOf(hit.getChunk().getSourceId()))
+                    .snippet(snippet)
+                    .build());
+            idx++;
+        }
+        return citations;
+    }
+
+    private Set<String> normalizeSourceIds(List<String> sourceIds) {
+        if (sourceIds == null || sourceIds.isEmpty()) {
+            return Set.of();
+        }
+        Set<String> normalized = new LinkedHashSet<>();
+        for (String sourceId : sourceIds) {
+            if (sourceId == null || sourceId.isBlank()) {
+                continue;
+            }
+            normalized.add(sourceId.trim().replace('\\', '/'));
+        }
+        return normalized;
+    }
+
+    private void clearRagRuntime() {
+        ragRuntime.remove();
     }
 
     private boolean isIgnorableAdvisorReply(String reply) {
