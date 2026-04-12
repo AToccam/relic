@@ -1,5 +1,6 @@
 package com.relic.controller;
 
+import com.relic.rag.ingest.DocumentIngestionService;
 import com.relic.service.GeneratedFileRegistryService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,6 +25,7 @@ import java.text.Normalizer;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -35,8 +37,14 @@ public class FileController {
     @Autowired
     private GeneratedFileRegistryService generatedFileRegistryService;
 
+    @Autowired(required = false)
+    private DocumentIngestionService documentIngestionService;
+
     @Value("${relic.workspace.path:#{systemProperties['user.home'] + '/.openclaw/workspace'}}")
     private String workspacePath;
+
+    @Value("${relic.rag.ingest.auto-index-on-upload:false}")
+    private boolean autoIndexOnUpload;
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Map<String, Object> upload(@RequestParam("file") MultipartFile file) throws IOException {
@@ -71,13 +79,22 @@ public class FileController {
 
         log.info("上传文件成功: {} -> {}", originalFilename, relativePath);
 
-        return Map.of(
-                "filename", originalFilename,
-                "storedName", storedName,
-                "relativePath", relativePath,
-                "mimeType", mimeType,
-                "size", file.getSize()
-        );
+        boolean indexTriggered = false;
+        if (autoIndexOnUpload && documentIngestionService != null) {
+            documentIngestionService.triggerAutoIndexAsync(relativePath);
+            indexTriggered = true;
+            log.info("上传后已触发自动索引: {}", relativePath);
+        }
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("filename", originalFilename);
+        response.put("storedName", storedName);
+        response.put("relativePath", relativePath);
+        response.put("mimeType", mimeType);
+        response.put("size", file.getSize());
+        response.put("indexTriggered", indexTriggered);
+
+        return response;
     }
 
     @GetMapping("/list")
