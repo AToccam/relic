@@ -1,0 +1,129 @@
+services:
+  relic-core:
+    image: maven:3.9.9-eclipse-temurin-21
+    container_name: relic-core
+    restart: unless-stopped
+    working_dir: /app
+    command: mvn -DskipTests spring-boot:run
+    environment:
+      TZ: Asia/Shanghai
+      SERVER_PORT: "8082"
+      RELIC_WORKSPACE_PATH: /root/.openclaw/workspace
+      RELIC_ROUTER_LOCAL_MODEL_ENDPOINT: http://ollama:11434
+      RELIC_ROUTER_LOCAL_MODEL_MODEL: gemma3:1b
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./relic-core:/app
+      - maven_cache:/root/.m2
+      - openclaw_home:/root/.openclaw
+    depends_on:
+      - ollama
+    networks:
+      - relic-net
+
+  relic-gateway:
+    image: node:22-bookworm-slim
+    container_name: relic-gateway
+    restart: unless-stopped
+    entrypoint:
+      - /bin/sh
+      - -lc
+    command:
+      - |
+        set -e
+        unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy
+        if ! command -v git >/dev/null 2>&1; then
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates
+          rm -rf /var/lib/apt/lists/*
+        fi
+        mkdir -p /root/.openclaw/workspace /root/.openclaw/agents/main/agent
+        cat > /root/.openclaw/openclaw.json <<'EOF'
+        {
+          "meta": {
+            "lastTouchedVersion": "2026.3.7",
+            "lastTouchedAt": "2026-03-09T00:00:00.000Z"
+          },
+          "agents": {
+            "list": [
+              {
+                "id": "main",
+                "name": "main",
+                "workspace": "/root/.openclaw/workspace",
+                "agentDir": "/root/.openclaw/agents/main/agent"
+              }
+            ],
+            "defaults": {
+              "model": {
+                "primary": "relic-backend/deepseek-local"
+              }
+            }
+          },
+          "models": {
+            "mode": "merge",
+            "providers": {
+              "relic-backend": {
+                "baseUrl": "http://relic-core:8082/v1",
+                "apiKey": "relic-local-dev-key",
+                "api": "openai-completions",
+                "models": [
+                  {
+                    "id": "deepseek-local",
+                    "name": "Relic DeepSeek Brain",
+                    "contextWindow": 32000,
+                    "maxTokens": 4096
+                  }
+                ]
+              }
+            }
+          },
+          "commands": {
+            "native": "auto",
+            "nativeSkills": "auto",
+            "restart": true,
+            "ownerDisplay": "raw"
+          },
+          "gateway": {
+            "mode": "local",
+            "auth": {
+              "mode": "token",
+              "token": "relic-local-token"
+            },
+            "controlUi": {
+              "dangerouslyAllowHostHeaderOriginFallback": true
+            }
+          }
+        }
+        EOF
+        exec npx -y openclaw@2026.3.7 gateway --bind lan --port 18789 --verbose
+    ports:
+      - "18789:18789"
+    volumes:
+      - openclaw_home:/root/.openclaw
+      - gateway_npm_cache:/root/.npm
+    depends_on:
+      - relic-core
+    networks:
+      - relic-net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: relic-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - relic-net
+
+networks:
+  relic-net:
+    driver: bridge
+
+volumes:
+  maven_cache:
+  openclaw_home:
+  ollama_data:
+  gateway_npm_cache:

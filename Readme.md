@@ -14,6 +14,7 @@
 * **Node.js**: 推荐版本 v18.x 或更高。
 * **npm**: Node.js 自带的包管理器。
 * **Ollama**: 用于本地运行模型（如 qwen3.5:2b）。
+* **Docker Desktop**: 需要支持 Docker Compose v2（用于一键部署）。
 
 > **测试安装是否成功**：在终端运行 `node -v` 和 `npm -v`，如果有版本号输出则说明环境正常。
 
@@ -75,6 +76,91 @@ npx openclaw gateway --port 18789 --verbose
 2. 终端打印出 `[canvas] host mounted at http://127.0.0.1:18789/__openclaw__/canvas/`。
 
 此时，你可以直接在浏览器访问上述 Canvas 网址，在网页聊天框里输入内容，体验前后端全链路贯通的效果！
+
+---
+
+## 🐳 5. 使用 Docker Compose 一键部署（推荐）
+
+以下命令都在项目根目录执行（即包含 `docker-compose.yml` 的目录）。
+
+### 5.1 首次部署（拉镜像 + 启动服务）
+
+1. 进入项目根目录：
+   ```bash
+   cd /path/to/relic
+   ```
+2. 校验 Compose 配置：
+   ```bash
+   docker compose config
+   ```
+3. 拉取基础镜像：
+   ```bash
+   docker compose pull
+   ```
+4. 启动全部服务（后台）：
+   ```bash
+   docker compose up -d
+   ```
+5. 首次启动说明（Gateway 采用 `npx openclaw` 方式）：
+   - `relic-gateway` 首次启动会在容器内安装依赖（可能需要 1~3 分钟）。
+   - 若访问 Canvas 返回 `401 Unauthorized`，说明已启用 token 鉴权（容器化非 loopback 绑定必需）。
+   - 可用以下命令验证网关可用性：
+   ```bash
+   curl -I -H 'Authorization: Bearer relic-local-token' http://127.0.0.1:18789/__openclaw__/canvas/
+   ```
+6. 首次拉取 Ollama 模型（未下载过时执行）：
+   ```bash
+   docker exec -it relic-ollama ollama pull gemma3:1b
+   ```
+
+### 5.2 查看运行状态与日志
+
+1. 查看容器状态：
+   ```bash
+   docker compose ps
+   ```
+2. 跟踪核心服务日志：
+   ```bash
+   docker compose logs -f relic-core relic-gateway
+   ```
+3. 查看本地模型服务日志：
+   ```bash
+   docker compose logs -f ollama
+   ```
+
+### 5.3 启动后使用与连通性检查
+
+1. 验证 Gateway Canvas（容器模式默认需要 token 鉴权）：
+   ```bash
+   curl -I -H 'Authorization: Bearer relic-local-token' http://127.0.0.1:18789/__openclaw__/canvas/
+   ```
+2. 检查后端模式接口：
+   ```bash
+   curl http://127.0.0.1:8082/mode
+   ```
+
+### 5.4 日常运维常用命令
+
+1. 重启全部服务：
+   ```bash
+   docker compose restart
+   ```
+2. 仅重启后端：
+   ```bash
+   docker compose restart relic-core
+   ```
+3. 停止并移除容器（保留数据卷）：
+   ```bash
+   docker compose down
+   ```
+4. 停止并清理容器 + 数据卷（彻底重置）：
+   ```bash
+   docker compose down -v
+   ```
+5. 更新镜像并重建：
+   ```bash
+   docker compose pull && docker compose up -d
+   ```
 
 
 
