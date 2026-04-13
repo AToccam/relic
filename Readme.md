@@ -97,11 +97,12 @@ npx openclaw gateway --port 18789 --verbose
    ```bash
    docker compose pull
    ```
-4. 启动全部服务（后台）：
+4. 启动并构建全部服务（后台）：
    ```bash
-   docker compose up -d
+   docker compose up -d --build
    ```
 5. 首次启动说明（Gateway 采用 `npx openclaw` 方式）：
+   - `relic-face` 首次会构建前端镜像（Vue 编译），耗时取决于网络和机器性能。
    - `relic-gateway` 首次启动会在容器内安装依赖（可能需要 1~3 分钟）。
    - 若访问 Canvas 返回 `401 Unauthorized`，说明已启用 token 鉴权（容器化非 loopback 绑定必需）。
    - 可用以下命令验证网关可用性：
@@ -121,7 +122,7 @@ npx openclaw gateway --port 18789 --verbose
    ```
 2. 跟踪核心服务日志：
    ```bash
-   docker compose logs -f relic-core relic-gateway
+   docker compose logs -f relic-face relic-core relic-gateway
    ```
 3. 查看本地模型服务日志：
    ```bash
@@ -130,13 +131,21 @@ npx openclaw gateway --port 18789 --verbose
 
 ### 5.3 启动后使用与连通性检查
 
-1. 验证 Gateway Canvas（容器模式默认需要 token 鉴权）：
-   ```bash
-   curl -I -H 'Authorization: Bearer relic-local-token' http://127.0.0.1:18789/__openclaw__/canvas/
+1. 访问 Vue 前端（主入口）：
+   ```text
+   http://127.0.0.1:5173
    ```
-2. 检查后端模式接口：
+2. 检查前端页面可达：
+   ```bash
+   curl -I http://127.0.0.1:5173
+   ```
+3. 检查后端模式接口：
    ```bash
    curl http://127.0.0.1:8082/mode
+   ```
+4. 验证 Gateway Canvas（可选，容器模式默认需要 token 鉴权）：
+   ```bash
+   curl -I -H 'Authorization: Bearer relic-local-token' http://127.0.0.1:18789/__openclaw__/canvas/
    ```
 
 ### 5.4 日常运维常用命令

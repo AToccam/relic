@@ -1,4 +1,17 @@
 services:
+  relic-face:
+    build:
+      context: ./relic-face
+      dockerfile: Dockerfile
+    container_name: relic-face
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - relic-core
+    networks:
+      - relic-net
+
   relic-core:
     image: maven:3.9.9-eclipse-temurin-21
     container_name: relic-core
