@@ -158,6 +158,15 @@ export const useSourcesStore = defineStore('sources', () => {
     files.value = []
   }
 
+  function migrateSelectedFilesToConversation(newConversationId: string) {
+    const convId = currentConversationId.value
+    for (const file of files.value) {
+      if (file.conversationId === convId && file.selected && !file.uploadError) {
+        file.conversationId = newConversationId
+      }
+    }
+  }
+
   return {
     files,
     conversationFiles,
@@ -173,7 +182,8 @@ export const useSourcesStore = defineStore('sources', () => {
     toggleFileSelection,
     setAllUsableSelection,
     clearAll,
-    loadPersistedFiles
+    loadPersistedFiles,
+    migrateSelectedFilesToConversation
   }
 })
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import ComingSoonModal from './ComingSoonModal.vue'
 import { useSourcesStore } from '@/stores/sources'
 import { useChatStore } from '@/stores/chat'
@@ -103,6 +103,13 @@ function formatTime(value: string): string {
 function isPendingConversation(conversationId: string): boolean {
   return chat.pendingConversationIds.includes(conversationId)
 }
+
+function handleOutsideClick() {
+  openHistoryMenuId.value = null
+}
+
+onMounted(() => document.addEventListener('click', handleOutsideClick))
+onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 </script>
 
 <template>

@@ -31,6 +31,8 @@ export const useStudioStore = defineStore('studio', () => {
         relativePath: item.relativePath,
         updatedAt: item.updatedAt || ''
       }))
+    } catch {
+      // 后端不可达时静默忽略
     } finally {
       loading.value = false
     }
