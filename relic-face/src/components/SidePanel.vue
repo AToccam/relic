@@ -188,9 +188,9 @@ function isPendingConversation(conversationId: string): boolean {
 
         <div v-if="sources.uploading" class="uploading">正在上传文件...</div>
 
-        <template v-if="sources.files.length">
+        <template v-if="sources.conversationFiles.length">
           <div class="source-section-title-row">
-            <div class="source-section-title">已上传文件 · {{ sources.files.length }}</div>
+            <div class="source-section-title">已上传文件 · {{ sources.conversationFiles.length }}</div>
             <button
               v-if="sources.usableFiles.length"
               class="section-action-btn"
@@ -203,7 +203,7 @@ function isPendingConversation(conversationId: string): boolean {
             已勾选 {{ sources.selectedUsableFiles.length }}/{{ sources.usableFiles.length }}，仅勾选文件会发送给 AI。
           </div>
           <div
-            v-for="file in sources.files"
+            v-for="file in sources.conversationFiles"
             :key="file.id"
             :class="['source-item', { error: !!file.uploadError, selected: file.selected && !file.uploadError }]"
             @click="toggleSelection(file.id)"
@@ -237,8 +237,8 @@ function isPendingConversation(conversationId: string): boolean {
         </template>
 
         <div v-else class="empty-hint compact">
-          <p>暂无上传文件</p>
-          <span>上传后会自动保留在后端工作区</span>
+          <p>当前会话暂无上传文件</p>
+          <span>上传的文件仅在本会话中显示</span>
         </div>
       </section>
     </div>

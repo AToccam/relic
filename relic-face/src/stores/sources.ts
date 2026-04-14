@@ -10,6 +10,7 @@ export interface SourceFileItem {
   mimeType: string
   relativePath: string
   selected: boolean
+  conversationId: string
   dataUrl?: string
   uploadError?: string
 }
@@ -25,11 +26,19 @@ const AUDIO_MIME_PREFIX = 'audio/'
 export const useSourcesStore = defineStore('sources', () => {
   const files = ref<SourceFileItem[]>([])
   const uploading = ref(false)
+  const currentConversationId = ref('')
 
-  const usableFiles = computed(() => files.value.filter(f => !f.uploadError))
+  const conversationFiles = computed(() =>
+    files.value.filter(f => f.conversationId === currentConversationId.value)
+  )
+  const usableFiles = computed(() => conversationFiles.value.filter(f => !f.uploadError))
   const selectedUsableFiles = computed(() => usableFiles.value.filter(f => f.selected))
   const hasFiles = computed(() => selectedUsableFiles.value.length > 0)
   const allUsableSelected = computed(() => usableFiles.value.length > 0 && selectedUsableFiles.value.length === usableFiles.value.length)
+
+  function setConversation(conversationId: string) {
+    currentConversationId.value = conversationId
+  }
 
   async function addFiles(fileList: FileList): Promise<UploadResult> {
     const incoming = Array.from(fileList)
@@ -40,6 +49,7 @@ export const useSourcesStore = defineStore('sources', () => {
     uploading.value = true
     let okCount = 0
     let errorCount = 0
+    const convId = currentConversationId.value
 
     try {
       for (const file of incoming) {
@@ -53,7 +63,8 @@ export const useSourcesStore = defineStore('sources', () => {
             sizeBytes: uploaded.size || file.size,
             mimeType,
             relativePath: uploaded.relativePath,
-            selected: true
+            selected: true,
+            conversationId: convId
           }
 
           if (isImage(mimeType) || isAudio(mimeType)) {
@@ -73,6 +84,7 @@ export const useSourcesStore = defineStore('sources', () => {
             mimeType: file.type || 'application/octet-stream',
             relativePath: '',
             selected: false,
+            conversationId: convId,
             uploadError: msg
           })
         }
@@ -99,6 +111,7 @@ export const useSourcesStore = defineStore('sources', () => {
         continue
       }
 
+      // 历史持久化文件无法确定归属会话，标记为空串（不显示在任何会话视图中）
       files.value.push({
         id: `${Date.now()}-${Math.random()}`,
         name: item.filename,
@@ -106,7 +119,8 @@ export const useSourcesStore = defineStore('sources', () => {
         sizeBytes: item.size || 0,
         mimeType: item.mimeType || 'application/octet-stream',
         relativePath: item.relativePath,
-        selected: false
+        selected: false,
+        conversationId: ''
       })
       existing.add(item.relativePath)
     }
@@ -132,8 +146,9 @@ export const useSourcesStore = defineStore('sources', () => {
   }
 
   function setAllUsableSelection(selected: boolean) {
+    const convId = currentConversationId.value
     for (const file of files.value) {
-      if (!file.uploadError) {
+      if (!file.uploadError && file.conversationId === convId) {
         file.selected = selected
       }
     }
@@ -145,11 +160,14 @@ export const useSourcesStore = defineStore('sources', () => {
 
   return {
     files,
+    conversationFiles,
     hasFiles,
     usableFiles,
     selectedUsableFiles,
     allUsableSelected,
     uploading,
+    currentConversationId,
+    setConversation,
     addFiles,
     removeFile,
     toggleFileSelection,
