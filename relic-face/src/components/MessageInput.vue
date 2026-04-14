@@ -17,6 +17,10 @@ watch(input, (val) => {
   }, 800)
 })
 
+watch(() => chat.currentConversationId, () => {
+  if (driftTimer) { clearTimeout(driftTimer); driftTimer = null }
+})
+
 onUnmounted(() => {
   if (driftTimer) clearTimeout(driftTimer)
 })

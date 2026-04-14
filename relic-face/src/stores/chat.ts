@@ -186,6 +186,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function clear(id?: string) {
+    clearDrift()
     currentConversationId.value = id || buildConversationId()
     const buffer = createConversationBuffer()
     messageCacheByConversation.set(currentConversationId.value, buffer)
