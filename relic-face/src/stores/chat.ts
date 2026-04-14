@@ -7,6 +7,7 @@ import {
   renameConversation as renameConversationApi,
   streamChat
 } from '@/api/chat'
+import { detectTopicDrift } from '@/api/mode'
 import { useSourcesStore } from '@/stores/sources'
 import { useStudioStore } from '@/stores/studio'
 import type { Message, MessageContent, MessagePart } from '@/types'
@@ -23,6 +24,9 @@ export const useChatStore = defineStore('chat', () => {
   const pendingConversationIds = ref<string[]>([])
   const abortControllers = new Map<string, AbortController>()
   const messageCacheByConversation = new Map<string, Message[]>()
+  const driftSuggested = ref(false)
+  const driftDetecting = ref(false)
+  let driftCheckSeq = 0
 
   function toMessageArray(history: PersistedMessage[]): Message[] {
     return history
@@ -144,8 +148,45 @@ export const useChatStore = defineStore('chat', () => {
     abortControllers.get(id)?.abort()
   }
 
-  function clear() {
-    currentConversationId.value = buildConversationId()
+  function clearDrift() {
+    driftSuggested.value = false
+    driftDetecting.value = false
+    driftCheckSeq += 1
+  }
+
+  async function triggerDriftCheck(newMsg: string) {
+    if (newMsg.length < 8) return
+    if (driftSuggested.value || driftDetecting.value) return
+    if (isConversationStreaming(currentConversationId.value)) return
+    const buf = messageCacheByConversation.get(currentConversationId.value)
+    if (!buf || buf.length < 4) return
+    const lastUser = [...buf].reverse().find(m => m.role === 'user')
+    if (!lastUser) return
+    const prevText = lastUser.content
+    if (!prevText || typeof prevText !== 'string') return
+
+    const seq = ++driftCheckSeq
+    driftDetecting.value = true
+    try {
+      const isDrift = await detectTopicDrift(prevText, newMsg)
+      if (seq !== driftCheckSeq) return
+      if (isDrift) driftSuggested.value = true
+    } catch {
+      // 检测失败静默忽略
+    } finally {
+      if (seq === driftCheckSeq) driftDetecting.value = false
+    }
+  }
+
+  function confirmDriftNewConversation() {
+    const newId = buildConversationId()
+    sources.migrateSelectedFilesToConversation(newId)
+    clearDrift()
+    clear(newId)
+  }
+
+  function clear(id?: string) {
+    currentConversationId.value = id || buildConversationId()
     const buffer = createConversationBuffer()
     messageCacheByConversation.set(currentConversationId.value, buffer)
     messages.value = buffer
@@ -188,6 +229,7 @@ export const useChatStore = defineStore('chat', () => {
     const id = (conversationId || '').trim()
     if (!id) return
 
+    clearDrift()
     loadingHistory.value = true
     try {
       if (isConversationStreaming(id)) {
@@ -286,6 +328,8 @@ export const useChatStore = defineStore('chat', () => {
     loadingHistory,
     streamingByConversation,
     pendingConversationIds,
+    driftSuggested,
+    driftDetecting,
     isConversationStreaming,
     send,
     stop,
@@ -295,7 +339,10 @@ export const useChatStore = defineStore('chat', () => {
     selectConversation,
     newConversation,
     renameConversation,
-    deleteConversation
+    deleteConversation,
+    triggerDriftCheck,
+    clearDrift,
+    confirmDriftNewConversation
   }
 })
 
