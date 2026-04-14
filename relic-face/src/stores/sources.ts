@@ -146,8 +146,9 @@ export const useSourcesStore = defineStore('sources', () => {
   }
 
   function setAllUsableSelection(selected: boolean) {
+    const convId = currentConversationId.value
     for (const file of files.value) {
-      if (!file.uploadError) {
+      if (!file.uploadError && file.conversationId === convId) {
         file.selected = selected
       }
     }
