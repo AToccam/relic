@@ -11,7 +11,10 @@ let driftTimer: ReturnType<typeof setTimeout> | null = null
 
 watch(input, (val) => {
   if (driftTimer) { clearTimeout(driftTimer); driftTimer = null }
-  if (!val.trim() || val.trim().length < 8) return
+  if (!val.trim() || val.trim().length < 8) {
+    chat.clearDrift()
+    return
+  }
   driftTimer = setTimeout(() => {
     chat.triggerDriftCheck(val.trim())
   }, 800)
