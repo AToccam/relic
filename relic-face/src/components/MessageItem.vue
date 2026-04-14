@@ -127,7 +127,28 @@ watchEffect(async () => {
         </template>
       </template>
       <template v-else>
-        <div class="plain-text">{{ message.content }}</div>
+        <template v-if="Array.isArray(message.payloadContent)">
+          <div v-for="(part, i) in message.payloadContent" :key="i">
+            <div v-if="part.type === 'text' && part.text" class="plain-text">{{ part.text }}</div>
+            <div v-else-if="part.type === 'image_url'" class="attach-image-wrap">
+              <img :src="part.image_url.url" class="attach-image" />
+            </div>
+            <div v-else-if="part.type === 'input_audio'" class="attach-card">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+              </svg>
+              <span>音频附件</span>
+            </div>
+            <div v-else-if="part.type === 'input_file'" class="attach-card">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+              <span class="attach-filename">{{ part.input_file.filename }}</span>
+            </div>
+          </div>
+        </template>
+        <div v-else class="plain-text">{{ message.content }}</div>
       </template>
       <span v-if="message.streaming" class="cursor">▋</span>
     </div>
@@ -305,6 +326,40 @@ watchEffect(async () => {
 
 .seg-text {
   line-height: 1.4;
+}
+
+/* 用户消息附件展示 */
+.attach-image-wrap {
+  margin-top: 6px;
+}
+
+.attach-image {
+  max-width: 200px;
+  max-height: 160px;
+  border-radius: 6px;
+  object-fit: cover;
+  display: block;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.attach-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.attach-filename {
+  max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 代码块复制按钮 */
