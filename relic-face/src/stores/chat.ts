@@ -181,7 +181,6 @@ export const useChatStore = defineStore('chat', () => {
   function confirmDriftNewConversation() {
     const newId = buildConversationId()
     sources.migrateSelectedFilesToConversation(newId)
-    clearDrift()
     clear(newId)
   }
 
