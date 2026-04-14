@@ -101,7 +101,8 @@ watchEffect(async () => {
             </svg>
             <span class="process-summary">
               <template v-if="message.streaming">思考中…</template>
-              <template v-else>已调用 {{ toolCount }} 个工具</template>
+              <template v-else-if="toolCount > 0">已调用 {{ toolCount }} 个工具</template>
+              <template v-else>查看过程详情</template>
             </span>
           </button>
           <div v-if="processExpanded" class="process-body">
