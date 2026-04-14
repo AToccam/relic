@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, useTemplateRef, watchEffect, nextTick } from 'vue'
 import { marked } from 'marked'
 import type { Message } from '@/types'
 
@@ -55,12 +55,38 @@ watch(() => props.message.streaming, (streaming) => {
 function renderMd(text: string): string {
   return marked.parse(text) as string
 }
+
+const bubbleRef = useTemplateRef<HTMLElement>('bubble')
+
+watchEffect(async () => {
+  // 依赖 message.content 变化（流式更新）
+  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+  props.message.content
+  await nextTick()
+  const el = bubbleRef.value
+  if (!el) return
+  el.querySelectorAll('pre').forEach((pre) => {
+    if (pre.querySelector('.copy-btn')) return
+    const btn = document.createElement('button')
+    btn.className = 'copy-btn'
+    btn.textContent = '复制'
+    btn.addEventListener('click', () => {
+      const code = pre.querySelector('code')?.innerText ?? pre.innerText
+      navigator.clipboard.writeText(code).then(() => {
+        btn.textContent = '已复制'
+        setTimeout(() => { btn.textContent = '复制' }, 1500)
+      })
+    })
+    pre.style.position = 'relative'
+    pre.appendChild(btn)
+  })
+})
 </script>
 
 <template>
   <div :class="['message-item', message.role]">
     <div class="avatar">{{ message.role === 'user' ? 'U' : 'AI' }}</div>
-    <div class="bubble">
+    <div class="bubble" ref="bubble">
       <template v-if="message.role === 'assistant'">
         <!-- 工具调用过程折叠块 -->
         <div v-if="hasProcess" class="process-block">
@@ -279,6 +305,27 @@ function renderMd(text: string): string {
 
 .seg-text {
   line-height: 1.4;
+}
+
+/* 代码块复制按钮 */
+:deep(.copy-btn) {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  border-radius: 4px;
+  border: 1px solid #94a3b8;
+  background: #ffffff;
+  color: #475569;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+:deep(pre:hover .copy-btn) {
+  opacity: 1;
 }
 
 .markdown-body :deep(p) { margin: 0 0 8px; }
