@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { marked } from 'marked'
 import type { Message } from '@/types'
 
@@ -40,6 +40,18 @@ function parseSegments(content: string): Segment[] {
 
 const segments = computed(() => parseSegments(props.message.content))
 
+const processSegs = computed(() =>
+  segments.value.filter(s => s.type === 'tool' || s.type === 'status' || s.type === 'warning')
+)
+const hasProcess = computed(() => processSegs.value.length > 0)
+const toolCount = computed(() => processSegs.value.filter(s => s.type === 'tool').length)
+
+// 流式时展开，完成后自动折叠
+const processExpanded = ref(true)
+watch(() => props.message.streaming, (streaming) => {
+  if (!streaming) processExpanded.value = false
+}, { immediate: true })
+
 function renderMd(text: string): string {
   return marked.parse(text) as string
 }
@@ -50,20 +62,42 @@ function renderMd(text: string): string {
     <div class="avatar">{{ message.role === 'user' ? 'U' : 'AI' }}</div>
     <div class="bubble">
       <template v-if="message.role === 'assistant'">
+        <!-- 工具调用过程折叠块 -->
+        <div v-if="hasProcess" class="process-block">
+          <button class="process-toggle" @click="processExpanded = !processExpanded">
+            <svg
+              class="toggle-arrow"
+              :class="{ expanded: processExpanded }"
+              width="12" height="12" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" stroke-width="2.5"
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            <span class="process-summary">
+              <template v-if="message.streaming">思考中…</template>
+              <template v-else>已调用 {{ toolCount }} 个工具</template>
+            </span>
+          </button>
+          <div v-if="processExpanded" class="process-body">
+            <template v-for="(seg, i) in processSegs" :key="i">
+              <div v-if="seg.type === 'tool'" class="seg-tool">
+                <span class="seg-icon">🔧</span>
+                <span class="seg-text">{{ seg.text.slice(2).trim() }}</span>
+              </div>
+              <div v-else-if="seg.type === 'status'" class="seg-status">
+                <span class="seg-icon">{{ [...seg.text][0] }}</span>
+                <span class="seg-text">{{ seg.text.slice(2).trim() }}</span>
+              </div>
+              <div v-else-if="seg.type === 'warning'" class="seg-warning">
+                <span class="seg-icon">⚠️</span>
+                <span class="seg-text">{{ seg.text.slice(3).trim() }}</span>
+              </div>
+            </template>
+          </div>
+        </div>
+        <!-- 正文 Markdown -->
         <template v-for="(seg, i) in segments" :key="i">
           <div v-if="seg.type === 'markdown'" class="markdown-body" v-html="renderMd(seg.text)" />
-          <div v-else-if="seg.type === 'tool'" class="seg-tool">
-            <span class="seg-icon">🔧</span>
-            <span class="seg-text">{{ seg.text.slice(2).trim() }}</span>
-          </div>
-          <div v-else-if="seg.type === 'status'" class="seg-status">
-            <span class="seg-icon">{{ [...seg.text][0] }}</span>
-            <span class="seg-text">{{ seg.text.slice(2).trim() }}</span>
-          </div>
-          <div v-else-if="seg.type === 'warning'" class="seg-warning">
-            <span class="seg-icon">⚠️</span>
-            <span class="seg-text">{{ seg.text.slice(3).trim() }}</span>
-          </div>
         </template>
       </template>
       <template v-else>
@@ -143,6 +177,57 @@ function renderMd(text: string): string {
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
+}
+
+/* 工具调用过程折叠块 */
+.process-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid rgba(99, 102, 241, 0.18);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.process-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(99, 102, 241, 0.05);
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: #4338ca;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
+  transition: background 0.15s;
+}
+
+.process-toggle:hover {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.toggle-arrow {
+  flex-shrink: 0;
+  transition: transform 0.2s;
+  transform: rotate(0deg);
+}
+
+.toggle-arrow.expanded {
+  transform: rotate(90deg);
+}
+
+.process-summary {
+  font-weight: 500;
+}
+
+.process-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px 8px;
 }
 
 /* 工具调用行 */
