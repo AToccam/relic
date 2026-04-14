@@ -90,6 +90,7 @@ export const useChatStore = defineStore('chat', () => {
     if (!currentConversationId.value) {
       currentConversationId.value = targetConversationId
       messages.value = getOrCreateConversationBuffer(targetConversationId)
+      sources.setConversation(targetConversationId)
     }
 
     if (isConversationStreaming(targetConversationId)) return
@@ -148,6 +149,7 @@ export const useChatStore = defineStore('chat', () => {
     const buffer = createConversationBuffer()
     messageCacheByConversation.set(currentConversationId.value, buffer)
     messages.value = buffer
+    sources.setConversation(currentConversationId.value)
     conversations.value = [
       {
         conversationId: currentConversationId.value,
@@ -191,6 +193,7 @@ export const useChatStore = defineStore('chat', () => {
       if (isConversationStreaming(id)) {
         currentConversationId.value = id
         messages.value = getOrCreateConversationBuffer(id)
+        sources.setConversation(id)
         return
       }
 
@@ -199,6 +202,7 @@ export const useChatStore = defineStore('chat', () => {
       messageCacheByConversation.set(id, buffer)
       currentConversationId.value = id
       messages.value = buffer
+      sources.setConversation(id)
     } finally {
       loadingHistory.value = false
     }
