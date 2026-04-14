@@ -101,6 +101,7 @@ export const useChatStore = defineStore('chat', () => {
     const displayText = buildUserDisplayText(userText.trim(), selectedFiles)
 
     addMessage('user', displayText, content)
+    sources.setAllUsableSelection(false)
     const assistantMsg = addMessage('assistant', '')
     assistantMsg.streaming = true
     setConversationStreaming(targetConversationId, true)
