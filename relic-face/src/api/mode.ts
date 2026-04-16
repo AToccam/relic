@@ -42,20 +42,27 @@ export async function testMulti(prompt: string): Promise<MultiTestResult> {
 }
 
 export async function detectTopicDrift(prevMsg: string, newMsg: string): Promise<boolean> {
+  const system = '你是话题判断助手，只能回答YES或NO，不要输出任何其他内容。'
   const prompt =
-    `你是话题判断助手，只能回答YES或NO，不要输出任何其他内容。\n` +
     `判断以下两条消息是否属于明显不同的话题领域。\n` +
     `消息A：${prevMsg.slice(0, 150)}\n` +
     `消息B：${newMsg.slice(0, 150)}\n` +
     `YES = 话题明显不同，建议新开会话；NO = 同一话题或存在关联性`
   try {
-    const res = await fetch(`${BASE}/test/ai`, {
+    const res = await fetch('http://127.0.0.1:11434/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'qwen', prompt })
+      body: JSON.stringify({
+        model: 'gemma3:1b',
+        system,
+        prompt,
+        stream: false,
+        think: false,
+        options: { temperature: 0.0, num_predict: 12 }
+      })
     })
     const json = await res.json()
-    return ((json.reply as string) || '').toUpperCase().includes('YES')
+    return ((json.response as string) || '').toUpperCase().includes('YES')
   } catch {
     return false
   }
