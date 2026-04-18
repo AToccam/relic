@@ -1,15 +1,25 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import ComingSoonModal from './ComingSoonModal.vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useSourcesStore } from '@/stores/sources'
 import { useChatStore } from '@/stores/chat'
 
-const modal = ref<string | null>(null)
 const sources = useSourcesStore()
 const chat = useChatStore()
 const fileInput = ref<HTMLInputElement | null>(null)
 const isDragging = ref(false)
 const openHistoryMenuId = ref<string | null>(null)
+const showHistorySearch = ref(false)
+const historySearchTerm = ref('')
+const historySearchInput = ref<HTMLInputElement | null>(null)
+
+const hasHistorySearchTerm = computed(() => historySearchTerm.value.trim().length > 0)
+const filteredConversations = computed(() => {
+  const keyword = historySearchTerm.value.trim().toLowerCase()
+  if (!keyword) {
+    return chat.conversations
+  }
+  return chat.conversations.filter(item => resolveHistoryTitle(item).toLowerCase().includes(keyword))
+})
 
 async function addFiles(fileList: FileList) {
   await sources.addFiles(fileList)
@@ -63,6 +73,21 @@ function toggleHistoryMenu(conversationId: string) {
   openHistoryMenuId.value = openHistoryMenuId.value === conversationId ? null : conversationId
 }
 
+async function toggleHistorySearch() {
+  showHistorySearch.value = !showHistorySearch.value
+  if (showHistorySearch.value) {
+    await nextTick()
+    historySearchInput.value?.focus()
+    return
+  }
+  historySearchTerm.value = ''
+}
+
+function clearHistorySearch() {
+  historySearchTerm.value = ''
+  showHistorySearch.value = false
+}
+
 async function renameHistoryItem(conversationId: string, currentName: string) {
   const name = window.prompt('请输入新的会话名称', currentName || '')
   if (name === null) return
@@ -104,6 +129,15 @@ function isPendingConversation(conversationId: string): boolean {
   return chat.pendingConversationIds.includes(conversationId)
 }
 
+function resolveHistoryTitle(item: { title?: string; lastPreview?: string }): string {
+  const title = (item.title || '').trim()
+  if (title) {
+    return title
+  }
+  const preview = (item.lastPreview || '').trim()
+  return preview || '新对话'
+}
+
 function handleOutsideClick() {
   openHistoryMenuId.value = null
 }
@@ -116,7 +150,11 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   <aside class="side-panel">
     <div class="panel-header">
       <span class="panel-title">来源</span>
-      <button class="header-icon-btn" @click="modal = '搜索来源'" title="搜索">
+      <button
+        :class="['header-icon-btn', { active: showHistorySearch }]"
+        @click="toggleHistorySearch"
+        :title="showHistorySearch ? '关闭搜索' : '搜索聊天记录'"
+      >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
         </svg>
@@ -130,17 +168,29 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
           <button class="section-action-btn" @click="newConversation">新对话</button>
         </div>
 
+        <div v-if="showHistorySearch" class="history-search-row">
+          <input
+            ref="historySearchInput"
+            v-model="historySearchTerm"
+            class="history-search-input"
+            type="text"
+            placeholder="输入标题关键词"
+            @keydown.esc="clearHistorySearch"
+          />
+          <button v-if="hasHistorySearchTerm" class="history-search-clear" @click="historySearchTerm = ''">清空</button>
+        </div>
+
         <div v-if="chat.loadingHistory" class="uploading">正在加载聊天记录...</div>
 
-        <template v-else-if="chat.conversations.length">
+        <template v-else-if="filteredConversations.length">
           <button
-            v-for="item in chat.conversations"
+            v-for="item in filteredConversations"
             :key="item.conversationId"
             :class="['history-item', { active: item.conversationId === chat.currentConversationId }]"
             @click="openConversation(item.conversationId)"
           >
             <div class="history-row">
-              <span class="history-title">{{ item.title || item.lastPreview || '新对话' }}</span>
+              <span class="history-title">{{ resolveHistoryTitle(item) }}</span>
               <button class="history-menu-btn" @click.stop="toggleHistoryMenu(item.conversationId)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                   <circle cx="12" cy="5" r="1.5" />
@@ -154,15 +204,15 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
               <span v-if="isPendingConversation(item.conversationId)" class="history-pending">处理中</span>
             </span>
             <div v-if="openHistoryMenuId === item.conversationId" class="history-menu" @click.stop>
-              <button class="history-menu-item" @click="renameHistoryItem(item.conversationId, item.title || item.lastPreview || '')">重命名</button>
+              <button class="history-menu-item" @click="renameHistoryItem(item.conversationId, resolveHistoryTitle(item))">重命名</button>
               <button class="history-menu-item danger" @click="deleteHistoryItem(item.conversationId)">删除</button>
             </div>
           </button>
         </template>
 
         <div v-else class="empty-hint compact">
-          <p>暂无聊天记录</p>
-          <span>发送第一条消息后会自动保存</span>
+          <p>{{ hasHistorySearchTerm ? '未找到匹配对话' : '暂无聊天记录' }}</p>
+          <span>{{ hasHistorySearchTerm ? '请尝试其他关键词' : '发送第一条消息后会自动保存' }}</span>
         </div>
       </section>
 
@@ -251,11 +301,6 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
     </div>
   </aside>
 
-  <ComingSoonModal
-    v-if="modal"
-    :title="modal"
-    @close="modal = null"
-  />
 </template>
 
 <style scoped>
@@ -303,6 +348,11 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 .header-icon-btn:hover {
   background: #e2e8f0;
   color: #4a5568;
+}
+
+.header-icon-btn.active {
+  background: #e0e7ff;
+  color: #4f46e5;
 }
 
 .panel-body {
@@ -506,6 +556,43 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.history-search-row {
+  margin: 8px 4px 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.history-search-input {
+  flex: 1;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #1e293b;
+  font-size: 12px;
+}
+
+.history-search-input:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.history-search-clear {
+  border: none;
+  background: transparent;
+  color: #4f46e5;
+  font-size: 11px;
+  padding: 4px;
+  cursor: pointer;
+}
+
+.history-search-clear:hover {
+  color: #4338ca;
 }
 
 .section-action-btn {
