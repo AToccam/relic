@@ -46,6 +46,14 @@ relic:
       # 分类超时调高，降低冷启动/排队导致的误回退
       classify-timeout-ms: 8000
       answer-timeout-ms: 12000
+      # 会话自动命名（新对话）超时与长度
+      title-timeout-ms: 4000
+      title-max-length: 18
+
+  chat:
+    auto-title:
+      enabled: true
+      fallback-max-length: 18
 
   stream:
     watchdog:
