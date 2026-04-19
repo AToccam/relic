@@ -44,6 +44,12 @@ public class OllamaLocalService implements LocalIntentClassifier {
     @Value("${relic.router.local-model.answer-timeout-ms:12000}")
     private int answerTimeoutMs;
 
+    @Value("${relic.router.local-model.title-timeout-ms:4000}")
+    private int titleTimeoutMs;
+
+    @Value("${relic.router.local-model.title-max-length:18}")
+    private int titleMaxLength;
+
     @Value("${relic.router.local-model.disable-thinking:true}")
     private boolean disableThinking;
 
@@ -55,6 +61,8 @@ public class OllamaLocalService implements LocalIntentClassifier {
         log.info("disableThinking: {}", disableThinking);
         log.info("classifyTimeoutMs: {}", classifyTimeoutMs);
         log.info("answerTimeoutMs: {}", answerTimeoutMs);
+        log.info("titleTimeoutMs: {}", titleTimeoutMs);
+        log.info("titleMaxLength: {}", titleMaxLength);
         log.info("=====================================================");
     }
 
@@ -116,6 +124,28 @@ public class OllamaLocalService implements LocalIntentClassifier {
         } catch (Exception e) {
             log.warn("Ollama 本地流式回答失败: {}", e.getMessage());
             onChunk.accept("当前云端 AI 暂不可用，且本地应急模型调用失败，请稍后重试。");
+        }
+    }
+
+    public String summarizeConversationTitle(String firstParagraph) {
+        if (firstParagraph == null || firstParagraph.isBlank()) {
+            return "";
+        }
+
+        String system = "你是会话命名助手。根据用户首段内容生成简洁标题。只输出标题，不要解释。";
+        String prompt = "首段内容：\n" + firstParagraph.trim() + "\n\n"
+                + "要求：\n"
+                + "1) 输出 8~16 个字的中文标题，尽量准确概括意图。\n"
+                + "2) 不要输出引号、句号、编号或前缀（如“标题：”）。\n"
+                + "3) 仅输出一行标题文本。\n\n"
+                + "标题：";
+
+        try {
+            String raw = generate(system, prompt, 48, 0.2, titleTimeoutMs);
+            return normalizeTitle(raw);
+        } catch (Exception e) {
+            log.warn("Ollama 会话命名失败: {}", e.getMessage());
+            return "";
         }
     }
 
@@ -261,6 +291,34 @@ public class OllamaLocalService implements LocalIntentClassifier {
             return "FAST";
         }
         return t;
+    }
+
+    private String normalizeTitle(String raw) {
+        if (raw == null) {
+            return "";
+        }
+
+        String title = raw.replace("\r", "").trim();
+        int newline = title.indexOf('\n');
+        if (newline >= 0) {
+            title = title.substring(0, newline).trim();
+        }
+
+        title = title.replaceFirst("^(?i)(title|标题)\\s*[:：-]\\s*", "");
+        title = title.replaceAll("^[\"'“”‘’《》【】()\\[\\]]+", "");
+        title = title.replaceAll("[\"'“”‘’《》【】()\\[\\]]+$", "");
+        title = title.replaceAll("\\s+", " ").trim();
+
+        if (title.endsWith("。") || title.endsWith("!") || title.endsWith("！")
+                || title.endsWith("?") || title.endsWith("？") || title.endsWith(".")) {
+            title = title.substring(0, title.length() - 1).trim();
+        }
+
+        int maxLen = Math.max(8, titleMaxLength);
+        if (title.length() > maxLen) {
+            title = title.substring(0, maxLen).trim();
+        }
+        return title;
     }
 
     private String extractText(Map<String, Object> parsed) {

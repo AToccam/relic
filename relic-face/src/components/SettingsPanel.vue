@@ -1,11 +1,20 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
+import type { SkillInfo } from '@/types'
 
 defineEmits<{ close: [] }>()
 
 const settings = useSettingsStore()
 const multiPrompt = ref('你好，请用一句话介绍你自己')
+const skillImportSource = ref('')
+const showBundledSkills = ref(false)
+const visibleSkills = computed(() => {
+  if (showBundledSkills.value) {
+    return settings.skills
+  }
+  return settings.skills.filter(skill => !skill.bundled)
+})
 
 function onSingleProviderChange(event: Event) {
   const target = event.target
@@ -31,6 +40,45 @@ function onAdvisorToggle(provider: string, event: Event) {
 
 function onLeaderChange(provider: string) {
   settings.switchMultiLeader(provider)
+}
+
+function onSkillToggle(skillName: string, event: Event) {
+  const target = event.target
+  if (!(target instanceof HTMLInputElement)) {
+    return
+  }
+  settings.toggleSkill(skillName, target.checked)
+}
+
+async function onImportSkill() {
+  const source = skillImportSource.value.trim()
+  if (!source) {
+    return
+  }
+  await settings.importSkill(source)
+  if (!settings.skillImportError) {
+    skillImportSource.value = ''
+  }
+}
+
+function skillMissingSummary(skill: SkillInfo): string {
+  const missing: string[] = []
+  if (skill.missing?.bins?.length) {
+    missing.push(`缺少命令: ${skill.missing.bins.slice(0, 3).join(', ')}`)
+  }
+  if (skill.missing?.env?.length) {
+    missing.push(`缺少环境变量: ${skill.missing.env.slice(0, 3).join(', ')}`)
+  }
+  if (skill.missing?.config?.length) {
+    missing.push(`缺少配置: ${skill.missing.config.slice(0, 2).join(', ')}`)
+  }
+  if (skill.missing?.os?.length) {
+    missing.push(`系统限制: ${skill.missing.os.join(', ')}`)
+  }
+  if (skill.blockedByAllowlist) {
+    missing.push('被 allowlist 限制')
+  }
+  return missing.length ? missing.join(' | ') : '当前环境未满足要求'
 }
 </script>
 
@@ -215,6 +263,72 @@ function onLeaderChange(provider: string) {
                 <span class="advisor-name">{{ name }}</span>
                 <p class="advisor-reply">{{ reply }}</p>
               </div>
+            </div>
+          </section>
+
+          <!-- Skills 管理 -->
+          <section class="section">
+            <h3 class="section-title">Skills</h3>
+            <p class="section-desc">勾选控制启用状态；支持粘贴 ClawHub/GitHub 链接或 ClawHub slug 导入。内置 Skills 默认通常是启用状态。</p>
+
+            <label class="bundled-switch">
+              <input v-model="showBundledSkills" type="checkbox" />
+              <span>显示内置 Skills（数量较多）</span>
+            </label>
+
+            <div class="skill-import-row">
+              <input
+                v-model="skillImportSource"
+                class="skill-import-input"
+                placeholder="例如: https://clawhub.ai/skills/xxx 或 https://github.com/owner/repo"
+              />
+              <button
+                class="skill-import-btn"
+                @click="onImportSkill"
+                :disabled="settings.skillImporting || !skillImportSource.trim()"
+              >
+                {{ settings.skillImporting ? '导入中…' : '导入' }}
+              </button>
+            </div>
+
+            <p v-if="settings.skillImportMessage" class="skill-tip ok">{{ settings.skillImportMessage }}</p>
+            <p v-if="settings.skillImportError || settings.skillsError" class="skill-tip error">
+              {{ settings.skillImportError || settings.skillsError }}
+            </p>
+            <p v-if="settings.skillsWorkspaceDir" class="skill-tip">
+              安装目录: {{ settings.skillsWorkspaceDir }}/skills
+            </p>
+
+            <div v-if="settings.skillsLoading" class="skill-empty">正在加载 Skills...</div>
+            <div v-else-if="settings.skills.length === 0" class="skill-empty">暂无可用 Skills</div>
+            <div v-else-if="visibleSkills.length === 0" class="skill-empty">当前仅显示导入/安装的 Skills；可开启“显示内置 Skills”查看全部。</div>
+
+            <div v-else class="skills-list">
+              <label
+                v-for="skill in visibleSkills"
+                :key="skill.name"
+                class="skill-row"
+              >
+                <div class="skill-row-left">
+                  <input
+                    type="checkbox"
+                    :checked="!skill.disabled"
+                    :disabled="settings.skillBusyKey === skill.name || settings.skillImporting"
+                    @change="onSkillToggle(skill.name, $event)"
+                  />
+                  <div class="skill-meta">
+                    <div class="skill-name-line">
+                      <span class="skill-name">{{ skill.emoji ? `${skill.emoji} ${skill.name}` : skill.name }}</span>
+                      <span class="skill-source">{{ skill.source }}</span>
+                    </div>
+                    <p class="skill-desc">{{ skill.description }}</p>
+                    <p v-if="!skill.eligible" class="skill-missing">{{ skillMissingSummary(skill) }}</p>
+                  </div>
+                </div>
+                <span class="skill-state" :class="{ eligible: skill.eligible, blocked: skill.blockedByAllowlist }">
+                  {{ skill.eligible ? '可用' : '待满足条件' }}
+                </span>
+              </label>
             </div>
           </section>
         </div>
@@ -653,5 +767,177 @@ function onLeaderChange(provider: string) {
   font-weight: 700;
   color: #d97706;
   text-transform: capitalize;
+}
+
+.skill-import-row {
+  display: flex;
+  gap: 8px;
+}
+
+.skill-import-input {
+  flex: 1;
+  background: #f8f9fa;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #1a202c;
+  font-size: 12px;
+  padding: 8px 10px;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+
+.skill-import-input:focus {
+  border-color: #6366f1;
+  background: #ffffff;
+}
+
+.skill-import-btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  background: #6366f1;
+  color: #fff;
+  transition: background 0.15s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.skill-import-btn:hover:not(:disabled) {
+  background: #4f46e5;
+}
+
+.skill-import-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.skill-tip {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.skill-tip.ok {
+  color: #15803d;
+}
+
+.skill-tip.error {
+  color: #dc2626;
+}
+
+.skill-empty {
+  font-size: 12px;
+  color: #94a3b8;
+  padding: 6px 0;
+}
+
+.bundled-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #475569;
+  user-select: none;
+}
+
+.bundled-switch input {
+  accent-color: #6366f1;
+}
+
+.skills-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.skill-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.skill-row-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: 1;
+}
+
+.skill-row-left input {
+  margin-top: 2px;
+  accent-color: #6366f1;
+}
+
+.skill-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.skill-name-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.skill-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.skill-source {
+  font-size: 10px;
+  color: #475569;
+  background: #e2e8f0;
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.skill-desc {
+  font-size: 11px;
+  color: #475569;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.skill-missing {
+  font-size: 11px;
+  color: #b45309;
+  margin: 6px 0 0;
+  line-height: 1.4;
+}
+
+.skill-state {
+  font-size: 10px;
+  color: #b45309;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 999px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.skill-state.eligible {
+  color: #166534;
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.skill-state.blocked {
+  color: #991b1b;
+  background: #fee2e2;
+  border-color: #fecaca;
 }
 </style>

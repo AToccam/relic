@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { getMode, setMode as apiSetMode, testProvider, testMulti as apiTestMulti } from '@/api/mode'
-import type { Mode, ModeResponse, TestResult, MultiTestResult } from '@/types'
+import { importSkill as apiImportSkill, listSkills, setSkillEnabled as apiSetSkillEnabled } from '@/api/skills'
+import type { Mode, ModeResponse, TestResult, MultiTestResult, SkillInfo, SkillsSnapshot } from '@/types'
 
 export const useSettingsStore = defineStore('settings', () => {
   const preferredSingleProviders = ['deepseek', 'qwen', 'kimi']
@@ -21,6 +22,15 @@ export const useSettingsStore = defineStore('settings', () => {
   const multiLoading = ref(false)
   const roleSaving = ref(false)
   const roleSaveError = ref('')
+
+  const skills = ref<SkillInfo[]>([])
+  const skillsWorkspaceDir = ref('')
+  const skillsLoading = ref(false)
+  const skillsError = ref('')
+  const skillBusyKey = ref('')
+  const skillImporting = ref(false)
+  const skillImportMessage = ref('')
+  const skillImportError = ref('')
 
   const multiAdvisors = ref<string[]>([])
   const multiLeader = ref<string>('')
@@ -57,6 +67,12 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  function applySkillsSnapshot(snapshot: SkillsSnapshot) {
+    skills.value = Array.isArray(snapshot.skills) ? snapshot.skills : []
+    skillsWorkspaceDir.value = snapshot.workspaceDir ?? ''
+    skillsError.value = snapshot.error ?? ''
+  }
+
   async function fetchMode() {
     try {
       const data = await getMode()
@@ -64,6 +80,19 @@ export const useSettingsStore = defineStore('settings', () => {
       roleSaveError.value = ''
     } catch {
       // backend not reachable on load
+    }
+  }
+
+  async function fetchSkills() {
+    skillsLoading.value = true
+    try {
+      const snapshot = await listSkills()
+      applySkillsSnapshot(snapshot)
+      skillImportError.value = ''
+    } catch (e) {
+      skillsError.value = e instanceof Error ? e.message : '获取 Skills 失败'
+    } finally {
+      skillsLoading.value = false
     }
   }
 
@@ -147,9 +176,43 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  async function toggleSkill(skillName: string, enabled: boolean) {
+    skillBusyKey.value = skillName
+    skillImportMessage.value = ''
+    skillImportError.value = ''
+    try {
+      const result = await apiSetSkillEnabled(skillName, enabled)
+      applySkillsSnapshot(result.snapshot)
+    } catch (e) {
+      skillImportError.value = e instanceof Error ? e.message : '更新 Skill 状态失败'
+      await fetchSkills()
+    } finally {
+      skillBusyKey.value = ''
+    }
+  }
+
+  async function importSkill(source: string) {
+    skillImporting.value = true
+    skillImportMessage.value = ''
+    skillImportError.value = ''
+    try {
+      const result = await apiImportSkill(source)
+      applySkillsSnapshot(result.snapshot)
+      const imported = result.importedSkills?.join(', ') || '未知'
+      skillImportMessage.value = `导入成功: ${imported}`
+    } catch (e) {
+      skillImportError.value = e instanceof Error ? e.message : '导入 Skill 失败'
+    } finally {
+      skillImporting.value = false
+    }
+  }
+
   return {
     mode, providers, singleProvider, singleProviderOptions, testResults, multiTestResult, loading, multiLoading,
     multiAdvisors, multiLeader, roleSaving, roleSaveError,
-    fetchMode, switchMode, switchSingleProvider, switchMultiLeader, switchMultiAdvisors, runTest, runMultiTest
+    skills, skillsWorkspaceDir, skillsLoading, skillsError, skillBusyKey,
+    skillImporting, skillImportMessage, skillImportError,
+    fetchMode, switchMode, switchSingleProvider, switchMultiLeader, switchMultiAdvisors,
+    runTest, runMultiTest, fetchSkills, toggleSkill, importSkill
   }
 })
