@@ -58,3 +58,44 @@ export interface MultiTestResult {
   costMs: number
   advisors: Record<string, string>
 }
+
+export interface SkillMissing {
+  bins: string[]
+  anyBins: string[]
+  env: string[]
+  config: string[]
+  os: string[]
+}
+
+export interface SkillInfo {
+  name: string
+  description: string
+  emoji?: string
+  homepage?: string
+  eligible: boolean
+  disabled: boolean
+  blockedByAllowlist: boolean
+  source: string
+  bundled: boolean
+  missing: SkillMissing
+}
+
+export interface SkillsSnapshot {
+  workspaceDir: string
+  managedSkillsDir: string
+  skills: SkillInfo[]
+  error?: string
+}
+
+export interface SkillUpdateResponse {
+  ok: boolean
+  message: string
+  snapshot: SkillsSnapshot
+}
+
+export interface SkillImportResponse {
+  ok: boolean
+  message: string
+  importedSkills: string[]
+  snapshot: SkillsSnapshot
+}

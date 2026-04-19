@@ -19,6 +19,7 @@ const studio = useStudioStore()
 
 onMounted(async () => {
   await settings.fetchMode()
+  await settings.fetchSkills()
   await chat.init()
   await sources.loadPersistedFiles()
   await studio.loadPersistedFiles()

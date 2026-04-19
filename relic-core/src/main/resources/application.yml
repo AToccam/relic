@@ -6,6 +6,9 @@ spring:
     name: relic-core
 
 relic:
+  openclaw:
+    gateway-path: ${user.dir}/../relic-gateway
+    config-path: ${user.home}/.openclaw/openclaw.json
   workspace:
     path: ${user.home}/.openclaw/workspace
     # true 时 read_file 允许读取工作区外绝对路径文件
