@@ -3,7 +3,12 @@ package com.relic.controller;
 import com.relic.service.GeneratedFileRegistryService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.util.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,9 +18,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -123,6 +131,39 @@ public class FileController {
     @GetMapping("/generated/list")
     public Map<String, Object> listGeneratedFiles() {
         return Map.of("items", generatedFileRegistryService.listGeneratedFiles());
+    }
+
+    @GetMapping("/download")
+    public ResponseEntity<Resource> downloadFile(@RequestParam("relativePath") String relativePath) throws IOException {
+        if (!StringUtils.hasText(relativePath)) {
+            throw new IllegalArgumentException("relativePath 不能为空");
+        }
+
+        Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
+        Path target = workspace.resolve(relativePath).normalize();
+
+        if (!target.startsWith(workspace)) {
+            throw new SecurityException("非法下载路径");
+        }
+        if (!Files.exists(target) || !Files.isRegularFile(target)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "文件不存在: " + relativePath);
+        }
+
+        Resource resource = new UrlResource(target.toUri());
+        String filename = target.getFileName().toString();
+        String encodedFilename = URLEncoder.encode(filename, StandardCharsets.UTF_8).replace("+", "%20");
+        String asciiFallback = filename.replaceAll("[^\\x20-\\x7E]", "_").replace("\"", "");
+        if (asciiFallback.isBlank()) {
+            asciiFallback = "download";
+        }
+        String contentDisposition = "attachment; filename=\"" + asciiFallback + "\"; filename*=UTF-8''" + encodedFilename;
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM_VALUE)
+                .header("Content-Transfer-Encoding", "binary")
+                .header("X-Content-Type-Options", "nosniff")
+                .body(resource);
     }
 
     @DeleteMapping
