@@ -3,6 +3,7 @@ package com.relic.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -30,7 +31,18 @@ public class ChatHistoryService {
     @Value("${relic.workspace.path:#{systemProperties['user.home'] + '/.openclaw/workspace'}}")
     private String workspacePath;
 
+    @Value("${relic.chat.auto-title.enabled:true}")
+    private boolean autoTitleEnabled;
+
+    @Value("${relic.chat.auto-title.fallback-max-length:18}")
+    private int fallbackTitleMaxLength;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final OllamaLocalService ollamaLocalService;
+
+    public ChatHistoryService(ObjectProvider<OllamaLocalService> ollamaLocalProvider) {
+        this.ollamaLocalService = ollamaLocalProvider.getIfAvailable();
+    }
 
     public String normalizeConversationId(String conversationId) {
         if (!StringUtils.hasText(conversationId)) {
@@ -53,6 +65,16 @@ public class ChatHistoryService {
             message.put("content", content == null ? "" : content);
             message.put("createdAt", Instant.now().toString());
             messages.add(message);
+
+            if (shouldAutoGenerateTitle(role, doc)) {
+                String firstParagraph = extractFirstUserParagraph(messages);
+                if (StringUtils.hasText(firstParagraph)) {
+                    String generatedTitle = generateTitle(firstParagraph);
+                    if (StringUtils.hasText(generatedTitle)) {
+                        doc.put("title", generatedTitle);
+                    }
+                }
+            }
 
             doc.put("conversationId", safeId);
             doc.put("updatedAt", Instant.now().toString());
@@ -182,6 +204,65 @@ public class ChatHistoryService {
             return sb.toString();
         }
         return String.valueOf(content);
+    }
+
+    private boolean shouldAutoGenerateTitle(String role, Map<String, Object> doc) {
+        if (!autoTitleEnabled) {
+            return false;
+        }
+        // 在首轮 assistant 输出后命名，避免阻塞首个 token 返回
+        if (!"assistant".equals(role)) {
+            return false;
+        }
+        String currentTitle = Objects.toString(doc.getOrDefault("title", ""), "").trim();
+        return currentTitle.isEmpty();
+    }
+
+    private String extractFirstUserParagraph(List<Map<String, Object>> messages) {
+        for (Map<String, Object> message : messages) {
+            if (!"user".equals(message.get("role"))) {
+                continue;
+            }
+            String text = toPreviewText(message.get("content"));
+            if (!StringUtils.hasText(text)) {
+                continue;
+            }
+            String normalized = text.replace("\r\n", "\n").replace('\r', '\n').trim();
+            if (!StringUtils.hasText(normalized)) {
+                continue;
+            }
+
+            String[] paragraphs = normalized.split("\\n\\s*\\n");
+            String first = paragraphs.length > 0 ? paragraphs[0] : normalized;
+            first = first.replaceAll("\\s+", " ").trim();
+            if (StringUtils.hasText(first)) {
+                return first;
+            }
+        }
+        return "";
+    }
+
+    private String generateTitle(String firstParagraph) {
+        String generated = "";
+        if (ollamaLocalService != null) {
+            generated = ollamaLocalService.summarizeConversationTitle(firstParagraph);
+        }
+        if (StringUtils.hasText(generated)) {
+            return generated.trim();
+        }
+        return buildFallbackTitle(firstParagraph);
+    }
+
+    private String buildFallbackTitle(String firstParagraph) {
+        String fallback = firstParagraph == null ? "" : firstParagraph.replaceAll("\\s+", " ").trim();
+        if (!StringUtils.hasText(fallback)) {
+            return "";
+        }
+        int maxLen = Math.max(8, fallbackTitleMaxLength);
+        if (fallback.length() <= maxLen) {
+            return fallback;
+        }
+        return fallback.substring(0, maxLen).trim();
     }
 
     private Path getConversationDir() {

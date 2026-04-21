@@ -7,6 +7,7 @@ import {
   renameConversation as renameConversationApi,
   streamChat
 } from '@/api/chat'
+import { detectTopicDrift } from '@/api/mode'
 import { useSourcesStore } from '@/stores/sources'
 import { useStudioStore } from '@/stores/studio'
 import type { Message, MessageContent, MessagePart } from '@/types'
@@ -23,6 +24,9 @@ export const useChatStore = defineStore('chat', () => {
   const pendingConversationIds = ref<string[]>([])
   const abortControllers = new Map<string, AbortController>()
   const messageCacheByConversation = new Map<string, Message[]>()
+  const driftSuggested = ref(false)
+  const driftDetecting = ref(false)
+  let driftCheckSeq = 0
 
   function toMessageArray(history: PersistedMessage[]): Message[] {
     return history
@@ -90,6 +94,7 @@ export const useChatStore = defineStore('chat', () => {
     if (!currentConversationId.value) {
       currentConversationId.value = targetConversationId
       messages.value = getOrCreateConversationBuffer(targetConversationId)
+      sources.setConversation(targetConversationId)
     }
 
     if (isConversationStreaming(targetConversationId)) return
@@ -101,6 +106,7 @@ export const useChatStore = defineStore('chat', () => {
     const displayText = buildUserDisplayText(userText.trim(), selectedFiles)
 
     addMessage('user', displayText, content)
+    sources.setAllUsableSelection(false)
     const assistantMsg = addMessage('assistant', '')
     assistantMsg.streaming = true
     setConversationStreaming(targetConversationId, true)
@@ -142,11 +148,49 @@ export const useChatStore = defineStore('chat', () => {
     abortControllers.get(id)?.abort()
   }
 
-  function clear() {
-    currentConversationId.value = buildConversationId()
+  function clearDrift() {
+    driftSuggested.value = false
+    driftDetecting.value = false
+    driftCheckSeq += 1
+  }
+
+  async function triggerDriftCheck(newMsg: string) {
+    if (newMsg.length < 8) return
+    if (driftSuggested.value || driftDetecting.value) return
+    if (isConversationStreaming(currentConversationId.value)) return
+    const buf = messageCacheByConversation.get(currentConversationId.value)
+    if (!buf || buf.length < 4) return
+    const lastUser = [...buf].reverse().find(m => m.role === 'user')
+    if (!lastUser) return
+    const prevText = lastUser.content
+    if (!prevText || typeof prevText !== 'string') return
+
+    const seq = ++driftCheckSeq
+    driftDetecting.value = true
+    try {
+      const isDrift = await detectTopicDrift(prevText, newMsg)
+      if (seq !== driftCheckSeq) return
+      if (isDrift) driftSuggested.value = true
+    } catch {
+      // 检测失败静默忽略
+    } finally {
+      if (seq === driftCheckSeq) driftDetecting.value = false
+    }
+  }
+
+  function confirmDriftNewConversation() {
+    const newId = buildConversationId()
+    sources.migrateSelectedFilesToConversation(newId)
+    clear(newId)
+  }
+
+  function clear(id?: string) {
+    clearDrift()
+    currentConversationId.value = id || buildConversationId()
     const buffer = createConversationBuffer()
     messageCacheByConversation.set(currentConversationId.value, buffer)
     messages.value = buffer
+    sources.setConversation(currentConversationId.value)
     conversations.value = [
       {
         conversationId: currentConversationId.value,
@@ -185,11 +229,13 @@ export const useChatStore = defineStore('chat', () => {
     const id = (conversationId || '').trim()
     if (!id) return
 
+    clearDrift()
     loadingHistory.value = true
     try {
       if (isConversationStreaming(id)) {
         currentConversationId.value = id
         messages.value = getOrCreateConversationBuffer(id)
+        sources.setConversation(id)
         return
       }
 
@@ -198,6 +244,7 @@ export const useChatStore = defineStore('chat', () => {
       messageCacheByConversation.set(id, buffer)
       currentConversationId.value = id
       messages.value = buffer
+      sources.setConversation(id)
     } finally {
       loadingHistory.value = false
     }
@@ -281,6 +328,8 @@ export const useChatStore = defineStore('chat', () => {
     loadingHistory,
     streamingByConversation,
     pendingConversationIds,
+    driftSuggested,
+    driftDetecting,
     isConversationStreaming,
     send,
     stop,
@@ -290,7 +339,10 @@ export const useChatStore = defineStore('chat', () => {
     selectConversation,
     newConversation,
     renameConversation,
-    deleteConversation
+    deleteConversation,
+    triggerDriftCheck,
+    clearDrift,
+    confirmDriftNewConversation
   }
 })
 

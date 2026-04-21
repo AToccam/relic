@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch, useTemplateRef, watchEffect, nextTick } from 'vue'
 import { marked } from 'marked'
 import type { Message } from '@/types'
 
@@ -40,34 +40,116 @@ function parseSegments(content: string): Segment[] {
 
 const segments = computed(() => parseSegments(props.message.content))
 
+const processSegs = computed(() =>
+  segments.value.filter(s => s.type === 'tool' || s.type === 'status' || s.type === 'warning')
+)
+const hasProcess = computed(() => processSegs.value.length > 0)
+const toolCount = computed(() => processSegs.value.filter(s => s.type === 'tool').length)
+
+// 流式时展开，完成后自动折叠
+const processExpanded = ref(true)
+watch(() => props.message.streaming, (streaming) => {
+  if (!streaming) processExpanded.value = false
+}, { immediate: true })
+
 function renderMd(text: string): string {
   return marked.parse(text) as string
 }
+
+const bubbleRef = useTemplateRef<HTMLElement>('bubble')
+
+watchEffect(async () => {
+  // 依赖 message.content 变化（流式更新）
+  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+  props.message.content
+  await nextTick()
+  const el = bubbleRef.value
+  if (!el) return
+  el.querySelectorAll('pre').forEach((pre) => {
+    if (pre.querySelector('.copy-btn')) return
+    const btn = document.createElement('button')
+    btn.className = 'copy-btn'
+    btn.textContent = '复制'
+    btn.addEventListener('click', () => {
+      const code = pre.querySelector('code')?.innerText ?? pre.innerText
+      navigator.clipboard.writeText(code).then(() => {
+        btn.textContent = '已复制'
+        setTimeout(() => { btn.textContent = '复制' }, 1500)
+      })
+    })
+    pre.style.position = 'relative'
+    pre.appendChild(btn)
+  })
+})
 </script>
 
 <template>
   <div :class="['message-item', message.role]">
     <div class="avatar">{{ message.role === 'user' ? 'U' : 'AI' }}</div>
-    <div class="bubble">
+    <div class="bubble" ref="bubble">
       <template v-if="message.role === 'assistant'">
+        <!-- 工具调用过程折叠块 -->
+        <div v-if="hasProcess" class="process-block">
+          <button class="process-toggle" @click="processExpanded = !processExpanded">
+            <svg
+              class="toggle-arrow"
+              :class="{ expanded: processExpanded }"
+              width="12" height="12" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" stroke-width="2.5"
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            <span class="process-summary">
+              <template v-if="message.streaming">思考中…</template>
+              <template v-else-if="toolCount > 0">已调用 {{ toolCount }} 个工具</template>
+              <template v-else>查看过程详情</template>
+            </span>
+          </button>
+          <div v-if="processExpanded" class="process-body">
+            <template v-for="(seg, i) in processSegs" :key="i">
+              <div v-if="seg.type === 'tool'" class="seg-tool">
+                <span class="seg-icon">🔧</span>
+                <span class="seg-text">{{ seg.text.slice(2).trim() }}</span>
+              </div>
+              <div v-else-if="seg.type === 'status'" class="seg-status">
+                <span class="seg-icon">{{ [...seg.text][0] }}</span>
+                <span class="seg-text">{{ seg.text.slice(2).trim() }}</span>
+              </div>
+              <div v-else-if="seg.type === 'warning'" class="seg-warning">
+                <span class="seg-icon">⚠️</span>
+                <span class="seg-text">{{ seg.text.slice(3).trim() }}</span>
+              </div>
+            </template>
+          </div>
+        </div>
+        <!-- 正文 Markdown -->
         <template v-for="(seg, i) in segments" :key="i">
           <div v-if="seg.type === 'markdown'" class="markdown-body" v-html="renderMd(seg.text)" />
-          <div v-else-if="seg.type === 'tool'" class="seg-tool">
-            <span class="seg-icon">🔧</span>
-            <span class="seg-text">{{ seg.text.slice(2).trim() }}</span>
-          </div>
-          <div v-else-if="seg.type === 'status'" class="seg-status">
-            <span class="seg-icon">{{ [...seg.text][0] }}</span>
-            <span class="seg-text">{{ seg.text.slice(2).trim() }}</span>
-          </div>
-          <div v-else-if="seg.type === 'warning'" class="seg-warning">
-            <span class="seg-icon">⚠️</span>
-            <span class="seg-text">{{ seg.text.slice(3).trim() }}</span>
-          </div>
         </template>
       </template>
       <template v-else>
-        <div class="plain-text">{{ message.content }}</div>
+        <template v-if="Array.isArray(message.payloadContent)">
+          <div v-for="(part, i) in message.payloadContent" :key="i">
+            <div v-if="part.type === 'text' && part.text" class="plain-text">{{ part.text }}</div>
+            <div v-else-if="part.type === 'image_url'" class="attach-image-wrap">
+              <img :src="part.image_url.url" class="attach-image" />
+            </div>
+            <div v-else-if="part.type === 'input_audio'" class="attach-card">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+              </svg>
+              <span>音频附件</span>
+            </div>
+            <div v-else-if="part.type === 'input_file'" class="attach-card">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+              <span class="attach-filename">{{ part.input_file.filename }}</span>
+            </div>
+          </div>
+        </template>
+        <div v-else class="plain-text">{{ message.content }}</div>
       </template>
       <span v-if="message.streaming" class="cursor">▋</span>
     </div>
@@ -145,6 +227,57 @@ function renderMd(text: string): string {
   50% { opacity: 0; }
 }
 
+/* 工具调用过程折叠块 */
+.process-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid rgba(99, 102, 241, 0.18);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.process-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(99, 102, 241, 0.05);
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: #4338ca;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
+  transition: background 0.15s;
+}
+
+.process-toggle:hover {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.toggle-arrow {
+  flex-shrink: 0;
+  transition: transform 0.2s;
+  transform: rotate(0deg);
+}
+
+.toggle-arrow.expanded {
+  transform: rotate(90deg);
+}
+
+.process-summary {
+  font-weight: 500;
+}
+
+.process-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px 8px;
+}
+
 /* 工具调用行 */
 .seg-tool {
   display: inline-flex;
@@ -194,6 +327,61 @@ function renderMd(text: string): string {
 
 .seg-text {
   line-height: 1.4;
+}
+
+/* 用户消息附件展示 */
+.attach-image-wrap {
+  margin-top: 6px;
+}
+
+.attach-image {
+  max-width: 200px;
+  max-height: 160px;
+  border-radius: 6px;
+  object-fit: cover;
+  display: block;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.attach-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.attach-filename {
+  max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 代码块复制按钮 */
+:deep(.copy-btn) {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  border-radius: 4px;
+  border: 1px solid #94a3b8;
+  background: #ffffff;
+  color: #475569;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+:deep(pre:hover .copy-btn) {
+  opacity: 1;
 }
 
 .markdown-body :deep(p) { margin: 0 0 8px; }
