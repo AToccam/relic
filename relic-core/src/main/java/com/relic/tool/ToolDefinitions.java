@@ -53,7 +53,7 @@ public final class ToolDefinitions {
                                 "required", List.of()
                         )),
                 buildTool("render_mermaid_chart",
-                        "Render an inline Mermaid chart directly in chat without creating or saving any file. Use this for normal chart, diagram, flowchart, mind map, timeline, class diagram, sequence diagram, relationship diagram and visualization requests.",
+                        "Render an inline Mermaid chart directly in chat without creating or saving any file. Use this for normal chart, diagram, flowchart, mind map, timeline, class diagram, sequence diagram, relationship diagram and visualization requests. Prefer concise summary diagrams by default: for relationship/comparison charts use one clear center topic, no more than 5 top-level dimensions, no more than 18 nodes and 24 edges, and short labels. Do not make encyclopedia-style sprawling graphs unless the user explicitly asks for a detailed chart. Generate one chart by default; if the user explicitly asks for multiple/separate charts, call this once per chart, up to 3 charts.",
                         Map.of(
                                 "type", "object",
                                 "properties", Map.of(
@@ -67,7 +67,7 @@ public final class ToolDefinitions {
                                         ),
                                         "content", Map.of(
                                                 "type", "string",
-                                                "description", "Complete Mermaid source or Markdown containing a mermaid code block. Prefer this for all non-trivial diagrams. Every visible node must have a meaningful user-facing label. Do not expose raw internal IDs such as P1, D1 or E1 as node text."
+                                                "description", "Complete Mermaid source or Markdown containing a mermaid code block. Prefer this for all non-trivial diagrams. For comparison/relationship charts, summarize the core point instead of listing every detail: use one center topic, up to 5 top-level dimensions, up to 18 nodes, up to 24 edges, and concise labels. Every visible node must have a meaningful user-facing label. Do not expose raw internal IDs such as P1, D1 or E1 as node text."
                                         ),
                                         "mermaidSource", Map.of(
                                                 "type", "string",
@@ -107,7 +107,7 @@ public final class ToolDefinitions {
                                         ),
                                         "content", Map.of(
                                                 "type", "string",
-                                                "description", "Complete Mermaid source or Markdown containing a mermaid code block. Every visible node must have a meaningful user-facing label. Do not expose raw internal IDs such as P1, D1 or E1 as node text."
+                                                "description", "Complete Mermaid source or Markdown containing a mermaid code block. For comparison/relationship charts, summarize the core point instead of listing every detail: use one center topic, up to 5 top-level dimensions, up to 18 nodes, up to 24 edges, and concise labels. Every visible node must have a meaningful user-facing label. Do not expose raw internal IDs such as P1, D1 or E1 as node text."
                                         ),
                                         "mermaidSource", Map.of(
                                                 "type", "string",
