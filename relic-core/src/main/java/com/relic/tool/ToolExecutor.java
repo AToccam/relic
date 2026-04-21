@@ -22,14 +22,18 @@ import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * 工具执行器：负责执行 AI 发起的 tool_calls。
+ * Executes tool calls requested by AI providers.
  */
 @Slf4j
 @Service
@@ -37,6 +41,12 @@ public class ToolExecutor {
 
     private static final long MAX_SUPPORTED_FILE_BYTES = 10L * 1024 * 1024;
     private static final int MAX_RETURN_CHARS = 100_000;
+    public static final String INLINE_CHART_MARKER = "INLINE_CHART_MARKDOWN:";
+    public static final String STRUCTURED_CHART_MARKER = "RELIC_CHART_JSON:";
+    public static final String CHART_VALIDATION_ERROR_MARKER = "CHART_VALIDATION_ERROR:";
+    private static final Pattern MERMAID_BLOCK_PATTERN = Pattern.compile("```mermaid\\s*\\R([\\s\\S]*?)\\R?```");
+    private static final Pattern LABELED_PLACEHOLDER_NODE_PATTERN = Pattern.compile("\\b([A-Za-z]{1,8}\\d{1,4})\\s*[\\[({]");
+    private static final Pattern BARE_PLACEHOLDER_NODE_PATTERN = Pattern.compile("\\b([A-Za-z]{1,8}\\d{1,4})\\b(?!\\s*[\\[({])");
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -58,12 +68,12 @@ public class ToolExecutor {
         if (!Files.exists(workspace)) {
             try {
                 Files.createDirectories(workspace);
-                log.info("[ToolExecutor] 创建工作区目录: {}", workspace);
+                log.info("[ToolExecutor] created workspace directory: {}", workspace);
             } catch (IOException e) {
-                log.warn("[ToolExecutor] 无法创建工作区目录: {}", e.getMessage());
+                log.warn("[ToolExecutor] failed to create workspace directory: {}", e.getMessage());
             }
         }
-        log.info("[ToolExecutor] 工作区路径: {}", workspace);
+        log.info("[ToolExecutor] workspace path: {}", workspace);
     }
 
     @SuppressWarnings("unchecked")
@@ -78,21 +88,27 @@ public class ToolExecutor {
                         (String) args.get("filename"),
                         (String) args.get("chartType"),
                         (String) args.get("title"),
+                        args.get("data"),
+                        firstTextArg(args, "content", "mermaidSource", "source"));
+                case "render_mermaid_chart" -> renderMermaidChart(
+                        (String) args.get("title"),
+                        firstTextArg(args, "content", "mermaidSource", "source"),
+                        (String) args.get("chartType"),
                         args.get("data"));
                 case "read_file" -> readFile((String) args.get("filename"));
                 case "list_files" -> listFiles((String) args.getOrDefault("path", ""));
-                default -> "未知工具: " + toolName;
+                default -> "Unknown tool: " + toolName;
             };
         } catch (Exception e) {
-            log.error("工具执行失败: {} - {}", toolName, e.getMessage(), e);
-            return "工具执行出错: " + e.getMessage();
+            log.error("Tool execution failed: {} - {}", toolName, e.getMessage(), e);
+            return "Tool execution error: " + e.getMessage();
         }
     }
 
     private String createTextFile(String filename, String content) {
         try {
             if (content != null && content.length() > 1_000_000) {
-                return "文件内容过大，最大支持 1MB";
+                return "File content is too large; max supported size is 1MB";
             }
 
             Path filePath = resolveAndValidateWritePath(filename);
@@ -105,22 +121,21 @@ public class ToolExecutor {
             String relativePath = workspace.relativize(filePath).toString().replace('\\', '/');
             generatedFileRegistryService.registerGeneratedFile(relativePath);
 
-            log.info("[创建文本文件] {} ({})", filePath, exists ? "已覆盖" : "新建");
-            return (exists ? "文件已覆盖: " : "文件已创建: ") + filename
+            log.info("[create text file] {} ({})", filePath, exists ? "overwritten" : "created");
+            return (exists ? "File overwritten: " : "File created: ") + filename
                     + "\nDOWNLOAD_URL: " + buildDownloadUrl(relativePath);
         } catch (SecurityException e) {
-            return "安全错误: " + e.getMessage();
+            return "Security error: " + e.getMessage();
         } catch (IOException e) {
-            return "创建文件失败: " + e.getMessage();
+            return "Failed to create file: " + e.getMessage();
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private String createMermaidChartFile(String filename, String chartType, String title, Object rawData) {
+    private String createMermaidChartFile(String filename, String chartType, String title, Object rawData, String providedSource) {
         try {
             String safeFilename = filename == null ? "" : filename.trim();
             if (safeFilename.isEmpty()) {
-                return "filename 不能为空";
+                return "filename must not be empty";
             }
             if (!safeFilename.toLowerCase(Locale.ROOT).endsWith(".md")) {
                 safeFilename = safeFilename + ".md";
@@ -131,11 +146,18 @@ public class ToolExecutor {
             String normalizedType = normalizeChartType(chartType, points);
 
             String markdown;
-            if ("flowchart".equals(normalizedType) || points.isEmpty()) {
+            if (providedSource != null && !providedSource.isBlank()) {
+                markdown = buildProvidedMermaidMarkdown(safeTitle, providedSource);
+            } else if ("flowchart".equals(normalizedType) || points.isEmpty()) {
                 List<String> entities = inferEntities(safeTitle, safeFilename);
                 markdown = buildDefaultFlowchartMarkdown(safeTitle, entities);
             } else {
                 markdown = buildMermaidMarkdown(normalizedType, safeTitle, points);
+            }
+
+            String validationError = validateMermaidMarkdown(markdown);
+            if (!validationError.isBlank()) {
+                return validationError;
             }
 
             Path filePath = resolveAndValidateWritePath(safeFilename);
@@ -148,14 +170,123 @@ public class ToolExecutor {
             String relativePath = workspace.relativize(filePath).toString().replace('\\', '/');
             generatedFileRegistryService.registerGeneratedFile(relativePath);
 
-            log.info("[创建图表文件] {} ({})", filePath, exists ? "已覆盖" : "新建");
-            return (exists ? "图表文件已覆盖: " : "图表文件已创建: ") + safeFilename
-                    + "\nDOWNLOAD_URL: " + buildDownloadUrl(relativePath);
+            log.info("[create mermaid chart file] {} ({})", filePath, exists ? "overwritten" : "created");
+            return (exists ? "Chart file overwritten: " : "Chart file created: ") + safeFilename
+                    + "\nDOWNLOAD_URL: " + buildDownloadUrl(relativePath)
+                    + "\n" + buildStructuredChartMarker(safeTitle, markdown)
+                    + "\n" + INLINE_CHART_MARKER + "\n" + markdown;
         } catch (SecurityException e) {
-            return "安全错误: " + e.getMessage();
+            return "Security error: " + e.getMessage();
         } catch (Exception e) {
-            return "创建图表文件失败: " + e.getMessage();
+            return "Failed to create chart file: " + e.getMessage();
         }
+    }
+
+    private String renderMermaidChart(String title, String providedSource, String chartType, Object rawData) {
+        try {
+            String safeTitle = title == null || title.isBlank() ? "Mermaid Chart" : title.trim();
+            List<ChartPoint> points = parseChartData(rawData);
+            String markdown;
+
+            if (providedSource != null && !providedSource.isBlank()) {
+                markdown = buildProvidedMermaidMarkdown(safeTitle, providedSource);
+            } else if (!points.isEmpty()) {
+                markdown = buildMermaidMarkdown(normalizeChartType(chartType, points), safeTitle, points);
+            } else {
+                return CHART_VALIDATION_ERROR_MARKER
+                        + " render_mermaid_chart requires content or mermaidSource with complete Mermaid syntax.";
+            }
+
+            String validationError = validateMermaidMarkdown(markdown);
+            if (!validationError.isBlank()) {
+                return validationError;
+            }
+
+            return buildStructuredChartMarker(safeTitle, markdown)
+                    + "\n" + INLINE_CHART_MARKER + "\n" + markdown;
+        } catch (Exception e) {
+            return CHART_VALIDATION_ERROR_MARKER + " " + e.getMessage();
+        }
+    }
+
+    private String buildStructuredChartMarker(String title, String markdown) throws IOException {
+        String source = extractFirstMermaidSource(markdown);
+        Map<String, Object> payload = Map.of(
+                "kind", "mermaid",
+                "title", title == null ? "" : title,
+                "source", source
+        );
+        return STRUCTURED_CHART_MARKER + objectMapper.writeValueAsString(payload);
+    }
+
+    private String extractFirstMermaidSource(String markdown) {
+        Matcher matcher = MERMAID_BLOCK_PATTERN.matcher(markdown == null ? "" : markdown);
+        if (matcher.find()) {
+            return matcher.group(1).trim();
+        }
+        return "";
+    }
+
+    private String firstTextArg(Map<String, Object> args, String... names) {
+        for (String name : names) {
+            Object value = args.get(name);
+            if (value instanceof String text && !text.isBlank()) {
+                return text;
+            }
+        }
+        return "";
+    }
+
+    private String buildProvidedMermaidMarkdown(String title, String source) {
+        String trimmed = source == null ? "" : source.trim();
+        if (trimmed.isBlank()) {
+            return "";
+        }
+        if (trimmed.contains("```")) {
+            String markdown = trimmed.startsWith("#") ? trimmed : "# " + title + "\n\n" + trimmed;
+            return markdown.endsWith("\n") ? markdown : markdown + "\n";
+        }
+        return "# " + title + "\n\n```mermaid\n" + trimmed + "\n```\n";
+    }
+
+    private String validateMermaidMarkdown(String markdown) {
+        Matcher matcher = MERMAID_BLOCK_PATTERN.matcher(markdown);
+        while (matcher.find()) {
+            String error = validateMermaidSource(matcher.group(1));
+            if (!error.isBlank()) {
+                return error;
+            }
+        }
+        return "";
+    }
+
+    private String validateMermaidSource(String source) {
+        String trimmed = source == null ? "" : source.stripLeading().toLowerCase(Locale.ROOT);
+        if (!trimmed.startsWith("flowchart") && !trimmed.startsWith("graph")) {
+            return "";
+        }
+
+        Set<String> labeledIds = new LinkedHashSet<>();
+        Matcher labeledMatcher = LABELED_PLACEHOLDER_NODE_PATTERN.matcher(source);
+        while (labeledMatcher.find()) {
+            labeledIds.add(labeledMatcher.group(1));
+        }
+
+        Set<String> bareIds = new LinkedHashSet<>();
+        Matcher bareMatcher = BARE_PLACEHOLDER_NODE_PATTERN.matcher(source);
+        while (bareMatcher.find()) {
+            String id = bareMatcher.group(1);
+            if (!labeledIds.contains(id)) {
+                bareIds.add(id);
+            }
+        }
+
+        if (bareIds.isEmpty()) {
+            return "";
+        }
+
+        return CHART_VALIDATION_ERROR_MARKER + " Mermaid nodes are missing display labels: " + String.join(", ", bareIds)
+                + ". Call the chart tool again with complete Mermaid syntax, and give each placeholder id a clear user-facing label, for example P1[actual meaning]. Do not show raw ids such as P1, D1 or E1 to the user.";
     }
 
     @SuppressWarnings("unchecked")
@@ -268,7 +399,7 @@ public class ToolExecutor {
         String source = (title == null ? "" : title) + " " + (filename == null ? "" : filename);
         String cleaned = source
                 .replaceAll("(?i)flowchart|chart|diagram|mermaid|docs/|\\.md", " ")
-                .replaceAll("[,，、/&-]", " ")
+                .replaceAll("[,/&-]", " ")
                 .replaceAll("\\b(of|and|the|for|with|to)\\b", " ")
                 .replaceAll("\\s+", " ")
                 .trim();
@@ -330,29 +461,29 @@ public class ToolExecutor {
             Path filePath = resolveReadPath(filename);
 
             if (!Files.exists(filePath)) {
-                return "文件不存在: " + filename;
+                return "File does not exist: " + filename;
             }
             if (!Files.isRegularFile(filePath)) {
-                return filename + " 不是一个普通文件";
+                return filename + " is not a regular file";
             }
 
             long size = Files.size(filePath);
             if (size > MAX_SUPPORTED_FILE_BYTES) {
-                return "文件过大，当前仅支持读取不超过 10MB 的文件";
+                return "File is too large; only files up to 10MB are supported";
             }
 
             String extracted = extractContentByType(filePath, filename);
             if (extracted == null || extracted.isBlank()) {
-                return "文件已读取，但未提取到可见文本内容";
+                return "File was read, but no visible text content was extracted";
             }
 
             return limitContent(extracted, size);
         } catch (SecurityException e) {
-            return "安全错误: " + e.getMessage();
+            return "Security error: " + e.getMessage();
         } catch (java.nio.charset.MalformedInputException e) {
-            return "该文件可能是二进制文件，无法以文本形式读取";
+            return "This file may be binary and cannot be read as text";
         } catch (IOException e) {
-            return "读取文件失败: " + e.getMessage();
+            return "Failed to read file: " + e.getMessage();
         }
     }
 
@@ -399,7 +530,7 @@ public class ToolExecutor {
         if (content.length() <= MAX_RETURN_CHARS) {
             return content;
         }
-        return "文件较大 (" + sizeInBytes + " 字节)，仅显示前 " + MAX_RETURN_CHARS + " 字符:\n"
+        return "File is large (" + sizeInBytes + " bytes); showing first " + MAX_RETURN_CHARS + " chars:\n"
                 + content.substring(0, MAX_RETURN_CHARS);
     }
 
@@ -413,23 +544,23 @@ public class ToolExecutor {
             }
 
             if (!Files.exists(dirPath)) {
-                return "目录不存在: " + (subPath == null || subPath.isEmpty() ? "工作区根目录" : subPath);
+                return "Directory does not exist: " + (subPath == null || subPath.isEmpty() ? "workspace root" : subPath);
             }
             if (!Files.isDirectory(dirPath)) {
-                return subPath + " 不是一个目录";
+                return subPath + " is not a directory";
             }
 
             try (Stream<Path> stream = Files.list(dirPath)) {
                 String listing = stream
-                        .map(p -> (Files.isDirectory(p) ? "[目录] " : "[文件] ") + p.getFileName().toString())
+                        .map(p -> (Files.isDirectory(p) ? "[dir] " : "[file] ") + p.getFileName().toString())
                         .sorted()
                         .collect(Collectors.joining("\n"));
-                return listing.isEmpty() ? "目录为空" : listing;
+                return listing.isEmpty() ? "Directory is empty" : listing;
             }
         } catch (SecurityException e) {
-            return "安全错误: " + e.getMessage();
+            return "Security error: " + e.getMessage();
         } catch (IOException e) {
-            return "列出文件失败: " + e.getMessage();
+            return "Failed to list files: " + e.getMessage();
         }
     }
 
@@ -438,7 +569,7 @@ public class ToolExecutor {
         Path resolved = workspace.resolve(filename).normalize();
 
         if (!resolved.startsWith(workspace)) {
-            throw new SecurityException("路径不允许超出工作区范围: " + filename);
+            throw new SecurityException("Path is outside workspace: " + filename);
         }
 
         return resolved;
@@ -446,7 +577,7 @@ public class ToolExecutor {
 
     private Path resolveReadPath(String filename) {
         if (filename == null || filename.isBlank()) {
-            throw new SecurityException("文件路径不能为空");
+            throw new SecurityException("File path must not be empty");
         }
 
         Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
@@ -454,7 +585,7 @@ public class ToolExecutor {
         try {
             candidate = Path.of(filename);
         } catch (InvalidPathException e) {
-            throw new SecurityException("非法路径: " + filename);
+            throw new SecurityException("Invalid path: " + filename);
         }
 
         Path resolved = candidate.isAbsolute()
@@ -462,7 +593,7 @@ public class ToolExecutor {
                 : workspace.resolve(filename).normalize();
 
         if (!allowOutsideRead && !resolved.startsWith(workspace)) {
-            throw new SecurityException("路径不允许超出工作区范围: " + filename);
+            throw new SecurityException("Path is outside workspace: " + filename);
         }
 
         return resolved;

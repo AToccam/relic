@@ -1,52 +1,134 @@
 <script setup lang="ts">
-import { computed, ref, watch, useTemplateRef, watchEffect, nextTick } from 'vue'
+import { computed, nextTick, ref, useTemplateRef, watch, watchEffect } from 'vue'
 import { marked } from 'marked'
 import type { Message } from '@/types'
+import ChartBlock from './ChartBlock.vue'
 
 const props = defineProps<{ message: Message }>()
 
-type SegmentType = 'markdown' | 'tool' | 'status' | 'warning'
-interface Segment { type: SegmentType; text: string }
+type SegmentType = 'markdown' | 'tool' | 'status' | 'warning' | 'chart'
+
+interface Segment {
+  type: SegmentType
+  text: string
+  language?: string
+  title?: string
+}
 
 function parseSegments(content: string): Segment[] {
-  const lines = content.split('\n')
   const segments: Segment[] = []
-  const mdBuf: string[] = []
+  const mdBuffer: string[] = []
+  const lines = content.split('\n')
+  let index = 0
 
-  const flushMd = () => {
-    const text = mdBuf.join('\n')
+  const flushMarkdown = () => {
+    const text = mdBuffer.join('\n')
     if (text.trim()) segments.push({ type: 'markdown', text })
-    mdBuf.length = 0
+    mdBuffer.length = 0
   }
 
-  for (const line of lines) {
-    const t = line.trim()
-    if (t.startsWith('🔧')) {
-      flushMd()
-      segments.push({ type: 'tool', text: t })
-    } else if (t.startsWith('🤔') || t.startsWith('✅')) {
-      flushMd()
-      segments.push({ type: 'status', text: t })
-    } else if (t.startsWith('⚠️')) {
-      flushMd()
-      segments.push({ type: 'warning', text: t })
-    } else {
-      mdBuf.push(line)
+  while (index < lines.length) {
+    const line = lines[index] ?? ''
+    const trimmed = line.trim()
+    const structuredChart = parseStructuredChartLine(trimmed)
+    if (structuredChart) {
+      flushMarkdown()
+      segments.push(structuredChart)
+      index += 1
+      continue
     }
+
+    const fence = trimmed.match(/^```([A-Za-z0-9_-]+)?\s*$/)
+
+    if (fence) {
+      const language = (fence[1] ?? '').toLowerCase()
+      const codeLines: string[] = []
+      index += 1
+
+      while (index < lines.length && !lines[index]!.trim().startsWith('```')) {
+        codeLines.push(lines[index]!)
+        index += 1
+      }
+
+      if (index < lines.length) index += 1
+
+      if (isRenderableChartLanguage(language)) {
+        flushMarkdown()
+        segments.push({ type: 'chart', language, text: codeLines.join('\n').trim() })
+      } else {
+        mdBuffer.push(line, ...codeLines, '```')
+      }
+      continue
+    }
+
+    if (isToolLine(trimmed)) {
+      flushMarkdown()
+      segments.push({ type: 'tool', text: trimmed })
+    } else if (isStatusLine(trimmed)) {
+      flushMarkdown()
+      segments.push({ type: 'status', text: trimmed })
+    } else if (isWarningLine(trimmed)) {
+      flushMarkdown()
+      segments.push({ type: 'warning', text: trimmed })
+    } else {
+      mdBuffer.push(line)
+    }
+    index += 1
   }
-  flushMd()
+
+  flushMarkdown()
   return segments
 }
 
-const segments = computed(() => parseSegments(props.message.content))
+function parseStructuredChartLine(text: string): Segment | null {
+  const marker = 'RELIC_CHART_JSON:'
+  if (!text.startsWith(marker)) return null
 
+  try {
+    const payload = JSON.parse(text.slice(marker.length)) as {
+      kind?: string
+      title?: string
+      source?: string
+    }
+    if (!payload.source?.trim()) return null
+    return {
+      type: 'chart',
+      language: payload.kind || 'mermaid',
+      title: payload.title || '',
+      text: payload.source.trim()
+    }
+  } catch {
+    return null
+  }
+}
+
+function isRenderableChartLanguage(language: string): boolean {
+  return language === 'mermaid' || language === 'chart' || language === 'relic-chart'
+}
+
+function isToolLine(text: string): boolean {
+  return text.startsWith('🔧') || text.startsWith('正在调用') || text.startsWith('Calling tool:')
+}
+
+function isStatusLine(text: string): boolean {
+  return text.startsWith('✅') || text.startsWith('完成') || text.startsWith('已生成文件')
+}
+
+function isWarningLine(text: string): boolean {
+  return text.startsWith('⚠️') || text.startsWith('警告')
+}
+
+function stripLinePrefix(text: string): string {
+  return text.replace(/^(🔧|✅|⚠️)\s*/, '').trim()
+}
+
+const segments = computed(() => parseSegments(props.message.content))
 const processSegs = computed(() =>
-  segments.value.filter(s => s.type === 'tool' || s.type === 'status' || s.type === 'warning')
+  segments.value.filter(segment => segment.type === 'tool' || segment.type === 'status' || segment.type === 'warning')
 )
 const hasProcess = computed(() => processSegs.value.length > 0)
-const toolCount = computed(() => processSegs.value.filter(s => s.type === 'tool').length)
+const toolCount = computed(() => processSegs.value.filter(segment => segment.type === 'tool').length)
 
-// 流式时展开，完成后自动折叠
 const processExpanded = ref(true)
 watch(() => props.message.streaming, (streaming) => {
   if (!streaming) processExpanded.value = false
@@ -59,14 +141,14 @@ function renderMd(text: string): string {
 const bubbleRef = useTemplateRef<HTMLElement>('bubble')
 
 watchEffect(async () => {
-  // 依赖 message.content 变化（流式更新）
-  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
   props.message.content
   await nextTick()
   const el = bubbleRef.value
   if (!el) return
+
   el.querySelectorAll('pre').forEach((pre) => {
     if (pre.querySelector('.copy-btn')) return
+
     const btn = document.createElement('button')
     btn.className = 'copy-btn'
     btn.textContent = '复制'
@@ -74,7 +156,9 @@ watchEffect(async () => {
       const code = pre.querySelector('code')?.innerText ?? pre.innerText
       navigator.clipboard.writeText(code).then(() => {
         btn.textContent = '已复制'
-        setTimeout(() => { btn.textContent = '复制' }, 1500)
+        setTimeout(() => {
+          btn.textContent = '复制'
+        }, 1500)
       })
     })
     pre.style.position = 'relative'
@@ -88,19 +172,22 @@ watchEffect(async () => {
     <div class="avatar">{{ message.role === 'user' ? 'U' : 'AI' }}</div>
     <div class="bubble" ref="bubble">
       <template v-if="message.role === 'assistant'">
-        <!-- 工具调用过程折叠块 -->
         <div v-if="hasProcess" class="process-block">
           <button class="process-toggle" @click="processExpanded = !processExpanded">
             <svg
               class="toggle-arrow"
               :class="{ expanded: processExpanded }"
-              width="12" height="12" viewBox="0 0 24 24"
-              fill="none" stroke="currentColor" stroke-width="2.5"
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
             >
               <polyline points="9 18 15 12 9 6" />
             </svg>
             <span class="process-summary">
-              <template v-if="message.streaming">思考中…</template>
+              <template v-if="message.streaming">思考中...</template>
               <template v-else-if="toolCount > 0">已调用 {{ toolCount }} 个工具</template>
               <template v-else>查看过程详情</template>
             </span>
@@ -109,24 +196,31 @@ watchEffect(async () => {
             <template v-for="(seg, i) in processSegs" :key="i">
               <div v-if="seg.type === 'tool'" class="seg-tool">
                 <span class="seg-icon">🔧</span>
-                <span class="seg-text">{{ seg.text.slice(2).trim() }}</span>
+                <span class="seg-text">{{ stripLinePrefix(seg.text) }}</span>
               </div>
               <div v-else-if="seg.type === 'status'" class="seg-status">
-                <span class="seg-icon">{{ [...seg.text][0] }}</span>
-                <span class="seg-text">{{ seg.text.slice(2).trim() }}</span>
+                <span class="seg-icon">✅</span>
+                <span class="seg-text">{{ stripLinePrefix(seg.text) }}</span>
               </div>
               <div v-else-if="seg.type === 'warning'" class="seg-warning">
                 <span class="seg-icon">⚠️</span>
-                <span class="seg-text">{{ seg.text.slice(3).trim() }}</span>
+                <span class="seg-text">{{ stripLinePrefix(seg.text) }}</span>
               </div>
             </template>
           </div>
         </div>
-        <!-- 正文 Markdown -->
+
         <template v-for="(seg, i) in segments" :key="i">
           <div v-if="seg.type === 'markdown'" class="markdown-body" v-html="renderMd(seg.text)" />
+          <ChartBlock
+            v-else-if="seg.type === 'chart'"
+            :language="seg.language || ''"
+            :title="seg.title || ''"
+            :source="seg.text"
+          />
         </template>
       </template>
+
       <template v-else>
         <template v-if="Array.isArray(message.payloadContent)">
           <div v-for="(part, i) in message.payloadContent" :key="i">
@@ -136,14 +230,14 @@ watchEffect(async () => {
             </div>
             <div v-else-if="part.type === 'input_audio'" class="attach-card">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+                <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
               </svg>
               <span>音频附件</span>
             </div>
             <div v-else-if="part.type === 'input_file'" class="attach-card">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                <polyline points="14 2 14 8 20 8"/>
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
               </svg>
               <span class="attach-filename">{{ part.input_file.filename }}</span>
             </div>
@@ -151,7 +245,7 @@ watchEffect(async () => {
         </template>
         <div v-else class="plain-text">{{ message.content }}</div>
       </template>
-      <span v-if="message.streaming" class="cursor">▋</span>
+      <span v-if="message.streaming" class="cursor">▌</span>
     </div>
   </div>
 </template>
@@ -198,7 +292,7 @@ watchEffect(async () => {
   word-break: break-word;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .message-item.user .bubble {
@@ -209,6 +303,7 @@ watchEffect(async () => {
 
 .message-item.assistant .bubble {
   border-bottom-left-radius: 4px;
+  max-width: min(1100px, 92%);
 }
 
 .plain-text {
@@ -227,7 +322,6 @@ watchEffect(async () => {
   50% { opacity: 0; }
 }
 
-/* 工具调用过程折叠块 */
 .process-block {
   display: flex;
   flex-direction: column;
@@ -278,46 +372,34 @@ watchEffect(async () => {
   padding: 6px 10px 8px;
 }
 
-/* 工具调用行 */
-.seg-tool {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 6px;
-  background: rgba(99, 102, 241, 0.08);
-  border: 1px solid rgba(99, 102, 241, 0.2);
-  font-size: 12px;
-  color: #4338ca;
-  align-self: flex-start;
-}
-
-/* 状态行（🤔 / ✅） */
-.seg-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 6px;
-  background: rgba(16, 185, 129, 0.07);
-  border: 1px solid rgba(16, 185, 129, 0.2);
-  font-size: 12px;
-  color: #065f46;
-  align-self: flex-start;
-}
-
-/* 警告行 */
+.seg-tool,
+.seg-status,
 .seg-warning {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
   border-radius: 6px;
+  font-size: 12px;
+  align-self: flex-start;
+}
+
+.seg-tool {
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  color: #4338ca;
+}
+
+.seg-status {
+  background: rgba(16, 185, 129, 0.07);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  color: #065f46;
+}
+
+.seg-warning {
   background: rgba(245, 158, 11, 0.08);
   border: 1px solid rgba(245, 158, 11, 0.25);
-  font-size: 12px;
   color: #92400e;
-  align-self: flex-start;
 }
 
 .seg-icon {
@@ -329,7 +411,6 @@ watchEffect(async () => {
   line-height: 1.4;
 }
 
-/* 用户消息附件展示 */
 .attach-image-wrap {
   margin-top: 6px;
 }
@@ -363,7 +444,6 @@ watchEffect(async () => {
   text-overflow: ellipsis;
 }
 
-/* 代码块复制按钮 */
 :deep(.copy-btn) {
   position: absolute;
   top: 6px;

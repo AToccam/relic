@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 定义所有可用工具（Function Calling）供模型调用。
+ * Tool definitions exposed to AI providers that support function calling.
  */
 public final class ToolDefinitions {
 
@@ -13,65 +13,109 @@ public final class ToolDefinitions {
     public static List<Map<String, Object>> getAll() {
         return List.of(
                 buildTool("create_text_file",
-                        "在用户工作区创建或覆盖一个文本文件。",
+                        "Create or overwrite a text file in the user's workspace.",
                         Map.of(
                                 "type", "object",
                                 "properties", Map.of(
                                         "filename", Map.of(
                                                 "type", "string",
-                                                "description", "文件路径（可包含子目录），例如 docs/notes.md"
+                                                "description", "Workspace-relative file path, for example docs/notes.md"
                                         ),
                                         "content", Map.of(
                                                 "type", "string",
-                                                "description", "写入文件的文本内容"
+                                                "description", "Text content to write into the file"
                                         )
                                 ),
                                 "required", List.of("filename", "content")
                         )),
                 buildTool("read_file",
-                        "读取工作区中指定文件内容（支持文本/PDF/DOC/DOCX）。",
+                        "Read a file from the workspace. Supports text, PDF, DOC and DOCX.",
                         Map.of(
                                 "type", "object",
                                 "properties", Map.of(
                                         "filename", Map.of(
                                                 "type", "string",
-                                                "description", "要读取的文件路径"
+                                                "description", "File path to read"
                                         )
                                 ),
                                 "required", List.of("filename")
                         )),
                 buildTool("list_files",
-                        "列出工作区中的文件和目录。",
+                        "List files and directories in the workspace.",
                         Map.of(
                                 "type", "object",
                                 "properties", Map.of(
                                         "path", Map.of(
                                                 "type", "string",
-                                                "description", "子目录路径，留空表示根目录"
+                                                "description", "Optional subdirectory path. Empty means workspace root."
+                                        )
+                                ),
+                                "required", List.of()
+                        )),
+                buildTool("render_mermaid_chart",
+                        "Render an inline Mermaid chart directly in chat without creating or saving any file. Use this for normal chart, diagram, flowchart, mind map, timeline, class diagram, sequence diagram, relationship diagram and visualization requests.",
+                        Map.of(
+                                "type", "object",
+                                "properties", Map.of(
+                                        "chartType", Map.of(
+                                                "type", "string",
+                                                "description", "Optional chart type hint, such as pie, bar, line, flowchart, mindmap, timeline, sequenceDiagram, classDiagram or erDiagram"
+                                        ),
+                                        "title", Map.of(
+                                                "type", "string",
+                                                "description", "Chart title"
+                                        ),
+                                        "content", Map.of(
+                                                "type", "string",
+                                                "description", "Complete Mermaid source or Markdown containing a mermaid code block. Prefer this for all non-trivial diagrams. Every visible node must have a meaningful user-facing label. Do not expose raw internal IDs such as P1, D1 or E1 as node text."
+                                        ),
+                                        "mermaidSource", Map.of(
+                                                "type", "string",
+                                                "description", "Alias of content. Use raw Mermaid syntax such as flowchart LR, graph TD, mindmap, timeline, sequenceDiagram, classDiagram, erDiagram, etc."
+                                        ),
+                                        "data", Map.of(
+                                                "type", "array",
+                                                "description", "Optional numeric chart data for simple pie/bar/line charts. Each item is {label, value}.",
+                                                "items", Map.of(
+                                                        "type", "object",
+                                                        "properties", Map.of(
+                                                                "label", Map.of("type", "string"),
+                                                                "value", Map.of("type", "number")
+                                                        ),
+                                                        "required", List.of("label", "value")
+                                                )
                                         )
                                 ),
                                 "required", List.of()
                         )),
                 buildTool("create_mermaid_chart_file",
-                        "创建 Mermaid 图表 Markdown 文件（支持 pie/bar/line/flowchart）。信息不完整时也要直接生成默认图，不要反问用户。",
+                        "Create a Mermaid chart Markdown file. Use this only when the user explicitly asks to save, export, download, or create a file.",
                         Map.of(
                                 "type", "object",
                                 "properties", Map.of(
                                         "filename", Map.of(
                                                 "type", "string",
-                                                "description", "目标 Markdown 路径，例如 docs/sales-q1.md"
+                                                "description", "Target Markdown path, for example docs/sales-q1.md"
                                         ),
                                         "chartType", Map.of(
                                                 "type", "string",
-                                                "description", "图表类型：pie/bar/line/flowchart（可省略）"
+                                                "description", "Optional chart type, such as pie, bar, line or flowchart"
                                         ),
                                         "title", Map.of(
                                                 "type", "string",
-                                                "description", "图表标题（可省略）"
+                                                "description", "Optional chart title"
+                                        ),
+                                        "content", Map.of(
+                                                "type", "string",
+                                                "description", "Complete Mermaid source or Markdown containing a mermaid code block. Every visible node must have a meaningful user-facing label. Do not expose raw internal IDs such as P1, D1 or E1 as node text."
+                                        ),
+                                        "mermaidSource", Map.of(
+                                                "type", "string",
+                                                "description", "Alias of content. Use raw Mermaid syntax."
                                         ),
                                         "data", Map.of(
                                                 "type", "array",
-                                                "description", "数值图表数据，每项为 {label, value}；关系图可省略",
+                                                "description", "Optional numeric chart data. Each item is {label, value}.",
                                                 "items", Map.of(
                                                         "type", "object",
                                                         "properties", Map.of(
