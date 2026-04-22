@@ -178,6 +178,7 @@ public class WebhookController {
         List<Map<String, Object>> rawMessages = request == null ? null : request.getMessages();
         List<Map<String, Object>> messages = MessageHelper.cleanRawMessages(rawMessages);
         ChatCompletionRequest.RagConfig ragConfig = request == null ? null : request.getRagConfig();
+        Boolean toolsEnabled = request == null ? null : request.getToolsEnabled();
 
         if (messages.isEmpty()) {
             messages.add(MessageHelper.buildUserMessage(""));
@@ -212,7 +213,7 @@ public class WebhookController {
         Thread streamThread = Thread.startVirtualThread(() -> {
             try {
                 log.info("【流式连接 AI 中...】模式: {}", aiRouter.getMode());
-                aiRouter.streamAuto(finalMessages, ragConfig, content -> {
+                aiRouter.streamAuto(finalMessages, ragConfig, toolsEnabled, content -> {
                     if (!emitterActive.get()) {
                         throw new UncheckedIOException(new IOException("SSE 连接已关闭，终止流式输出"));
                     }

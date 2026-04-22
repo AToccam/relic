@@ -81,6 +81,9 @@ public class AiRouterService {
     @Value("${relic.rag.retrieval.top-k:4}")
     private int ragTopK;
 
+    @Value("${relic.rag.retrieval.min-score:0.0}")
+    private double ragMinScore;
+
     private final Map<String, AiProvider> providerMap = new LinkedHashMap<>();
     private final SemanticRouter semanticRouter;
     private final Optional<OllamaLocalService> localFallbackService;
@@ -250,10 +253,27 @@ public class AiRouterService {
     public void streamAuto(List<Map<String, Object>> messages,
                            ChatCompletionRequest.RagConfig ragConfig,
                            Consumer<String> onChunk) throws Exception {
-        List<Map<String, Object>> preprocessed = preprocessMessagesForLocalRead(messages);
+        streamAuto(messages, ragConfig, null, onChunk);
+    }
+
+    //自动模式调度（支持 RAG 配置与显式关闭 tools）
+    public void streamAuto(List<Map<String, Object>> messages,
+                           ChatCompletionRequest.RagConfig ragConfig,
+                           Boolean toolsEnabled,
+                           Consumer<String> onChunk) throws Exception {
+        boolean enableTools = isToolsEnabled(toolsEnabled);
+        List<Map<String, Object>> preprocessed = enableTools
+                ? preprocessMessagesForLocalRead(messages)
+                : messages;
         prepareRagRuntime(preprocessed, ragConfig);
         SemanticRouter.RouteDecision decision = null;
         try {
+            if (!enableTools) {
+                log.info("【语义路由】tools 已显式关闭，走纯模型链路");
+                streamSingleWithoutTools(preprocessed, onChunk);
+                return;
+            }
+
             Optional<SemanticRouter.RouteDecision> multimodalDecision = forcePrimaryForMultimodal(preprocessed);
             if (multimodalDecision.isPresent()) {
                 decision = multimodalDecision.get();
@@ -300,10 +320,25 @@ public class AiRouterService {
 
     //根据当前模式自动选择同步问答方式（支持 RAG 配置）
     public String askAuto(List<Map<String, Object>> messages, ChatCompletionRequest.RagConfig ragConfig) {
-        List<Map<String, Object>> preprocessed = preprocessMessagesForLocalRead(messages);
+        return askAuto(messages, ragConfig, null);
+    }
+
+    //根据当前模式自动选择同步问答方式（支持 RAG 配置与显式关闭 tools）
+    public String askAuto(List<Map<String, Object>> messages,
+                          ChatCompletionRequest.RagConfig ragConfig,
+                          Boolean toolsEnabled) {
+        boolean enableTools = isToolsEnabled(toolsEnabled);
+        List<Map<String, Object>> preprocessed = enableTools
+                ? preprocessMessagesForLocalRead(messages)
+                : messages;
         prepareRagRuntime(preprocessed, ragConfig);
         SemanticRouter.RouteDecision decision = null;
         try {
+            if (!enableTools) {
+                log.info("【语义路由】tools 已显式关闭，走纯模型链路");
+                return askSingleWithoutTools(preprocessed);
+            }
+
             String result;
             Optional<SemanticRouter.RouteDecision> multimodalDecision = forcePrimaryForMultimodal(preprocessed);
             if (multimodalDecision.isPresent()) {
@@ -358,6 +393,18 @@ public class AiRouterService {
         enriched = withRagContext(enriched);
         String providerName = resolveToolProviderNameForMessages(messages);
         toolCallService.streamWithTools(getProvider(providerName), enriched, onChunk);
+    }
+
+    public void streamSingleWithoutTools(List<Map<String, Object>> messages, Consumer<String> onChunk) throws Exception {
+        List<Map<String, Object>> enriched = withRagContext(messages);
+        String providerName = resolveProviderNameForMessages(messages);
+        getProvider(providerName).stream(enriched, onChunk);
+    }
+
+    public String askSingleWithoutTools(List<Map<String, Object>> messages) {
+        List<Map<String, Object>> enriched = withRagContext(messages);
+        String providerName = resolveProviderNameForMessages(messages);
+        return getProvider(providerName).ask(enriched);
     }
 
     // ==================== 多 AI 协同模式 ====================
@@ -503,16 +550,28 @@ public class AiRouterService {
 
         try {
             int topK = Math.max(1, ragTopK);
+            double minScore = Math.max(0.0, Math.min(1.0, ragMinScore));
             List<RetrievalResult> hits = retriever.get().retrieve(query, topK, sourceIds);
             if (hits == null || hits.isEmpty()) {
                 log.info("【RAG】未检索到可用片段，query={}", query);
                 return;
             }
 
-            String contextPrompt = buildRagContextPrompt(hits);
-            List<Citation> citations = buildCitations(hits);
+            List<RetrievalResult> acceptedHits = hits.stream()
+                    .filter(Objects::nonNull)
+                    .filter(hit -> hit.getChunk() != null)
+                    .filter(hit -> hit.getScore() >= minScore)
+                    .toList();
+            if (acceptedHits.isEmpty()) {
+                log.info("【RAG】检索结果因分数阈值被全部过滤，query={}, minScore={}", query, minScore);
+                return;
+            }
+
+            String contextPrompt = buildRagContextPrompt(acceptedHits);
+            List<Citation> citations = buildCitations(acceptedHits);
             ragRuntime.set(new RagRuntime(contextPrompt, citations));
-            log.info("【RAG】检索命中: sources={}, hits={}", sourceIds.size(), hits.size());
+            log.info("【RAG】检索命中: sources={}, rawHits={}, acceptedHits={}, minScore={}",
+                    sourceIds.size(), hits.size(), acceptedHits.size(), minScore);
         } catch (Exception e) {
             log.warn("【RAG】检索增强失败，已降级为普通对话: {}", e.getMessage());
             ragRuntime.set(new RagRuntime("", List.of()));
@@ -591,6 +650,10 @@ public class AiRouterService {
             normalized.add(sourceId.trim().replace('\\', '/'));
         }
         return normalized;
+    }
+
+    private boolean isToolsEnabled(Boolean toolsEnabled) {
+        return !Boolean.FALSE.equals(toolsEnabled);
     }
 
     private void clearRagRuntime() {

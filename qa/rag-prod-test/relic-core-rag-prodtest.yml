@@ -1,0 +1,25 @@
+relic:
+  router:
+    primary-provider: deepseek
+  rag:
+    enabled: true
+    embedding:
+      provider: openai-compatible
+      openai-compatible:
+        url: ${RAG_EMBEDDING_URL:https://api.siliconflow.cn/v1/embeddings}
+        model: ${RAG_EMBEDDING_MODEL:Qwen/Qwen3-Embedding-8B}
+        api-key: ${SILICONFLOW_API_KEY:}
+        dimensions: ${RAG_EMBEDDING_DIMENSIONS:4096}
+    vector:
+      provider: chroma
+      expected-dimensions: ${RAG_EMBEDDING_DIMENSIONS:4096}
+      chroma:
+        scheme: http
+        host: ${RAG_CHROMA_HOST:127.0.0.1}
+        port: ${RAG_CHROMA_PORT:8000}
+        api-prefix: ${RAG_CHROMA_API_PREFIX:/api/v2}
+        collection-name: ${RAG_CHROMA_COLLECTION_NAME:relic_rag_prodtest}
+    ingest:
+      auto-index-on-upload: false
+    retrieval:
+      min-score: ${RAG_RETRIEVAL_MIN_SCORE:0.45}

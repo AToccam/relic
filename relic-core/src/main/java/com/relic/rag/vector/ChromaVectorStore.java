@@ -34,9 +34,12 @@ public class ChromaVectorStore implements VectorStore {
     private final String apiPrefix;
     private final String collectionName;
     private final int configuredDimensions;
+    private final boolean scopedTenantDatabaseApi;
     private final AtomicInteger runtimeDimensions = new AtomicInteger(-1);
 
     private volatile String collectionId;
+    private volatile String tenantName;
+    private volatile String databaseName;
 
     public ChromaVectorStore(RestTemplate restTemplate,
                              ObjectMapper objectMapper,
@@ -52,6 +55,7 @@ public class ChromaVectorStore implements VectorStore {
         this.apiPrefix = normalizeApiPrefix(apiPrefix);
         this.collectionName = collectionName;
         this.configuredDimensions = configuredDimensions;
+        this.scopedTenantDatabaseApi = this.apiPrefix.startsWith("/api/v2");
     }
 
     @PostConstruct
@@ -135,7 +139,7 @@ public class ChromaVectorStore implements VectorStore {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("query_embeddings", List.of(queryEmbedding));
         body.put("n_results", limit);
-        body.put("include", List.of("ids", "documents", "metadatas", "distances"));
+        body.put("include", List.of("documents", "metadatas", "distances"));
 
         Set<String> normalizedFilter = normalizeSourceIds(sourceIds);
         if (!normalizedFilter.isEmpty()) {
@@ -237,6 +241,7 @@ public class ChromaVectorStore implements VectorStore {
 
         Map<String, Object> createBody = new LinkedHashMap<>();
         createBody.put("name", collectionName);
+        createBody.put("get_or_create", true);
         createBody.put("metadata", Map.of("hnsw:space", "cosine"));
 
         try {
@@ -463,6 +468,13 @@ public class ChromaVectorStore implements VectorStore {
     }
 
     private String collectionRootUrl() {
+        if (scopedTenantDatabaseApi) {
+            ensureTenantAndDatabase();
+            return baseUrl + apiPrefix
+                    + "/tenants/" + tenantName
+                    + "/databases/" + databaseName
+                    + "/collections";
+        }
         return baseUrl + apiPrefix + "/collections";
     }
 
@@ -495,6 +507,49 @@ public class ChromaVectorStore implements VectorStore {
             trimmed = trimmed.substring(0, trimmed.length() - 1);
         }
         return trimmed;
+    }
+
+    @SuppressWarnings("unchecked")
+    private synchronized void ensureTenantAndDatabase() {
+        if (!scopedTenantDatabaseApi) {
+            return;
+        }
+        if (tenantName != null && !tenantName.isBlank()
+                && databaseName != null && !databaseName.isBlank()) {
+            return;
+        }
+
+        String discoveredTenant = "default_tenant";
+        String discoveredDatabase = "default_database";
+        try {
+            Map<String, Object> identity = restTemplate.getForObject(
+                    baseUrl + apiPrefix + "/auth/identity",
+                    Map.class);
+            if (identity != null) {
+                Object tenant = identity.get("tenant");
+                if (tenant != null && !String.valueOf(tenant).isBlank()) {
+                    discoveredTenant = String.valueOf(tenant);
+                }
+                Object databases = identity.get("databases");
+                if (databases instanceof List<?> list) {
+                    for (Object item : list) {
+                        if (item == null) {
+                            continue;
+                        }
+                        String candidate = String.valueOf(item).trim();
+                        if (!candidate.isEmpty()) {
+                            discoveredDatabase = candidate;
+                            break;
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("【RAG】读取 Chroma v2 identity 失败，回退默认 tenant/database: {}", e.getMessage());
+        }
+
+        tenantName = discoveredTenant;
+        databaseName = discoveredDatabase;
     }
 
     private <T> List<T> firstOrEmpty(List<List<T>> nested) {

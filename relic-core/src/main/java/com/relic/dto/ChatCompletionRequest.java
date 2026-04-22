@@ -16,6 +16,7 @@ public class ChatCompletionRequest {
     private String conversationId;
     private List<Map<String, Object>> messages;
     private RagConfig ragConfig;
+    private Boolean toolsEnabled;
 
     @Data
     @JsonIgnoreProperties(ignoreUnknown = true)
