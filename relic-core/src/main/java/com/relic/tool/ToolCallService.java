@@ -36,6 +36,69 @@ public class ToolCallService {
     private static final Pattern MERMAID_FENCE_PATTERN = Pattern.compile("```mermaid\\s*\\R([\\s\\S]*?)\\R?```");
     private static final Pattern MULTI_FILE_COUNT_PATTERN = Pattern.compile("生成\\s*([2-9]|[1-9]\\d|两|二|三|四|五|六|七|八|九)\\s*个?\\s*(文件|文档)");
 
+    private static final Pattern MULTI_CHART_EN_PATTERN = Pattern.compile("(?i)(?:draw|create|generate|render|make)\\s*(?:[2-9]|[1-9]\\d)\\s*(?:charts|diagrams)");
+    private static final Pattern MULTI_CHART_COUNT_EN_PATTERN = Pattern.compile("(?i)(?:[2-9]|[1-9]\\d)\\s*(?:charts|diagrams)");
+    private static final Pattern MULTI_CHART_COUNT_ZH_PATTERN = Pattern.compile("(?:[2-9]|[1-9]\\d)\\s*(?:\u4e2a|\u5f20)?\\s*(?:\u56fe|\u56fe\u8868|\u56fe\u793a)");
+
+    private static final List<String> CHART_KEYWORDS = List.of(
+            "\u56fe\u8868", "\u753b\u56fe", "\u5173\u7cfb\u56fe", "\u7ed3\u6784\u56fe", "\u793a\u610f\u56fe", "\u56fe\u793a",
+            "\u5bf9\u6bd4\u56fe", "\u6bd4\u8f83\u56fe", "\u5bf9\u7167\u56fe", "\u533a\u522b\u56fe", "\u5dee\u5f02\u56fe",
+            "\u6bd4\u4f8b\u56fe", "\u5206\u5e03\u56fe", "\u5360\u6bd4\u56fe", "\u8d8b\u52bf\u56fe", "\u65f6\u95f4\u7ebf",
+            "\u7518\u7279\u56fe", "\u5e8f\u5217\u56fe", "\u65f6\u5e8f\u56fe", "\u7c7b\u56fe", "\u5b9e\u4f53\u5173\u7cfb",
+            "er\u56fe", "\u72b6\u6001\u56fe", "\u65c5\u7a0b\u56fe", "\u8c61\u9650\u56fe", "\u6851\u57fa\u56fe",
+            "\u67b6\u6784\u56fe", "\u770b\u677f\u56fe", "\u5757\u56fe", "\u7ef4\u6069\u56fe", "\u8111\u56fe",
+            "\u601d\u7ef4\u5bfc\u56fe", "\u6d41\u7a0b\u56fe", "\u67f1\u72b6\u56fe", "\u6298\u7ebf\u56fe", "\u997c\u56fe",
+            "mermaid", "chart", "diagram", "flowchart", "graph", "mindmap", "timeline", "gantt", "sequence diagram",
+            "sequencediagram", "class diagram", "classdiagram", "er diagram", "erdiagram", "state diagram",
+            "statediagram", "journey", "quadrant", "sankey", "architecture", "kanban", "block diagram",
+            "blockdiagram", "venn", "xychart", "pie chart", "bar chart", "line chart", "comparison chart",
+            "compare chart", "\u53ef\u89c6\u5316", "\u6570\u636e\u5bf9\u6bd4");
+    private static final List<String> GENERIC_CHART_ACTIONS = List.of("\u505a\u4e2a", "\u505a\u4e00\u4e2a", "\u753b\u4e2a", "\u753b\u4e00\u4e2a");
+    private static final List<String> WEAK_CHART_ACTIONS = List.of(
+            "\u68b3\u7406", "\u6574\u7406", "\u5c55\u793a", "\u5448\u73b0", "\u603b\u89c8", "\u7ed3\u6784\u5316",
+            "\u53ef\u89c6\u5316", "\u505a\u6210", "\u753b\u4e00\u4e0b", "\u753b\u4e0b", "\u4e00\u5f20", "\u4e00\u9875",
+            "visualize", "show", "overview", "map out");
+    private static final List<String> WEAK_CHART_OBJECTS = List.of(
+            "\u5173\u7cfb", "\u7ed3\u6784", "\u6d41\u7a0b", "\u8def\u5f84", "\u6f14\u53d8", "\u5bf9\u6bd4", "\u903b\u8f91",
+            "\u6846\u67b6", "\u94fe\u8def", "\u8c03\u7528", "\u8109\u7edc", "relationship", "structure", "process",
+            "flow", "logic", "framework", "overview");
+    private static final List<String> PLAIN_TEXT_HINTS = List.of(
+            "\u7528\u6587\u5b57", "\u7eaf\u6587\u672c", "\u4e0d\u8981\u753b\u56fe", "\u4e0d\u7528\u753b\u56fe",
+            "\u522b\u753b\u56fe", "\u4e0d\u8981\u56fe", "\u4e0d\u7528\u56fe", "plain text", "no chart", "no diagram");
+    private static final List<String> CHART_REVISION_KEYWORDS = List.of(
+            "\u4fee\u6539", "\u8c03\u6574", "\u5b8c\u5584", "\u7ee7\u7eed", "\u91cd\u753b", "\u6362\u6210", "\u6539\u6210",
+            "\u6539\u4e00\u4e0b", "revise", "update", "modify", "redraw");
+    private static final List<String> FILE_OUTPUT_KEYWORDS = List.of(
+            "\u4fdd\u5b58", "\u4e0b\u8f7d", "\u5bfc\u51fa", "\u751f\u6210\u6587\u4ef6", "\u4fdd\u5b58\u6210\u6587\u4ef6",
+            "\u5b58\u6210\u6587\u4ef6", "\u5b58\u4e3a\u6587\u4ef6", "\u751f\u6210md", "\u751f\u6210 md",
+            "\u751f\u6210\u6587\u6863", "\u521b\u5efa\u6587\u6863", "\u5199\u4e00\u4efd\u6587\u6863", "\u5bfc\u51fa\u6587\u6863",
+            "\u751f\u6210\u62a5\u544a", "\u521b\u5efa\u62a5\u544a", "\u5199\u4e00\u4efd\u62a5\u544a",
+            "markdown", ".md", " md", "save", "save as file", "create file", "generate file",
+            "create document", "generate document", "write a document", "create report", "generate report",
+            "download", "export");
+    private static final List<String> NO_FILE_OUTPUT_KEYWORDS = List.of(
+            "\u4e0d\u8981\u751f\u6210\u6587\u4ef6", "\u4e0d\u7528\u751f\u6210\u6587\u4ef6", "\u4e0d\u751f\u6210\u6587\u4ef6",
+            "\u4e0d\u8981\u521b\u5efa\u6587\u4ef6", "\u4e0d\u7528\u521b\u5efa\u6587\u4ef6", "\u4e0d\u521b\u5efa\u6587\u4ef6",
+            "\u4e0d\u8981\u4fdd\u5b58", "\u4e0d\u7528\u4fdd\u5b58", "\u4e0d\u8981\u4e0b\u8f7d", "\u4e0d\u7528\u4e0b\u8f7d",
+            "\u76f4\u63a5\u5728\u9875\u9762", "\u76f4\u63a5\u5728\u804a\u5929", "\u76f4\u63a5\u56de\u590d",
+            "do not create file", "do not generate file", "don't create file", "don't generate file",
+            "no file", "inline only", "reply directly");
+    private static final List<String> TABLE_KEYWORDS = List.of("\u8868\u683c", "\u5bf9\u6bd4\u8868", "\u6570\u636e\u8868", "table");
+    private static final List<String> INLINE_KEYWORDS = List.of("\u9875\u9762", "\u5c55\u793a", "\u663e\u793a", "\u76f4\u63a5", "\u804a\u5929", "\u56de\u590d", "inline", "reply", "show");
+    private static final List<String> WORKSPACE_READ_KEYWORDS = List.of(
+            "\u8bfb\u53d6\u6587\u4ef6", "\u67e5\u770b\u6587\u4ef6", "\u770b\u4e0b\u6587\u4ef6", "\u6253\u5f00\u6587\u4ef6",
+            "\u5217\u51fa\u6587\u4ef6", "\u5217\u51fa\u5de5\u4f5c\u533a", "\u5de5\u4f5c\u533a",
+            "read file", "list files", "workspace", "read_file", "list_files");
+    private static final List<String> MULTI_FILE_KEYWORDS = List.of(
+            "\u591a\u4e2a\u6587\u4ef6", "\u591a\u4efd\u6587\u4ef6", "\u591a\u4efd\u6587\u6863", "\u6279\u91cf\u751f\u6210",
+            "\u5206\u522b\u751f\u6210", "\u5206\u522b\u8f93\u51fa", "\u6bcf\u4e2a\u90fd\u4fdd\u5b58",
+            "\u6bcf\u4e2a\u90fd\u751f\u6210", "\u5404\u751f\u6210\u4e00\u4e2a", "multiple files", "separate files", "for each");
+    private static final List<String> MULTI_CHART_KEYWORDS = List.of(
+            "\u591a\u4e2a\u56fe", "\u591a\u5f20\u56fe", "\u51e0\u4e2a\u56fe", "\u51e0\u5f20\u56fe", "\u5206\u522b\u753b",
+            "\u5206\u522b\u505a", "\u5206\u522b\u751f\u6210", "\u5404\u753b\u4e00\u4e2a", "\u6bcf\u4e2a\u90fd\u753b",
+            "\u4e00\u4e2a\u4e00\u4e2a\u753b", "multiple charts", "multiple diagrams", "separate charts",
+            "separate diagrams", "for each chart", "for each diagram");
+
     @Autowired
     private ToolExecutor toolExecutor;
 
@@ -705,11 +768,12 @@ public class ToolCallService {
      */
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> selectToolsForRequest(List<Map<String, Object>> messages) {
-        String latestUserText = extractLatestUserText(messages);
-        boolean chartIntent = looksLikeChartIntent(latestUserText)
-                || (looksLikeAmbiguousFollowUp(latestUserText) && recentAssistantMentionsChart(messages))
-                || (looksLikeChartRevisionIntent(latestUserText) && !extractLatestChartSource(messages).isBlank());
-        boolean fileOutputIntent = looksLikeFileOutputIntent(latestUserText);
+        IntentDecision decision = decideIntent(messages);
+        if (decision.outputMode() == OutputMode.PLAIN_REPLY) {
+            log.info("[tool-select] mode={}, matched={}, primary_tool=none",
+                    decision.outputMode(), decision.matchedRules());
+            return List.of();
+        }
         List<Map<String, Object>> allTools = ToolDefinitions.getAll();
         List<Map<String, Object>> selected = new ArrayList<>();
 
@@ -722,39 +786,102 @@ public class ToolCallService {
             Object nameObj = ((Map<String, Object>) fnMap).get("name");
             String name = nameObj == null ? "" : nameObj.toString();
 
-            if (chartIntent) {
+            if (decision.chartIntent()) {
                 if ("render_mermaid_chart".equals(name)
                         || "read_file".equals(name)
                         || "list_files".equals(name)
-                        || (fileOutputIntent && "create_mermaid_chart_file".equals(name))) {
+                        || (decision.fileOutputIntent() && "create_mermaid_chart_file".equals(name))) {
                     selected.add(tool);
                 }
                 continue;
             }
 
-            if ("create_text_file".equals(name)
-                    || "read_file".equals(name)
-                    || "list_files".equals(name)) {
+            if ((decision.fileOutputIntent() && "create_text_file".equals(name))
+                    || (decision.workspaceReadIntent() && ("read_file".equals(name) || "list_files".equals(name)))) {
                 selected.add(tool);
             }
         }
 
-        log.info("[tool-select] mode={}, chart_file_output={}, primary_tool={}",
-                chartIntent ? "chart" : "text",
-                fileOutputIntent,
-                chartIntent ? "render_mermaid_chart" : "create_text_file");
+        log.info("[tool-select] mode={}, file_output={}, workspace_read={}, max_charts={}, matched={}, primary_tool={}",
+                decision.outputMode(),
+                decision.fileOutputIntent(),
+                decision.workspaceReadIntent(),
+                decision.maxCharts(),
+                decision.matchedRules(),
+                decision.chartIntent() ? "render_mermaid_chart" : (decision.fileOutputIntent() ? "create_text_file" : "none"));
         return selected;
     }
 
     private CreateGuard buildCreateGuard(List<Map<String, Object>> messages) {
+        IntentDecision decision = decideIntent(messages);
+        log.info("[create-guard] maxCreates={}, maxCharts={}, matched={}",
+                decision.maxCreates(), decision.maxCharts(), decision.matchedRules());
+        return new CreateGuard(decision.maxCreates(), decision.maxCharts());
+    }
+
+    private IntentDecision decideIntent(List<Map<String, Object>> messages) {
         String latestUserText = extractLatestUserText(messages);
+        List<String> matchedRules = new ArrayList<>();
+
+        boolean noFileOutputIntent = looksLikeNoFileOutputIntent(latestUserText);
+        addIf(matchedRules, noFileOutputIntent, "NO_FILE_OUTPUT");
+
+        boolean explicitFileOutputIntent = looksLikeFileOutputIntent(latestUserText);
+        addIf(matchedRules, explicitFileOutputIntent, "FILE_OUTPUT");
+        boolean fileOutputIntent = !noFileOutputIntent && explicitFileOutputIntent;
+
+        boolean workspaceReadIntent = !noFileOutputIntent && looksLikeWorkspaceReadIntent(latestUserText);
+        addIf(matchedRules, workspaceReadIntent, "WORKSPACE_READ");
+
+        boolean inlineTableIntent = looksLikeInlineTableIntent(latestUserText) && !fileOutputIntent;
+        addIf(matchedRules, inlineTableIntent, "INLINE_TABLE");
+
+        boolean strongChartIntent = looksLikeChartIntent(latestUserText);
+        addIf(matchedRules, strongChartIntent, "CHART_STRONG");
+
+        boolean weakChartIntent = looksLikeWeakChartIntent(latestUserText);
+        addIf(matchedRules, weakChartIntent, "CHART_WEAK");
+
+        boolean ambiguousChartFollowUp = looksLikeAmbiguousFollowUp(latestUserText) && recentAssistantMentionsChart(messages);
+        addIf(matchedRules, ambiguousChartFollowUp, "CHART_FOLLOW_UP");
+
+        boolean chartRevisionIntent = looksLikeChartRevisionIntent(latestUserText) && !extractLatestChartSource(messages).isBlank();
+        addIf(matchedRules, chartRevisionIntent, "CHART_REVISION");
+
+        boolean chartIntent = strongChartIntent || weakChartIntent || ambiguousChartFollowUp || chartRevisionIntent;
         boolean explicitMultiFiles = looksLikeExplicitMultiFileIntent(latestUserText);
+        addIf(matchedRules, explicitMultiFiles, "MULTI_FILE");
         boolean explicitMultiCharts = looksLikeExplicitMultiChartIntent(latestUserText);
-        int maxCreates = explicitMultiFiles ? EXPLICIT_MULTI_CREATE_LIMIT : DEFAULT_CREATE_LIMIT;
-        int maxCharts = explicitMultiCharts ? EXPLICIT_MULTI_CHART_LIMIT : DEFAULT_CHART_LIMIT;
-        log.info("[create-guard] explicitMultiFiles={}, explicitMultiCharts={}, maxCreates={}, maxCharts={}",
-                explicitMultiFiles, explicitMultiCharts, maxCreates, maxCharts);
-        return new CreateGuard(maxCreates, maxCharts);
+        addIf(matchedRules, explicitMultiCharts, "MULTI_CHART");
+
+        OutputMode outputMode;
+        if (!chartIntent && (noFileOutputIntent || inlineTableIntent)) {
+            outputMode = OutputMode.PLAIN_REPLY;
+        } else if (chartIntent) {
+            outputMode = OutputMode.CHART;
+        } else if (fileOutputIntent) {
+            outputMode = OutputMode.FILE_OUTPUT;
+        } else if (workspaceReadIntent) {
+            outputMode = OutputMode.WORKSPACE_READ;
+        } else {
+            outputMode = OutputMode.PLAIN_REPLY;
+        }
+
+        return new IntentDecision(
+                outputMode,
+                chartIntent,
+                fileOutputIntent,
+                inlineTableIntent,
+                workspaceReadIntent,
+                explicitMultiFiles ? EXPLICIT_MULTI_CREATE_LIMIT : DEFAULT_CREATE_LIMIT,
+                explicitMultiCharts ? EXPLICIT_MULTI_CHART_LIMIT : DEFAULT_CHART_LIMIT,
+                List.copyOf(matchedRules));
+    }
+
+    private void addIf(List<String> matchedRules, boolean condition, String ruleName) {
+        if (condition) {
+            matchedRules.add(ruleName);
+        }
     }
 
     private String extractLatestUserText(List<Map<String, Object>> messages) {
@@ -782,97 +909,29 @@ public class ToolCallService {
             return false;
         }
         String t = text.toLowerCase();
-        return t.contains("\u56fe\u8868")
-                || t.contains("\u753b\u56fe")
-                || t.contains("\u5173\u7cfb\u56fe")
-                || t.contains("\u7ed3\u6784\u56fe")
-                || t.contains("\u793a\u610f\u56fe")
-                || t.contains("\u56fe\u793a")
-                || t.contains("\u5bf9\u6bd4\u56fe")
-                || t.contains("\u6bd4\u8f83\u56fe")
-                || t.contains("\u5bf9\u7167\u56fe")
-                || t.contains("\u533a\u522b\u56fe")
-                || t.contains("\u5dee\u5f02\u56fe")
-                || t.contains("\u6bd4\u4f8b\u56fe")
-                || t.contains("\u5206\u5e03\u56fe")
-                || t.contains("\u5360\u6bd4\u56fe")
-                || t.contains("\u8d8b\u52bf\u56fe")
-                || t.contains("\u65f6\u95f4\u7ebf")
-                || t.contains("\u7518\u7279\u56fe")
-                || t.contains("\u5e8f\u5217\u56fe")
-                || t.contains("\u65f6\u5e8f\u56fe")
-                || t.contains("\u7c7b\u56fe")
-                || t.contains("\u5b9e\u4f53\u5173\u7cfb")
-                || t.contains("er\u56fe")
-                || t.contains("\u72b6\u6001\u56fe")
-                || t.contains("\u65c5\u7a0b\u56fe")
-                || t.contains("\u8c61\u9650\u56fe")
-                || t.contains("\u6851\u57fa\u56fe")
-                || t.contains("\u67b6\u6784\u56fe")
-                || t.contains("\u770b\u677f\u56fe")
-                || t.contains("\u5757\u56fe")
-                || t.contains("\u7ef4\u6069\u56fe")
-                || t.contains("\u8111\u56fe")
-                || t.contains("\u601d\u7ef4\u5bfc\u56fe")
-                || t.contains("\u6d41\u7a0b\u56fe")
-                || t.contains("\u67f1\u72b6\u56fe")
-                || t.contains("\u6298\u7ebf\u56fe")
-                || t.contains("\u997c\u56fe")
-                || t.contains("\u505a\u4e2a") && t.contains("\u56fe")
-                || t.contains("\u505a\u4e00\u4e2a") && t.contains("\u56fe")
-                || t.contains("\u753b\u4e2a") && t.contains("\u56fe")
-                || t.contains("\u753b\u4e00\u4e2a") && t.contains("\u56fe")
-                || t.contains("mermaid")
-                || t.contains("chart")
-                || t.contains("diagram")
-                || t.contains("flowchart")
-                || t.contains("graph")
-                || t.contains("mindmap")
-                || t.contains("timeline")
-                || t.contains("gantt")
-                || t.contains("sequence diagram")
-                || t.contains("sequencediagram")
-                || t.contains("class diagram")
-                || t.contains("classdiagram")
-                || t.contains("er diagram")
-                || t.contains("erdiagram")
-                || t.contains("state diagram")
-                || t.contains("statediagram")
-                || t.contains("journey")
-                || t.contains("quadrant")
-                || t.contains("sankey")
-                || t.contains("architecture")
-                || t.contains("kanban")
-                || t.contains("block diagram")
-                || t.contains("blockdiagram")
-                || t.contains("venn")
-                || t.contains("xychart")
-                || t.contains("pie chart")
-                || t.contains("bar chart")
-                || t.contains("line chart")
-                || t.contains("comparison chart")
-                || t.contains("compare chart")
-                || t.contains("\u53ef\u89c6\u5316")
-                || t.contains("\u6570\u636e\u5bf9\u6bd4");
+        if (containsAny(t, PLAIN_TEXT_HINTS)) {
+            return false;
+        }
+        return containsAny(t, CHART_KEYWORDS)
+                || (containsAny(t, GENERIC_CHART_ACTIONS) && t.contains("\u56fe"));
+    }
+
+    private boolean looksLikeWeakChartIntent(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String t = text.toLowerCase();
+        if (containsAny(t, PLAIN_TEXT_HINTS)) {
+            return false;
+        }
+        return containsAny(t, WEAK_CHART_ACTIONS) && containsAny(t, WEAK_CHART_OBJECTS);
     }
 
     private boolean looksLikeChartRevisionIntent(String text) {
         if (text == null || text.isBlank()) {
             return false;
         }
-        String t = text.toLowerCase();
-        return t.contains("\u4fee\u6539")
-                || t.contains("\u8c03\u6574")
-                || t.contains("\u5b8c\u5584")
-                || t.contains("\u7ee7\u7eed")
-                || t.contains("\u91cd\u753b")
-                || t.contains("\u6362\u6210")
-                || t.contains("\u6539\u6210")
-                || t.contains("\u6539\u4e00\u4e0b")
-                || t.contains("revise")
-                || t.contains("update")
-                || t.contains("modify")
-                || t.contains("redraw");
+        return containsAny(text.toLowerCase(), CHART_REVISION_KEYWORDS);
     }
 
     private boolean looksLikeAmbiguousFollowUp(String text) {
@@ -921,25 +980,29 @@ public class ToolCallService {
         if (text == null || text.isBlank()) {
             return false;
         }
+        return containsAny(text.toLowerCase(), FILE_OUTPUT_KEYWORDS);
+    }
+
+    private boolean looksLikeNoFileOutputIntent(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        return containsAny(text.toLowerCase(), NO_FILE_OUTPUT_KEYWORDS);
+    }
+
+    private boolean looksLikeInlineTableIntent(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
         String t = text.toLowerCase();
-        return t.contains("\u4fdd\u5b58")
-                || t.contains("\u4e0b\u8f7d")
-                || t.contains("\u5bfc\u51fa")
-                || t.contains("\u751f\u6210\u6587\u4ef6")
-                || t.contains("\u4fdd\u5b58\u6210\u6587\u4ef6")
-                || t.contains("\u5b58\u6210\u6587\u4ef6")
-                || t.contains("\u5b58\u4e3a\u6587\u4ef6")
-                || t.contains("\u751f\u6210md")
-                || t.contains("\u751f\u6210 md")
-                || t.contains("markdown")
-                || t.contains(".md")
-                || t.contains(" md")
-                || t.contains("save")
-                || t.contains("save as file")
-                || t.contains("create file")
-                || t.contains("generate file")
-                || t.contains("download")
-                || t.contains("export");
+        return containsAny(t, TABLE_KEYWORDS) && containsAny(t, INLINE_KEYWORDS);
+    }
+
+    private boolean looksLikeWorkspaceReadIntent(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        return containsAny(text.toLowerCase(), WORKSPACE_READ_KEYWORDS);
     }
 
     private boolean looksLikeExplicitMultiFileIntent(String text) {
@@ -948,18 +1011,7 @@ public class ToolCallService {
         }
         String t = text.toLowerCase();
 
-        if (t.contains("\u591a\u4e2a\u6587\u4ef6")
-                || t.contains("\u591a\u4efd\u6587\u4ef6")
-                || t.contains("\u591a\u4efd\u6587\u6863")
-                || t.contains("\u6279\u91cf\u751f\u6210")
-                || t.contains("\u5206\u522b\u751f\u6210")
-                || t.contains("\u5206\u522b\u8f93\u51fa")
-                || t.contains("\u6bcf\u4e2a\u90fd\u4fdd\u5b58")
-                || t.contains("\u6bcf\u4e2a\u90fd\u751f\u6210")
-                || t.contains("\u5404\u751f\u6210\u4e00\u4e2a")
-                || t.contains("multiple files")
-                || t.contains("separate files")
-                || t.contains("for each")) {
+        if (containsAny(t, MULTI_FILE_KEYWORDS)) {
             return true;
         }
 
@@ -972,34 +1024,25 @@ public class ToolCallService {
         }
         String t = text.toLowerCase();
 
-        if (t.contains("\u591a\u4e2a\u56fe")
-                || t.contains("\u591a\u5f20\u56fe")
-                || t.contains("\u51e0\u4e2a\u56fe")
-                || t.contains("\u51e0\u5f20\u56fe")
-                || t.contains("\u5206\u522b\u753b")
-                || t.contains("\u5206\u522b\u505a")
-                || t.contains("\u5206\u522b\u751f\u6210")
-                || t.contains("\u5404\u753b\u4e00\u4e2a")
-                || t.contains("\u6bcf\u4e2a\u90fd\u753b")
-                || t.contains("\u4e00\u4e2a\u4e00\u4e2a\u753b")
-                || t.contains("multiple charts")
-                || t.contains("multiple diagrams")
-                || t.contains("separate charts")
-                || t.contains("separate diagrams")
-                || t.contains("for each chart")
-                || t.contains("for each diagram")) {
+        if (containsAny(t, MULTI_CHART_KEYWORDS)) {
             return true;
         }
 
-        return Pattern.compile("(?i)(?:draw|create|generate|render|make)\\s*(?:[2-9]|[1-9]\\d)\\s*(?:charts|diagrams)")
-                .matcher(text)
-                .find()
-                || Pattern.compile("(?i)(?:[2-9]|[1-9]\\d)\\s*(?:charts|diagrams)")
-                .matcher(text)
-                .find()
-                || Pattern.compile("(?:[2-9]|[1-9]\\d)\\s*(?:\u4e2a|\u5f20)?\\s*(?:\u56fe|\u56fe\u8868|\u56fe\u793a)")
-                .matcher(text)
-                .find();
+        return MULTI_CHART_EN_PATTERN.matcher(text).find()
+                || MULTI_CHART_COUNT_EN_PATTERN.matcher(text).find()
+                || MULTI_CHART_COUNT_ZH_PATTERN.matcher(text).find();
+    }
+
+    private boolean containsAny(String text, List<String> keywords) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        for (String keyword : keywords) {
+            if (text.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
     }
     private String removeSpecialToolLines(String toolResult) {
         if (toolResult == null || toolResult.isBlank()) {
@@ -1027,6 +1070,24 @@ public class ToolCallService {
             this.chartCount = 0;
             this.chartRepairCount = 0;
         }
+    }
+
+    private enum OutputMode {
+        PLAIN_REPLY,
+        CHART,
+        FILE_OUTPUT,
+        WORKSPACE_READ
+    }
+
+    private record IntentDecision(
+            OutputMode outputMode,
+            boolean chartIntent,
+            boolean fileOutputIntent,
+            boolean inlineTableIntent,
+            boolean workspaceReadIntent,
+            int maxCreates,
+            int maxCharts,
+            List<String> matchedRules) {
     }
 
     private record ChartQualityResult(boolean ok, String message) {
