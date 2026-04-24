@@ -1,0 +1,1 @@
+Relic 的 RAG 后端链路包含文件上传、手动索引、检索增强和 SSE 引用返回。当前验证重点是 citations 是否随首个流式 chunk 返回。
