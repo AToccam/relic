@@ -2,6 +2,8 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import type mermaid from 'mermaid'
 
+let chartInstanceSeq = 0
+
 type ChartKind = 'bar' | 'line' | 'pie'
 
 interface ChartDatum {
@@ -35,6 +37,7 @@ const mermaidSvg = ref('')
 const mermaidError = ref('')
 const fullscreen = ref(false)
 const copied = ref(false)
+const renderInstanceId = chartInstanceSeq++
 let mermaidApi: typeof mermaid | null = null
 
 const normalizedLanguage = computed(() => props.language.toLowerCase())
@@ -60,7 +63,7 @@ watch(
     await nextTick()
     try {
       const mermaid = await loadMermaid()
-      const id = `mermaid-${hashText(props.source)}`
+      const id = `mermaid-${renderInstanceId}-${hashText(props.source)}`
       const rendered = await mermaid.render(id, props.source)
       mermaidSvg.value = rendered.svg
     } catch (error) {

@@ -112,6 +112,7 @@ export const useChatStore = defineStore('chat', () => {
     setConversationStreaming(targetConversationId, true)
     const abortController = new AbortController()
     abortControllers.set(targetConversationId, abortController)
+    let generatedFilesRefreshTriggered = false
 
     try {
       const payload = messages.value
@@ -120,7 +121,13 @@ export const useChatStore = defineStore('chat', () => {
 
       await streamChat(
         payload,
-        (chunk) => { assistantMsg.content += chunk },
+        (chunk) => {
+          assistantMsg.content += chunk
+          if (!generatedFilesRefreshTriggered && hasGeneratedFileSignal(assistantMsg.content)) {
+            generatedFilesRefreshTriggered = true
+            void studio.loadPersistedFiles()
+          }
+        },
         targetConversationId,
         abortController.signal
       )
@@ -348,6 +355,12 @@ export const useChatStore = defineStore('chat', () => {
 
 function buildConversationId(): string {
   return `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+}
+
+function hasGeneratedFileSignal(content: string): boolean {
+  return content.includes('/api/files/download?relativePath=')
+    || content.includes('/files/download?relativePath=')
+    || content.includes('DOWNLOAD_URL:')
 }
 
 function toUiMessage(item: PersistedMessage): Message {

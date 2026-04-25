@@ -1,5 +1,7 @@
 package com.relic.tool;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.relic.dto.ToolCallResult;
 import com.relic.service.AiProvider;
 import lombok.extern.slf4j.Slf4j;
@@ -9,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
@@ -28,12 +31,15 @@ public class ToolCallService {
     private static final int EXPLICIT_MULTI_CHART_LIMIT = 3;
 
     private static final Pattern DOWNLOAD_URL_PATTERN = Pattern.compile("DOWNLOAD_URL:\\s*(\\S+)");
+    private static final Pattern CREATED_FILE_PATTERN = Pattern.compile(
+            "(?:File created:|File overwritten:|Word document created:|Word document overwritten:)\\s*(.+)");
     private static final Pattern INLINE_CHART_PATTERN = Pattern.compile(
             ToolExecutor.INLINE_CHART_MARKER + "\\s*\\R([\\s\\S]*)",
             Pattern.MULTILINE);
     private static final Pattern STRUCTURED_CHART_PATTERN = Pattern.compile(
             ToolExecutor.STRUCTURED_CHART_MARKER + "(\\{.*})");
     private static final Pattern MERMAID_FENCE_PATTERN = Pattern.compile("```mermaid\\s*\\R([\\s\\S]*?)\\R?```");
+    private static final Pattern FILENAME_PATTERN = Pattern.compile("([\\w\\-\\u4e00-\\u9fa5./]+\\.(?:md|txt|docx))", Pattern.CASE_INSENSITIVE);
     private static final Pattern MULTI_FILE_COUNT_PATTERN = Pattern.compile("生成\\s*([2-9]|[1-9]\\d|两|二|三|四|五|六|七|八|九)\\s*个?\\s*(文件|文档)");
 
     private static final Pattern MULTI_CHART_EN_PATTERN = Pattern.compile("(?i)(?:draw|create|generate|render|make)\\s*(?:[2-9]|[1-9]\\d)\\s*(?:charts|diagrams)");
@@ -53,7 +59,9 @@ public class ToolCallService {
             "statediagram", "journey", "quadrant", "sankey", "architecture", "kanban", "block diagram",
             "blockdiagram", "venn", "xychart", "pie chart", "bar chart", "line chart", "comparison chart",
             "compare chart", "\u53ef\u89c6\u5316", "\u6570\u636e\u5bf9\u6bd4");
-    private static final List<String> GENERIC_CHART_ACTIONS = List.of("\u505a\u4e2a", "\u505a\u4e00\u4e2a", "\u753b\u4e2a", "\u753b\u4e00\u4e2a");
+    private static final List<String> GENERIC_CHART_ACTIONS = List.of(
+            "\u505a\u4e2a", "\u505a\u4e00\u4e2a", "\u753b\u4e2a", "\u753b\u4e00\u4e2a",
+            "\u751f\u6210", "\u751f\u6210\u4e00\u4e2a", "\u751f\u6210\u4e00\u4efd", "\u521b\u5efa", "\u5236\u4f5c", "\u7ed9\u6211\u751f\u6210");
     private static final List<String> WEAK_CHART_ACTIONS = List.of(
             "\u68b3\u7406", "\u6574\u7406", "\u5c55\u793a", "\u5448\u73b0", "\u603b\u89c8", "\u7ed3\u6784\u5316",
             "\u53ef\u89c6\u5316", "\u505a\u6210", "\u753b\u4e00\u4e0b", "\u753b\u4e0b", "\u4e00\u5f20", "\u4e00\u9875",
@@ -76,6 +84,13 @@ public class ToolCallService {
             "markdown", ".md", " md", "save", "save as file", "create file", "generate file",
             "create document", "generate document", "write a document", "create report", "generate report",
             "download", "export");
+    private static final List<String> DOCX_OUTPUT_KEYWORDS = List.of(
+            "word", "docx", ".docx", "\u751f\u6210\u6587\u6863", "\u521b\u5efa\u6587\u6863", "\u5199\u4e00\u4efd\u6587\u6863",
+            "\u5bfc\u51fa\u6587\u6863", "\u751f\u6210\u62a5\u544a", "\u521b\u5efa\u62a5\u544a", "\u5199\u4e00\u4efd\u62a5\u544a",
+            "\u53ef\u4e0b\u8f7d\u6587\u6863", "\u6587\u6863\u6587\u4ef6", "\u62a5\u544a\u6587\u4ef6",
+            "create document", "generate document", "write a document", "create report", "generate report");
+    private static final List<String> TEXT_FILE_OUTPUT_KEYWORDS = List.of(
+            "markdown", ".md", " md", "\u751f\u6210md", "\u751f\u6210 md", "\u6587\u672c\u6587\u4ef6", "text file", ".txt");
     private static final List<String> NO_FILE_OUTPUT_KEYWORDS = List.of(
             "\u4e0d\u8981\u751f\u6210\u6587\u4ef6", "\u4e0d\u7528\u751f\u6210\u6587\u4ef6", "\u4e0d\u751f\u6210\u6587\u4ef6",
             "\u4e0d\u8981\u521b\u5efa\u6587\u4ef6", "\u4e0d\u7528\u521b\u5efa\u6587\u4ef6", "\u4e0d\u521b\u5efa\u6587\u4ef6",
@@ -101,14 +116,20 @@ public class ToolCallService {
 
     @Autowired
     private ToolExecutor toolExecutor;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public String askWithTools(AiProvider provider, List<Map<String, Object>> messages) {
+        IntentDecision decision = decideIntent(messages);
+        if (shouldCreateFileDeterministically(decision)) {
+            return createFileDeterministically(provider, messages, decision);
+        }
+
         if (!provider.supportsTools()) {
             log.debug("Provider {} does not support tools, fallback to plain ask", provider.getName());
             return provider.ask(messages);
         }
 
-        List<Map<String, Object>> enrichedMessages = enrichChartRevisionContext(messages);
+        List<Map<String, Object>> enrichedMessages = enrichChartFileOutputContext(enrichChartRevisionContext(messages));
         List<Map<String, Object>> conversation = new ArrayList<>(enrichedMessages);
         List<Map<String, Object>> tools = selectToolsForRequest(enrichedMessages);
         CreateGuard createGuard = buildCreateGuard(enrichedMessages);
@@ -122,12 +143,17 @@ public class ToolCallService {
                 log.info("[tool-call] provider={}, round={}, count={}", provider.getName(), round + 1, executable.size());
                 conversation.add(result.toAssistantMessage());
                 directToolOutput.append(executeAndAppend(executable, conversation, createGuard));
-                if (createGuard.chartCount >= createGuard.maxCharts) {
+                if (shouldStopAfterTools(createGuard)) {
                     return directToolOutput.toString();
                 }
             } else if (result.hasToolCalls()) {
                 log.warn("[tool-call] provider={}, round={} got invalid tool calls only", provider.getName(), round + 1);
             } else {
+                if (createGuard.chartFileOutput && createGuard.createdCount == 0) {
+                    log.warn("[tool-call] chart file output has no file yet; suppressing natural content and forcing file creation: {}", result.getContentString());
+                    conversation.add(buildChartFileCreationInstruction(createGuard));
+                    continue;
+                }
                 return directToolOutput + result.getContentString();
             }
         }
@@ -139,15 +165,26 @@ public class ToolCallService {
     public void streamWithTools(AiProvider provider,
                                 List<Map<String, Object>> messages,
                                 Consumer<String> onChunk) throws Exception {
+        IntentDecision decision = decideIntent(messages);
+        if (shouldCreateFileDeterministically(decision)) {
+            onChunk.accept(createFileDeterministically(provider, messages, decision));
+            return;
+        }
+
         if (!provider.supportsTools()) {
             log.debug("Provider {} does not support tools, fallback to plain stream", provider.getName());
             provider.stream(messages, onChunk);
             return;
         }
 
-        List<Map<String, Object>> enrichedMessages = enrichChartRevisionContext(messages);
+        List<Map<String, Object>> enrichedMessages = enrichChartFileOutputContext(enrichChartRevisionContext(messages));
         List<Map<String, Object>> conversation = new ArrayList<>(enrichedMessages);
         List<Map<String, Object>> tools = selectToolsForRequest(enrichedMessages);
+        if (tools.isEmpty()) {
+            provider.stream(enrichedMessages, onChunk);
+            return;
+        }
+
         CreateGuard createGuard = buildCreateGuard(enrichedMessages);
         boolean chartRetryRequired = false;
         String chartRetryToolName = "render_mermaid_chart";
@@ -155,14 +192,10 @@ public class ToolCallService {
         boolean anyContentSent = false;
 
         for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
-            StringBuilder suppressedContent = new StringBuilder();
-            Consumer<String> contentSink = chartRetryRequired ? suppressedContent::append : onChunk;
+            StringBuilder bufferedContent = new StringBuilder();
+            Consumer<String> contentSink = bufferedContent::append;
             ToolCallResult result = provider.streamWithTools(conversation, tools, contentSink);
             List<ToolCallResult.ToolCall> executable = filterExecutableToolCalls(result.getToolCalls());
-
-            if (!chartRetryRequired && result.getContent().length() > 0) {
-                anyContentSent = true;
-            }
 
             if (result.hasToolCalls() && !executable.isEmpty()) {
                 log.info("[tool-call-stream] provider={}, round={}, count={}", provider.getName(), round + 1, executable.size());
@@ -170,6 +203,12 @@ public class ToolCallService {
                 chartRetryRequired = false;
 
                 for (ToolCallResult.ToolCall tc : executable) {
+                    if (isBlockedRepeatedChartCall(tc, createGuard)) {
+                        conversation.add(buildToolMessage(tc, repeatedChartBlockedMessage()));
+                        conversation.add(buildChartFileCreationInstruction(createGuard));
+                        continue;
+                    }
+
                     onChunk.accept("\n🔧 正在调用 " + tc.getName() + "...\n");
 
                     String toolResult = executeToolWithGuard(tc, createGuard);
@@ -185,7 +224,7 @@ public class ToolCallService {
                     Map<String, Object> toolMsg = new HashMap<>();
                     toolMsg.put("role", "tool");
                     toolMsg.put("tool_call_id", tc.getId());
-                    toolMsg.put("content", removeSpecialToolLines(toolResult));
+                    toolMsg.put("content", buildToolMessageContent(tc.getName(), toolResult, createGuard));
                     conversation.add(toolMsg);
 
                     if (retryRequired) {
@@ -195,14 +234,16 @@ public class ToolCallService {
                     if (chartGenerated) {
                         createGuard.chartCount++;
                         logToolResult(tc.getName(), toolResult);
-                        emitDownloadLinkIfPresent(toolResult, onChunk);
-                        if (hasStructuredChart(toolResult)) {
-                            emitStructuredChartIfPresent(toolResult, onChunk);
-                        } else {
-                            emitInlineChartIfPresent(toolResult, onChunk);
+                        if (!createGuard.chartFileOutput) {
+                            emitDownloadLinkIfPresent(toolResult, onChunk);
+                            if (hasStructuredChart(toolResult)) {
+                                emitStructuredChartIfPresent(toolResult, onChunk);
+                            } else {
+                                emitInlineChartIfPresent(toolResult, onChunk);
+                            }
+                            onChunk.accept("\n");
                         }
-                        onChunk.accept("\n");
-                        if (createGuard.chartCount >= createGuard.maxCharts) {
+                        if (!createGuard.chartFileOutput && createGuard.chartCount >= createGuard.maxCharts) {
                             return;
                         }
                         continue;
@@ -210,6 +251,10 @@ public class ToolCallService {
                     if (!retryRequired) {
                         logToolResult(tc.getName(), toolResult);
                         emitDownloadLinkIfPresent(toolResult, onChunk);
+                        if (isCreateTool(tc.getName()) && hasDownloadUrl(toolResult)) {
+                            onChunk.accept("\n");
+                            return;
+                        }
                     }
                 }
                 if (chartRetryRequired) {
@@ -220,9 +265,18 @@ public class ToolCallService {
                 log.warn("[tool-call-stream] provider={}, round={} got invalid tool calls only", provider.getName(), round + 1);
             } else {
                 if (chartRetryRequired) {
-                    log.warn("[tool-call-stream] chart retry required but provider returned natural language only: {}", suppressedContent);
+                    log.warn("[tool-call-stream] chart retry required but provider returned natural language only: {}", bufferedContent);
                     onChunk.accept("⚠️ 图表生成失败：AI 没有按要求重新调用图表工具。请再试一次，或要求它直接输出完整 Mermaid 图表源码。");
                     return;
+                }
+                if (createGuard.chartFileOutput && createGuard.createdCount == 0) {
+                    log.warn("[tool-call-stream] chart file output has no file yet; suppressing natural content and forcing file creation: {}", bufferedContent);
+                    conversation.add(buildChartFileCreationInstruction(createGuard));
+                    continue;
+                }
+                if (bufferedContent.length() > 0) {
+                    anyContentSent = true;
+                    onChunk.accept(bufferedContent.toString());
                 }
                 if (!anyContentSent && result.getContent().length() == 0) {
                     log.warn("[tool-call-stream] empty content, finishReason={}", result.getFinishReason());
@@ -236,27 +290,281 @@ public class ToolCallService {
         onChunk.accept("⚠️ 工具调用轮次超过限制，已停止处理。");
     }
 
+    private boolean shouldCreateFileDeterministically(IntentDecision decision) {
+        return decision != null
+                && decision.fileOutputIntent()
+                && !decision.chartIntent()
+                && !decision.workspaceReadIntent()
+                && decision.maxCreates() <= 1;
+    }
+
+    private boolean shouldStopAfterTools(CreateGuard guard) {
+        if (guard.chartFileOutput) {
+            return guard.createdCount > 0;
+        }
+        return guard.chartCount >= guard.maxCharts || guard.createdCount > 0;
+    }
+
+    private String createFileDeterministically(AiProvider provider,
+                                               List<Map<String, Object>> messages,
+                                               IntentDecision decision) {
+        try {
+            String latestUserText = extractLatestUserText(messages);
+            String extension = decision.docxOutputIntent() ? ".docx" : ".md";
+            List<Map<String, Object>> promptMessages = buildDeterministicFilePrompt(messages, extension);
+            String raw = provider.ask(promptMessages);
+            FileDraft draft = parseFileDraft(raw, latestUserText, extension);
+
+            Map<String, Object> args = new HashMap<>();
+            args.put("filename", draft.filename());
+            args.put("title", draft.title());
+            args.put("content", draft.content());
+
+            String toolName = decision.docxOutputIntent() ? "create_docx_file" : "create_text_file";
+            String toolResult = toolExecutor.execute(toolName, objectMapper.writeValueAsString(args));
+            return buildDirectToolOutput(toolResult);
+        } catch (Exception e) {
+            log.warn("[deterministic-file] create failed: {}", e.getMessage());
+            return "⚠️ 文件生成失败：" + e.getMessage();
+        }
+    }
+
+    private List<Map<String, Object>> buildDeterministicFilePrompt(List<Map<String, Object>> messages, String extension) {
+        List<Map<String, Object>> promptMessages = new ArrayList<>();
+        String contentRules = ".docx".equalsIgnoreCase(extension)
+                ? "content must be human-readable document body in plain text or Markdown-style structure. "
+                + "Do not output HTML, XML, CSS, JavaScript, MHTML, or office markup. "
+                + "Do not include tags such as <html>, <head>, <style>, <body>, <table> or <!DOCTYPE>. "
+                + "Use headings, paragraphs, bullet lists and simple Markdown tables only."
+                : "content must be the full body of the file.";
+        promptMessages.add(Map.of(
+                "role", "system",
+                "content", "You are generating exactly one downloadable file for the user. "
+                        + "Do not mention tools, function calls, workspace checks, or fake code like list_files(). "
+                        + "Return JSON only with keys filename, title, content. "
+                        + "Do not wrap JSON in markdown fences. "
+                        + "filename must be a short workspace-relative file name ending with " + extension + ". "
+                        + contentRules + " "
+                        + "If the user did not specify a filename, choose a concise descriptive one."
+        ));
+        promptMessages.addAll(messages);
+        return promptMessages;
+    }
+
+    private FileDraft parseFileDraft(String raw, String latestUserText, String extension) {
+        String response = raw == null ? "" : raw.trim();
+        String jsonCandidate = extractJsonObject(response);
+        if (!jsonCandidate.isBlank()) {
+            try {
+                Map<String, Object> parsed = objectMapper.readValue(jsonCandidate, new TypeReference<>() {});
+                String filename = normalizeGeneratedFilename(firstNonBlank(
+                        asText(parsed.get("filename")),
+                        asText(parsed.get("file_path")),
+                        asText(parsed.get("path")),
+                        inferFilenameFromUserTextSmart(latestUserText, extension)
+                ), extension);
+                String title = firstNonBlank(
+                        asText(parsed.get("title")),
+                        inferTitleFromFilename(filename)
+                );
+                String content = firstNonBlank(
+                        asText(parsed.get("content")),
+                        asText(parsed.get("body")),
+                        stripCodeFence(response)
+                );
+                return new FileDraft(filename, title, content);
+            } catch (Exception ignored) {
+                // fall through to text fallback
+            }
+        }
+
+        String filename = inferFilenameFromUserTextSmart(latestUserText, extension);
+        String title = inferTitleFromFilename(filename);
+        return new FileDraft(filename, title, stripCodeFence(response));
+    }
+
+    private String extractJsonObject(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        String candidate = text.trim();
+        if (candidate.startsWith("```")) {
+            candidate = candidate.replaceFirst("^```(?:json)?\\s*", "");
+            candidate = candidate.replaceFirst("\\s*```$", "");
+        }
+
+        int start = candidate.indexOf('{');
+        int end = candidate.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            return candidate.substring(start, end + 1);
+        }
+        return "";
+    }
+
+    private String stripCodeFence(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        return text.trim()
+                .replaceFirst("^```(?:json|markdown|md|text)?\\s*", "")
+                .replaceFirst("\\s*```$", "")
+                .trim();
+    }
+
+    private String inferFilenameFromUserTextSmart(String latestUserText, String extension) {
+        String fallback = ".docx".equalsIgnoreCase(extension) ? "document.docx" : "document.md";
+        if (latestUserText == null || latestUserText.isBlank()) {
+            return fallback;
+        }
+
+        Matcher matcher = FILENAME_PATTERN.matcher(latestUserText);
+        if (matcher.find()) {
+            return normalizeGeneratedFilename(matcher.group(1), extension);
+        }
+
+        String lowered = latestUserText.toLowerCase(Locale.ROOT);
+        String slug = buildTopicSlug(lowered);
+        if (!slug.isBlank()) {
+            return normalizeGeneratedFilename(slug + extension, extension);
+        }
+        return normalizeGeneratedFilename(fallback, extension);
+    }
+
+    private String buildTopicSlug(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+
+        List<String> parts = new ArrayList<>();
+        appendTopicPart(parts, text, "uk", "英国", "britain", "british", "england", "united kingdom", "uk");
+        appendTopicPart(parts, text, "france", "法国", "french", "france");
+        appendTopicPart(parts, text, "wechat", "微信", "wechat");
+        appendTopicPart(parts, text, "history", "历史", "history");
+        appendTopicPart(parts, text, "education-system", "教育体系", "education system");
+        appendTopicPart(parts, text, "education", "教育", "education");
+        appendTopicPart(parts, text, "politics", "政治", "politics", "political");
+        appendTopicPart(parts, text, "diplomacy", "外交", "diplomacy", "diplomatic");
+        appendTopicPart(parts, text, "economy", "经济", "economy", "economic", "gdp");
+        appendTopicPart(parts, text, "technology", "技术", "科技", "technology", "tech");
+        appendTopicPart(parts, text, "introduction", "介绍", "简介", "概述", "introduction", "overview");
+        appendTopicPart(parts, text, "report", "报告", "report");
+        appendTopicPart(parts, text, "guide", "指南", "guide");
+        appendTopicPart(parts, text, "comparison", "对比", "比较", "comparison", "compare");
+        appendTopicPart(parts, text, "relationship", "关系", "关系图", "relationship", "relations");
+        appendTopicPart(parts, text, "timeline", "时间线", "timeline");
+
+        if (!parts.isEmpty()) {
+            return String.join("-", parts);
+        }
+
+        String ascii = text.replaceAll("[^a-z0-9]+", "-")
+                .replaceAll("-{2,}", "-")
+                .replaceAll("^-|-$", "");
+        if (ascii.isBlank()) {
+            return "";
+        }
+        if (ascii.length() > 48) {
+            ascii = ascii.substring(0, 48).replaceAll("-+$", "");
+        }
+        return ascii;
+    }
+
+    private void appendTopicPart(List<String> parts, String text, String slug, String... hints) {
+        if (parts.contains(slug)) {
+            return;
+        }
+        for (String hint : hints) {
+            if (text.contains(hint.toLowerCase(Locale.ROOT))) {
+                parts.add(slug);
+                return;
+            }
+        }
+    }
+
+    private String normalizeGeneratedFilename(String filename, String extension) {
+        String value = firstNonBlank(filename, "document" + extension).trim().replace('\\', '/');
+        while (value.startsWith("/")) {
+            value = value.substring(1);
+        }
+        if (value.isBlank()) {
+            value = "document" + extension;
+        }
+        String lower = value.toLowerCase(Locale.ROOT);
+        if (!lower.endsWith(extension.toLowerCase(Locale.ROOT))) {
+            int slash = value.lastIndexOf('/');
+            String baseName = slash >= 0 ? value.substring(slash + 1) : value;
+            int dot = baseName.lastIndexOf('.');
+            if (dot > 0) {
+                value = value.substring(0, value.length() - (baseName.length() - dot)) + extension;
+            } else {
+                value = value + extension;
+            }
+        }
+        return value;
+    }
+
+    private String inferTitleFromFilename(String filename) {
+        String safe = firstNonBlank(filename, "document");
+        String base = safe.replace('\\', '/');
+        int slash = base.lastIndexOf('/');
+        if (slash >= 0 && slash < base.length() - 1) {
+            base = base.substring(slash + 1);
+        }
+        int dot = base.lastIndexOf('.');
+        if (dot > 0) {
+            base = base.substring(0, dot);
+        }
+        base = base.replace('-', ' ').replace('_', ' ').trim();
+        return base.isBlank() ? "Document" : base;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return "";
+    }
+
+    private String asText(Object value) {
+        return value == null ? "" : String.valueOf(value);
+    }
+
     private String executeAndAppend(List<ToolCallResult.ToolCall> toolCalls,
                                     List<Map<String, Object>> conversation,
                                     CreateGuard createGuard) {
         StringBuilder directOutput = new StringBuilder();
         for (ToolCallResult.ToolCall tc : toolCalls) {
+            if (isBlockedRepeatedChartCall(tc, createGuard)) {
+                conversation.add(buildToolMessage(tc, repeatedChartBlockedMessage()));
+                conversation.add(buildChartFileCreationInstruction(createGuard));
+                continue;
+            }
+
             String result = executeToolWithGuard(tc, createGuard);
             logToolResult(tc.getName(), result);
 
+            boolean retryRequired = isChartValidationError(result);
             ChartQualityResult qualityResult = validateChartQuality(result);
-            if (!qualityResult.ok() && createGuard.chartRepairCount < 1) {
+            if (!retryRequired && !qualityResult.ok() && createGuard.chartRepairCount < 1) {
+                retryRequired = true;
+                result = ToolExecutor.CHART_VALIDATION_ERROR_MARKER + " " + qualityResult.message();
+            }
+            if (retryRequired && createGuard.chartRepairCount < 1) {
                 createGuard.chartRepairCount++;
                 Map<String, Object> toolMsg = new HashMap<>();
                 toolMsg.put("role", "tool");
                 toolMsg.put("tool_call_id", tc.getId());
-                toolMsg.put("content", ToolExecutor.CHART_VALIDATION_ERROR_MARKER + " " + qualityResult.message());
+                toolMsg.put("content", result);
                 conversation.add(toolMsg);
                 conversation.add(buildChartRetryInstruction(tc.getName()));
                 continue;
             }
 
-            directOutput.append(buildDirectToolOutput(result));
+            if (!(createGuard.chartFileOutput && isChartTool(tc.getName()))) {
+                directOutput.append(buildDirectToolOutput(result));
+            }
             if (isChartTool(tc.getName()) && hasInlineChart(result)) {
                 createGuard.chartCount++;
             }
@@ -264,14 +572,21 @@ public class ToolCallService {
             Map<String, Object> toolMsg = new HashMap<>();
             toolMsg.put("role", "tool");
             toolMsg.put("tool_call_id", tc.getId());
-            toolMsg.put("content", removeSpecialToolLines(result));
+            toolMsg.put("content", buildToolMessageContent(tc.getName(), result, createGuard));
             conversation.add(toolMsg);
+
+            if (isCreateTool(tc.getName()) && hasDownloadUrl(result)) {
+                break;
+            }
         }
         return directOutput.toString();
     }
 
     private String executeToolWithGuard(ToolCallResult.ToolCall tc, CreateGuard guard) {
         String toolName = tc.getName();
+        if (isBlockedRepeatedChartCall(tc, guard)) {
+            return repeatedChartBlockedMessage();
+        }
         if (isChartTool(toolName) && guard.chartCount >= guard.maxCharts) {
             return "Chart generation limit reached for this user turn (" + guard.maxCharts + "). Wait for the user next message before generating another chart.";
         }
@@ -287,12 +602,52 @@ public class ToolCallService {
         return result;
     }
 
+    private boolean isBlockedRepeatedChartCall(ToolCallResult.ToolCall tc, CreateGuard guard) {
+        return tc != null
+                && guard != null
+                && guard.chartFileOutput
+                && guard.chartCount > 0
+                && guard.createdCount == 0
+                && isChartTool(tc.getName());
+    }
+
+    private Map<String, Object> buildToolMessage(ToolCallResult.ToolCall tc, String content) {
+        Map<String, Object> toolMsg = new HashMap<>();
+        toolMsg.put("role", "tool");
+        toolMsg.put("tool_call_id", tc.getId());
+        toolMsg.put("content", content);
+        return toolMsg;
+    }
+
+    private String repeatedChartBlockedMessage() {
+        return "Chart already generated for this chart-document request. Do not call render_mermaid_chart again. Call the file creation tool now.";
+    }
+
     private boolean isCreateTool(String toolName) {
-        return "create_text_file".equals(toolName) || "create_mermaid_chart_file".equals(toolName);
+        return "create_text_file".equals(toolName)
+                || "create_docx_file".equals(toolName);
     }
 
     private boolean isChartTool(String toolName) {
-        return "render_mermaid_chart".equals(toolName) || "create_mermaid_chart_file".equals(toolName);
+        return "render_mermaid_chart".equals(toolName);
+    }
+
+    private String buildToolMessageContent(String toolName, String toolResult, CreateGuard createGuard) {
+        if (createGuard.chartFileOutput && isChartTool(toolName)) {
+            String source = extractChartSourceFromToolResult(toolResult);
+            if (!source.isBlank()) {
+                String visible = removeSpecialToolLines(toolResult);
+                StringBuilder sb = new StringBuilder();
+                if (visible != null && !visible.isBlank()) {
+                    sb.append(visible).append("\n\n");
+                }
+                sb.append("Generated chart source for the document:\n```mermaid\n")
+                        .append(source)
+                        .append("\n```");
+                return sb.toString();
+            }
+        }
+        return removeSpecialToolLines(toolResult);
     }
 
     private boolean hasDownloadUrl(String toolResult) {
@@ -582,9 +937,7 @@ public class ToolCallService {
     }
 
     private Map<String, Object> buildChartRetryInstruction(String failedToolName) {
-        String retryToolName = "create_mermaid_chart_file".equals(failedToolName)
-                ? "create_mermaid_chart_file"
-                : "render_mermaid_chart";
+        String retryToolName = "render_mermaid_chart";
         Map<String, Object> msg = new HashMap<>();
         msg.put("role", "user");
         msg.put("content",
@@ -592,6 +945,18 @@ public class ToolCallService {
                         + "You must immediately call " + retryToolName + " again. "
                         + "Do not answer in natural language. "
                         + "Use content/mermaidSource with complete Mermaid syntax, and every placeholder node id must have a topic-specific display label, e.g. P1[actual meaning], D1[actual meaning], E1[actual meaning].");
+        return msg;
+    }
+
+    private Map<String, Object> buildChartFileCreationInstruction(CreateGuard createGuard) {
+        Map<String, Object> msg = new HashMap<>();
+        msg.put("role", "user");
+        msg.put("content",
+                "The chart has already been generated, but the downloadable file has not been created yet. "
+                        + "You must now call create_docx_file or create_text_file exactly once according to the user's requested file type. "
+                        + "Do not answer in natural language and do not output the Mermaid chart directly. "
+                        + "For docx, include the previously generated Mermaid source in the content as a ```mermaid ... ``` fenced block so it is embedded into the Word document. "
+                        + "Remaining file creations allowed: " + Math.max(0, createGuard.maxCreates - createGuard.createdCount) + ".");
         return msg;
     }
 
@@ -629,6 +994,7 @@ public class ToolCallService {
         StringBuilder output = new StringBuilder();
         Matcher downloadMatcher = DOWNLOAD_URL_PATTERN.matcher(toolResult);
         if (downloadMatcher.find()) {
+            output.append(buildFileReplyIntro(toolResult));
             output.append(formatDownloadLink(downloadMatcher.group(1)));
         }
 
@@ -653,6 +1019,62 @@ public class ToolCallService {
 
     private String formatDownloadLink(String url) {
         return "\n\u6587\u4ef6\u5df2\u751f\u6210\uff1a[\u70b9\u51fb\u4e0b\u8f7d](" + url + ")\n";
+    }
+
+    private String buildFileReplyIntro(String toolResult) {
+        String filename = extractCreatedFilename(toolResult);
+        if (filename.isBlank()) {
+            return "\n我已经帮你整理好文件，可以直接下载查看。\n";
+        }
+
+        String displayName = humanizeFilename(filename);
+        String formatLabel = detectFileFormatLabel(filename);
+        if (formatLabel.isBlank()) {
+            return "\n我已经帮你整理好一份" + displayName + "文件，可直接下载查看。\n";
+        }
+        return "\n我已经帮你整理好一份" + displayName + "的" + formatLabel + "文件，可直接下载查看。\n";
+    }
+
+    private String extractCreatedFilename(String toolResult) {
+        if (toolResult == null || toolResult.isBlank()) {
+            return "";
+        }
+        Matcher matcher = CREATED_FILE_PATTERN.matcher(toolResult);
+        if (!matcher.find()) {
+            return "";
+        }
+        return matcher.group(1).trim();
+    }
+
+    private String humanizeFilename(String filename) {
+        String value = firstNonBlank(filename, "文档").replace('\\', '/');
+        int slash = value.lastIndexOf('/');
+        if (slash >= 0 && slash < value.length() - 1) {
+            value = value.substring(slash + 1);
+        }
+        int dot = value.lastIndexOf('.');
+        if (dot > 0) {
+            value = value.substring(0, dot);
+        }
+        value = value.replace('-', ' ').replace('_', ' ').trim();
+        if (value.isBlank()) {
+            return "文档";
+        }
+        return "《" + value + "》";
+    }
+
+    private String detectFileFormatLabel(String filename) {
+        String lower = filename == null ? "" : filename.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".docx")) {
+            return "Word";
+        }
+        if (lower.endsWith(".md")) {
+            return "Markdown";
+        }
+        if (lower.endsWith(".txt")) {
+            return "文本";
+        }
+        return "";
     }
 
     private void emitInlineChartIfPresent(String toolResult, Consumer<String> onChunk) {
@@ -711,6 +1133,25 @@ public class ToolCallService {
         return enriched;
     }
 
+    private List<Map<String, Object>> enrichChartFileOutputContext(List<Map<String, Object>> messages) {
+        IntentDecision decision = decideIntent(messages);
+        if (decision.outputMode() != OutputMode.CHART_FILE_OUTPUT) {
+            return messages;
+        }
+
+        List<Map<String, Object>> enriched = new ArrayList<>();
+        enriched.add(Map.of(
+                "role", "system",
+                "content", "The user wants a downloadable file that includes a chart. "
+                        + "First call render_mermaid_chart with complete Mermaid syntax. "
+                        + "Then call the requested file creation tool exactly once. "
+                        + "For Word/docx output, include the chart in the document content as a ```mermaid ... ``` fenced block so the document tool can embed it visually. "
+                        + "Do not stop after only rendering the inline chart."
+        ));
+        enriched.addAll(messages);
+        return enriched;
+    }
+
     private String extractLatestChartSource(List<Map<String, Object>> messages) {
         if (messages == null || messages.isEmpty()) {
             return "";
@@ -763,18 +1204,33 @@ public class ToolCallService {
     /**
      * Deterministic create tool selection:
      * chart intent -> render_mermaid_chart by default
-     * chart + explicit file/export/download intent -> also allow create_mermaid_chart_file
      * non-chart -> create_text_file
      */
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> selectToolsForRequest(List<Map<String, Object>> messages) {
         IntentDecision decision = decideIntent(messages);
-        if (decision.outputMode() == OutputMode.PLAIN_REPLY) {
-            log.info("[tool-select] mode={}, matched={}, primary_tool=none",
-                    decision.outputMode(), decision.matchedRules());
-            return List.of();
-        }
         List<Map<String, Object>> allTools = ToolDefinitions.getAll();
+        if (decision.outputMode() == OutputMode.PLAIN_REPLY) {
+            List<Map<String, Object>> fallbackTools = new ArrayList<>();
+            for (Map<String, Object> tool : allTools) {
+                Object fnObj = tool.get("function");
+                if (!(fnObj instanceof Map<?, ?> fnMap)) {
+                    continue;
+                }
+                Object nameObj = ((Map<String, Object>) fnMap).get("name");
+                String name = nameObj == null ? "" : nameObj.toString();
+                if ("render_mermaid_chart".equals(name)
+                        || "create_text_file".equals(name)
+                        || "create_docx_file".equals(name)
+                        || "read_file".equals(name)
+                        || "list_files".equals(name)) {
+                    fallbackTools.add(tool);
+                }
+            }
+            log.info("[tool-select] mode={}, matched={}, primary_tool=none, fallback_tools={}",
+                    decision.outputMode(), decision.matchedRules(), fallbackTools.size());
+            return fallbackTools;
+        }
         List<Map<String, Object>> selected = new ArrayList<>();
 
         for (Map<String, Object> tool : allTools) {
@@ -788,27 +1244,31 @@ public class ToolCallService {
 
             if (decision.chartIntent()) {
                 if ("render_mermaid_chart".equals(name)
+                        || (decision.docxOutputIntent() && "create_docx_file".equals(name))
+                        || (decision.textFileOutputIntent() && "create_text_file".equals(name))
                         || "read_file".equals(name)
-                        || "list_files".equals(name)
-                        || (decision.fileOutputIntent() && "create_mermaid_chart_file".equals(name))) {
+                        || "list_files".equals(name)) {
                     selected.add(tool);
                 }
                 continue;
             }
 
-            if ((decision.fileOutputIntent() && "create_text_file".equals(name))
+            if ((decision.docxOutputIntent() && "create_docx_file".equals(name))
+                    || (decision.textFileOutputIntent() && "create_text_file".equals(name))
                     || (decision.workspaceReadIntent() && ("read_file".equals(name) || "list_files".equals(name)))) {
                 selected.add(tool);
             }
         }
 
-        log.info("[tool-select] mode={}, file_output={}, workspace_read={}, max_charts={}, matched={}, primary_tool={}",
+        log.info("[tool-select] mode={}, file_output={}, docx_output={}, text_file_output={}, workspace_read={}, max_charts={}, matched={}, primary_tool={}",
                 decision.outputMode(),
                 decision.fileOutputIntent(),
+                decision.docxOutputIntent(),
+                decision.textFileOutputIntent(),
                 decision.workspaceReadIntent(),
                 decision.maxCharts(),
                 decision.matchedRules(),
-                decision.chartIntent() ? "render_mermaid_chart" : (decision.fileOutputIntent() ? "create_text_file" : "none"));
+                decision.primaryTool());
         return selected;
     }
 
@@ -816,19 +1276,27 @@ public class ToolCallService {
         IntentDecision decision = decideIntent(messages);
         log.info("[create-guard] maxCreates={}, maxCharts={}, matched={}",
                 decision.maxCreates(), decision.maxCharts(), decision.matchedRules());
-        return new CreateGuard(decision.maxCreates(), decision.maxCharts());
+        return new CreateGuard(decision.maxCreates(), decision.maxCharts(), decision.outputMode() == OutputMode.CHART_FILE_OUTPUT);
     }
 
     private IntentDecision decideIntent(List<Map<String, Object>> messages) {
         String latestUserText = extractLatestUserText(messages);
         List<String> matchedRules = new ArrayList<>();
 
+        boolean forcedInlineChartIntent = looksLikeForcedInlineChartIntent(latestUserText);
+        addIf(matchedRules, forcedInlineChartIntent, "CHART_HARD_RULE");
+
         boolean noFileOutputIntent = looksLikeNoFileOutputIntent(latestUserText);
         addIf(matchedRules, noFileOutputIntent, "NO_FILE_OUTPUT");
 
-        boolean explicitFileOutputIntent = looksLikeFileOutputIntent(latestUserText);
+        boolean explicitFileOutputIntent = !forcedInlineChartIntent && looksLikeFileOutputIntent(latestUserText);
         addIf(matchedRules, explicitFileOutputIntent, "FILE_OUTPUT");
         boolean fileOutputIntent = !noFileOutputIntent && explicitFileOutputIntent;
+        boolean explicitTextFileOutputIntent = fileOutputIntent && looksLikeTextFileOutputIntent(latestUserText);
+        addIf(matchedRules, explicitTextFileOutputIntent, "TEXT_FILE_OUTPUT");
+        boolean docxOutputIntent = fileOutputIntent && !explicitTextFileOutputIntent && looksLikeDocxOutputIntent(latestUserText);
+        addIf(matchedRules, docxOutputIntent, "DOCX_OUTPUT");
+        boolean textFileOutputIntent = fileOutputIntent && !docxOutputIntent;
 
         boolean workspaceReadIntent = !noFileOutputIntent && looksLikeWorkspaceReadIntent(latestUserText);
         addIf(matchedRules, workspaceReadIntent, "WORKSPACE_READ");
@@ -836,7 +1304,7 @@ public class ToolCallService {
         boolean inlineTableIntent = looksLikeInlineTableIntent(latestUserText) && !fileOutputIntent;
         addIf(matchedRules, inlineTableIntent, "INLINE_TABLE");
 
-        boolean strongChartIntent = looksLikeChartIntent(latestUserText);
+        boolean strongChartIntent = forcedInlineChartIntent || looksLikeChartIntent(latestUserText);
         addIf(matchedRules, strongChartIntent, "CHART_STRONG");
 
         boolean weakChartIntent = looksLikeWeakChartIntent(latestUserText);
@@ -857,6 +1325,8 @@ public class ToolCallService {
         OutputMode outputMode;
         if (!chartIntent && (noFileOutputIntent || inlineTableIntent)) {
             outputMode = OutputMode.PLAIN_REPLY;
+        } else if (chartIntent && fileOutputIntent) {
+            outputMode = OutputMode.CHART_FILE_OUTPUT;
         } else if (chartIntent) {
             outputMode = OutputMode.CHART;
         } else if (fileOutputIntent) {
@@ -871,11 +1341,44 @@ public class ToolCallService {
                 outputMode,
                 chartIntent,
                 fileOutputIntent,
+                docxOutputIntent,
+                textFileOutputIntent,
                 inlineTableIntent,
                 workspaceReadIntent,
                 explicitMultiFiles ? EXPLICIT_MULTI_CREATE_LIMIT : DEFAULT_CREATE_LIMIT,
                 explicitMultiCharts ? EXPLICIT_MULTI_CHART_LIMIT : DEFAULT_CHART_LIMIT,
                 List.copyOf(matchedRules));
+    }
+
+    private boolean looksLikeForcedInlineChartIntent(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String t = text.toLowerCase(Locale.ROOT).trim();
+        if (looksLikeNoFileOutputIntent(t)) {
+            return true;
+        }
+        if (mentionsMarkdownFile(t) || mentionsDocxFile(t) || containsAny(t, FILE_OUTPUT_KEYWORDS)) {
+            return false;
+        }
+        boolean hasChartWord = t.contains("图")
+                || t.contains("图表")
+                || t.contains("关系图")
+                || t.contains("结构图")
+                || t.contains("流程图")
+                || t.contains("示意图")
+                || t.contains("mermaid")
+                || t.contains("chart")
+                || t.contains("diagram")
+                || t.contains("flowchart")
+                || t.contains("graph");
+        if (!hasChartWord) {
+            return false;
+        }
+        return containsAny(t, GENERIC_CHART_ACTIONS)
+                || containsAny(t, WEAK_CHART_ACTIONS)
+                || t.contains("帮我")
+                || t.contains("给我");
     }
 
     private void addIf(List<String> matchedRules, boolean condition, String ruleName) {
@@ -900,7 +1403,47 @@ public class ToolCallService {
             if (content instanceof String s) {
                 return s;
             }
-            return content.toString();
+            String flattened = flattenMessageContent(content);
+            return flattened.isBlank() ? content.toString() : flattened;
+        }
+        return "";
+    }
+
+    private String flattenMessageContent(Object content) {
+        if (content == null) {
+            return "";
+        }
+        if (content instanceof String s) {
+            return s;
+        }
+        if (content instanceof List<?> parts) {
+            StringBuilder sb = new StringBuilder();
+            for (Object part : parts) {
+                String text = flattenMessageContent(part);
+                if (!text.isBlank()) {
+                    if (sb.length() > 0) {
+                        sb.append('\n');
+                    }
+                    sb.append(text.trim());
+                }
+            }
+            return sb.toString();
+        }
+        if (content instanceof Map<?, ?> map) {
+            Object text = map.get("text");
+            if (text != null) {
+                String nested = flattenMessageContent(text);
+                if (!nested.isBlank()) {
+                    return nested;
+                }
+            }
+            Object nestedContent = map.get("content");
+            if (nestedContent != null) {
+                String nested = flattenMessageContent(nestedContent);
+                if (!nested.isBlank()) {
+                    return nested;
+                }
+            }
         }
         return "";
     }
@@ -913,7 +1456,7 @@ public class ToolCallService {
             return false;
         }
         return containsAny(t, CHART_KEYWORDS)
-                || (containsAny(t, GENERIC_CHART_ACTIONS) && t.contains("\u56fe"));
+                || containsChartActionWithBareImageWord(t);
     }
 
     private boolean looksLikeWeakChartIntent(String text) {
@@ -925,6 +1468,18 @@ public class ToolCallService {
             return false;
         }
         return containsAny(t, WEAK_CHART_ACTIONS) && containsAny(t, WEAK_CHART_OBJECTS);
+    }
+
+    private boolean containsChartActionWithBareImageWord(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        if (!containsAny(text, GENERIC_CHART_ACTIONS)) {
+            return false;
+        }
+        return text.contains("\u56fe")
+                || text.contains("\u56fe\u50cf")
+                || text.contains("\u793a\u610f");
     }
 
     private boolean looksLikeChartRevisionIntent(String text) {
@@ -980,7 +1535,29 @@ public class ToolCallService {
         if (text == null || text.isBlank()) {
             return false;
         }
-        return containsAny(text.toLowerCase(), FILE_OUTPUT_KEYWORDS);
+        String lowered = text.toLowerCase(Locale.ROOT);
+        return containsAny(lowered, FILE_OUTPUT_KEYWORDS)
+                || mentionsMarkdownFile(lowered)
+                || mentionsDocxFile(lowered)
+                || containsFileVerbAndObject(lowered);
+    }
+
+    private boolean looksLikeDocxOutputIntent(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String lowered = text.toLowerCase(Locale.ROOT);
+        return containsAny(lowered, DOCX_OUTPUT_KEYWORDS)
+                || mentionsDocxFile(lowered);
+    }
+
+    private boolean looksLikeTextFileOutputIntent(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String lowered = text.toLowerCase(Locale.ROOT);
+        return containsAny(lowered, TEXT_FILE_OUTPUT_KEYWORDS)
+                || mentionsMarkdownFile(lowered);
     }
 
     private boolean looksLikeNoFileOutputIntent(String text) {
@@ -1044,6 +1621,41 @@ public class ToolCallService {
         }
         return false;
     }
+
+    private boolean mentionsMarkdownFile(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        return text.contains(".md")
+                || text.contains("markdown")
+                || text.contains("md文件")
+                || text.contains("md 文档")
+                || text.contains("md文档")
+                || text.contains("md 格式")
+                || text.matches(".*\\bmd\\b.*");
+    }
+
+    private boolean mentionsDocxFile(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        return text.contains(".docx")
+                || text.contains("docx")
+                || text.contains("word文档")
+                || text.contains("word 文件")
+                || text.contains("word file")
+                || text.contains("word document");
+    }
+
+    private boolean containsFileVerbAndObject(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        List<String> fileVerbs = List.of("生成", "创建", "写", "导出", "保存", "给我生成", "给我写");
+        List<String> fileObjects = List.of("文件", "文档", "报告", "markdown", "md", "docx", "word");
+        return containsAny(text, fileVerbs) && containsAny(text, fileObjects);
+    }
+
     private String removeSpecialToolLines(String toolResult) {
         if (toolResult == null || toolResult.isBlank()) {
             return toolResult;
@@ -1059,13 +1671,15 @@ public class ToolCallService {
     private static final class CreateGuard {
         private final int maxCreates;
         private final int maxCharts;
+        private final boolean chartFileOutput;
         private int createdCount;
         private int chartCount;
         private int chartRepairCount;
 
-        private CreateGuard(int maxCreates, int maxCharts) {
+        private CreateGuard(int maxCreates, int maxCharts, boolean chartFileOutput) {
             this.maxCreates = maxCreates;
             this.maxCharts = maxCharts;
+            this.chartFileOutput = chartFileOutput;
             this.createdCount = 0;
             this.chartCount = 0;
             this.chartRepairCount = 0;
@@ -1075,19 +1689,36 @@ public class ToolCallService {
     private enum OutputMode {
         PLAIN_REPLY,
         CHART,
+        CHART_FILE_OUTPUT,
         FILE_OUTPUT,
         WORKSPACE_READ
     }
+
+    private record FileDraft(String filename, String title, String content) {}
 
     private record IntentDecision(
             OutputMode outputMode,
             boolean chartIntent,
             boolean fileOutputIntent,
+            boolean docxOutputIntent,
+            boolean textFileOutputIntent,
             boolean inlineTableIntent,
             boolean workspaceReadIntent,
             int maxCreates,
             int maxCharts,
             List<String> matchedRules) {
+        private String primaryTool() {
+            if (chartIntent) {
+                return "render_mermaid_chart";
+            }
+            if (docxOutputIntent) {
+                return "create_docx_file";
+            }
+            if (textFileOutputIntent) {
+                return "create_text_file";
+            }
+            return workspaceReadIntent ? "read_file/list_files" : "none";
+        }
     }
 
     private record ChartQualityResult(boolean ok, String message) {

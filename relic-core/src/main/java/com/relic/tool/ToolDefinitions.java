@@ -28,6 +28,26 @@ public final class ToolDefinitions {
                                 ),
                                 "required", List.of("filename", "content")
                         )),
+                buildTool("create_docx_file",
+                        "Create or overwrite a Microsoft Word .docx document in the user's workspace and return a download link. Use this when the user asks for Word, docx, Word document, 文档, Word文档, 报告, 可下载文档, or a document/report without explicitly asking for Markdown or plain text.",
+                        Map.of(
+                                "type", "object",
+                                "properties", Map.of(
+                                        "filename", Map.of(
+                                                "type", "string",
+                                                "description", "Workspace-relative .docx path, for example reports/summary.docx. Add .docx if omitted."
+                                        ),
+                                        "title", Map.of(
+                                                "type", "string",
+                                                "description", "Document title"
+                                        ),
+                                        "content", Map.of(
+                                                "type", "string",
+                                                "description", "Document body in Markdown-like text. Supports headings (#, ##, ###), paragraphs, bullet/numbered lists, simple Markdown tables, and Mermaid fenced blocks. When creating a document with charts, include the chart as ```mermaid ... ``` so it can be embedded visually in the Word file."
+                                        )
+                                ),
+                                "required", List.of("filename", "content")
+                        )),
                 buildTool("read_file",
                         "Read a file from the workspace. Supports text, PDF, DOC and DOCX.",
                         Map.of(
@@ -87,46 +107,6 @@ public final class ToolDefinitions {
                                         )
                                 ),
                                 "required", List.of()
-                        )),
-                buildTool("create_mermaid_chart_file",
-                        "Create a Mermaid chart Markdown file. Use this only when the user explicitly asks to save, export, download, or create a file.",
-                        Map.of(
-                                "type", "object",
-                                "properties", Map.of(
-                                        "filename", Map.of(
-                                                "type", "string",
-                                                "description", "Target Markdown path, for example docs/sales-q1.md"
-                                        ),
-                                        "chartType", Map.of(
-                                                "type", "string",
-                                                "description", "Optional chart type, such as pie, bar, line or flowchart"
-                                        ),
-                                        "title", Map.of(
-                                                "type", "string",
-                                                "description", "Optional chart title"
-                                        ),
-                                        "content", Map.of(
-                                                "type", "string",
-                                                "description", "Complete Mermaid source or Markdown containing a mermaid code block. For comparison/relationship charts, summarize the core point instead of listing every detail: use one center topic, up to 5 top-level dimensions, up to 18 nodes, up to 24 edges, and concise labels. Every visible node must have a meaningful user-facing label. Do not expose raw internal IDs such as P1, D1 or E1 as node text."
-                                        ),
-                                        "mermaidSource", Map.of(
-                                                "type", "string",
-                                                "description", "Alias of content. Use raw Mermaid syntax."
-                                        ),
-                                        "data", Map.of(
-                                                "type", "array",
-                                                "description", "Optional numeric chart data. Each item is {label, value}.",
-                                                "items", Map.of(
-                                                        "type", "object",
-                                                        "properties", Map.of(
-                                                                "label", Map.of("type", "string"),
-                                                                "value", Map.of("type", "number")
-                                                        ),
-                                                        "required", List.of("label", "value")
-                                                )
-                                        )
-                                ),
-                                "required", List.of("filename")
                         ))
         );
     }
