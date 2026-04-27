@@ -4,7 +4,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.relic.dto.ToolCallResult;
 import com.relic.service.AiProvider;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -16,13 +17,16 @@ import java.util.Map;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Tool-calling service that is decoupled from specific AI providers.
  */
-@Slf4j
 @Service
 public class ToolCallService {
+
+    private static final Logger log = LoggerFactory.getLogger(ToolCallService.class);
 
     private static final int MAX_TOOL_ROUNDS = 10;
     private static final int DEFAULT_CREATE_LIMIT = 1;
@@ -40,6 +44,7 @@ public class ToolCallService {
             ToolExecutor.STRUCTURED_CHART_MARKER + "(\\{.*})");
     private static final Pattern MERMAID_FENCE_PATTERN = Pattern.compile("```mermaid\\s*\\R([\\s\\S]*?)\\R?```");
     private static final Pattern FILENAME_PATTERN = Pattern.compile("([\\w\\-\\u4e00-\\u9fa5./]+\\.(?:md|txt|docx))", Pattern.CASE_INSENSITIVE);
+    private static final Pattern IMAGE_FILENAME_PATTERN = Pattern.compile("([\\w\\-\\u4e00-\\u9fa5./\\\\]+\\.(?:png|jpe?g|gif|bmp|webp))", Pattern.CASE_INSENSITIVE);
     private static final Pattern MULTI_FILE_COUNT_PATTERN = Pattern.compile("生成\\s*([2-9]|[1-9]\\d|两|二|三|四|五|六|七|八|九)\\s*个?\\s*(文件|文档)");
 
     private static final Pattern MULTI_CHART_EN_PATTERN = Pattern.compile("(?i)(?:draw|create|generate|render|make)\\s*(?:[2-9]|[1-9]\\d)\\s*(?:charts|diagrams)");
@@ -83,12 +88,15 @@ public class ToolCallService {
             "\u751f\u6210\u62a5\u544a", "\u521b\u5efa\u62a5\u544a", "\u5199\u4e00\u4efd\u62a5\u544a",
             "markdown", ".md", " md", "save", "save as file", "create file", "generate file",
             "create document", "generate document", "write a document", "create report", "generate report",
-            "download", "export");
+            "document file", "report file", "downloadable document", "downloadable report", "download", "export");
     private static final List<String> DOCX_OUTPUT_KEYWORDS = List.of(
-            "word", "docx", ".docx", "\u751f\u6210\u6587\u6863", "\u521b\u5efa\u6587\u6863", "\u5199\u4e00\u4efd\u6587\u6863",
+            "word", "docx", ".docx", "word\u6587\u4ef6", "word \u6587\u4ef6", "word\u6587\u6863", "word \u6587\u6863",
+            "docx\u6587\u4ef6", "docx \u6587\u4ef6", "docx\u6587\u6863", "docx \u6587\u6863",
+            "\u751f\u6210\u6587\u6863", "\u521b\u5efa\u6587\u6863", "\u5199\u4e00\u4efd\u6587\u6863",
             "\u5bfc\u51fa\u6587\u6863", "\u751f\u6210\u62a5\u544a", "\u521b\u5efa\u62a5\u544a", "\u5199\u4e00\u4efd\u62a5\u544a",
             "\u53ef\u4e0b\u8f7d\u6587\u6863", "\u6587\u6863\u6587\u4ef6", "\u62a5\u544a\u6587\u4ef6",
-            "create document", "generate document", "write a document", "create report", "generate report");
+            "create document", "generate document", "write a document", "create report", "generate report",
+            "document file", "report file", "downloadable document", "downloadable report");
     private static final List<String> TEXT_FILE_OUTPUT_KEYWORDS = List.of(
             "markdown", ".md", " md", "\u751f\u6210md", "\u751f\u6210 md", "\u6587\u672c\u6587\u4ef6", "text file", ".txt");
     private static final List<String> NO_FILE_OUTPUT_KEYWORDS = List.of(
@@ -120,10 +128,12 @@ public class ToolCallService {
 
     public String askWithTools(AiProvider provider, List<Map<String, Object>> messages) {
         IntentDecision decision = decideIntent(messages);
+        if (shouldCreateChartFileDeterministically(decision)) {
+            return createChartFileDeterministically(provider, messages, decision);
+        }
         if (shouldCreateFileDeterministically(decision)) {
             return createFileDeterministically(provider, messages, decision);
         }
-
         if (!provider.supportsTools()) {
             log.debug("Provider {} does not support tools, fallback to plain ask", provider.getName());
             return provider.ask(messages);
@@ -166,11 +176,14 @@ public class ToolCallService {
                                 List<Map<String, Object>> messages,
                                 Consumer<String> onChunk) throws Exception {
         IntentDecision decision = decideIntent(messages);
+        if (shouldCreateChartFileDeterministically(decision)) {
+            onChunk.accept(createChartFileDeterministically(provider, messages, decision));
+            return;
+        }
         if (shouldCreateFileDeterministically(decision)) {
             onChunk.accept(createFileDeterministically(provider, messages, decision));
             return;
         }
-
         if (!provider.supportsTools()) {
             log.debug("Provider {} does not support tools, fallback to plain stream", provider.getName());
             provider.stream(messages, onChunk);
@@ -293,7 +306,14 @@ public class ToolCallService {
     private boolean shouldCreateFileDeterministically(IntentDecision decision) {
         return decision != null
                 && decision.fileOutputIntent()
-                && !decision.chartIntent()
+                && (!decision.chartIntent() || decision.docxOutputIntent())
+                && !decision.workspaceReadIntent()
+                && decision.maxCreates() <= 1;
+    }
+
+    private boolean shouldCreateChartFileDeterministically(IntentDecision decision) {
+        return decision != null
+                && decision.outputMode() == OutputMode.CHART_FILE_OUTPUT
                 && !decision.workspaceReadIntent()
                 && decision.maxCreates() <= 1;
     }
@@ -311,44 +331,330 @@ public class ToolCallService {
         try {
             String latestUserText = extractLatestUserText(messages);
             String extension = decision.docxOutputIntent() ? ".docx" : ".md";
-            List<Map<String, Object>> promptMessages = buildDeterministicFilePrompt(messages, extension);
+            List<String> uploadedImagePaths = extractUploadedImagePaths(messages);
+            List<Map<String, Object>> promptMessages = buildDeterministicFilePrompt(messages, extension, uploadedImagePaths);
             String raw = provider.ask(promptMessages);
             FileDraft draft = parseFileDraft(raw, latestUserText, extension);
+            String content = decision.docxOutputIntent()
+                    ? stripMermaidBlocks(ensureImageReferences(draft.content(), uploadedImagePaths))
+                    : draft.content();
 
             Map<String, Object> args = new HashMap<>();
             args.put("filename", draft.filename());
             args.put("title", draft.title());
-            args.put("content", draft.content());
+            args.put("content", content);
 
             String toolName = decision.docxOutputIntent() ? "create_docx_file" : "create_text_file";
             String toolResult = toolExecutor.execute(toolName, objectMapper.writeValueAsString(args));
-            return buildDirectToolOutput(toolResult);
+            return buildDirectFileOutput(toolResult, draft.replyMessage(), decision.docxOutputIntent() && decision.chartIntent());
         } catch (Exception e) {
             log.warn("[deterministic-file] create failed: {}", e.getMessage());
             return "⚠️ 文件生成失败：" + e.getMessage();
         }
     }
 
-    private List<Map<String, Object>> buildDeterministicFilePrompt(List<Map<String, Object>> messages, String extension) {
+    private String createChartFileDeterministically(AiProvider provider,
+                                                    List<Map<String, Object>> messages,
+                                                    IntentDecision decision) {
+        try {
+            String latestUserText = extractLatestUserText(messages);
+            String extension = decision.docxOutputIntent() ? ".docx" : ".md";
+            List<Map<String, Object>> promptMessages = buildDeterministicChartFilePrompt(messages, extension);
+            String raw = provider.ask(promptMessages);
+            ChartFileDraft draft = parseChartFileDraft(raw, latestUserText, extension);
+
+            Map<String, Object> chartArgs = new HashMap<>();
+            chartArgs.put("title", draft.chartTitle());
+            chartArgs.put("content", draft.mermaidSource());
+            String chartResult = toolExecutor.execute("render_mermaid_chart", objectMapper.writeValueAsString(chartArgs));
+            if (isChartValidationError(chartResult) || !hasInlineChart(chartResult)) {
+                return "⚠️ 图表生成失败：" + removeSpecialToolLines(chartResult);
+            }
+
+            String chartSource = extractChartSourceFromToolResult(chartResult);
+            String content = decision.docxOutputIntent()
+                    ? stripMermaidBlocks(draft.content())
+                    : ensureMermaidBlock(draft.content(), chartSource);
+
+            Map<String, Object> fileArgs = new HashMap<>();
+            fileArgs.put("filename", draft.filename());
+            fileArgs.put("title", draft.title());
+            fileArgs.put("content", content);
+
+            String toolName = decision.docxOutputIntent() ? "create_docx_file" : "create_text_file";
+            String fileResult = toolExecutor.execute(toolName, objectMapper.writeValueAsString(fileArgs));
+            return buildDirectFileOutput(fileResult, draft.replyMessage(), decision.docxOutputIntent() && decision.chartIntent());
+        } catch (Exception e) {
+            log.warn("[deterministic-chart-file] create failed: {}", e.getMessage());
+            return "⚠️ 带图表文档生成失败：" + e.getMessage();
+        }
+    }
+
+    private List<Map<String, Object>> buildDeterministicChartFilePrompt(List<Map<String, Object>> messages, String extension) {
         List<Map<String, Object>> promptMessages = new ArrayList<>();
+        promptMessages.add(Map.of(
+                "role", "system",
+                "content", "You are generating exactly one downloadable file that includes exactly one Mermaid chart. "
+                        + "Return JSON only with keys filename, title, content, chartTitle, mermaidSource, reply. "
+                        + "reply must be an object with key message. "
+                        + "reply.message must be one short sentence confirming that the file was generated. "
+                        + "Do not summarize content or chart labels in reply.message. "
+                        + "Do not wrap JSON in markdown fences. "
+                        + "filename must be a short workspace-relative file name ending with " + extension + ". "
+                        + "content must be valid Markdown. Use '# Title' and '## Section' headings with one blank line before and after headings. "
+                        + "Use '-' for bullet lists, '1.' for numbered lists, and blank lines between paragraphs. "
+                        + "Never concatenate headings, list items, tables, or paragraphs on the same line. "
+                        + "mermaidSource must be raw Mermaid syntax only, not a fenced block. "
+                        + "Use complete Mermaid syntax with meaningful visible labels. "
+                        + "Do not mention tools, function calls, workspace checks, or downloads."
+        ));
+        promptMessages.addAll(messages);
+        return promptMessages;
+    }
+
+    private ChartFileDraft parseChartFileDraft(String raw, String latestUserText, String extension) {
+        String response = raw == null ? "" : raw.trim();
+        String jsonCandidate = extractJsonObject(response);
+        if (!jsonCandidate.isBlank()) {
+            try {
+                Map<String, Object> parsed = objectMapper.readValue(jsonCandidate, new TypeReference<>() {});
+                String filename = normalizeGeneratedFilename(firstNonBlank(
+                        asText(parsed.get("filename")),
+                        asText(parsed.get("file_path")),
+                        asText(parsed.get("path")),
+                        inferFilenameFromUserTextSmart(latestUserText, extension)
+                ), extension);
+                String title = firstNonBlank(asText(parsed.get("title")), inferTitleFromFilename(filename));
+                String content = firstNonBlank(asText(parsed.get("content")), asText(parsed.get("body")));
+                String replyMessage = extractStructuredReplyMessage(parsed);
+                String chartTitle = firstNonBlank(asText(parsed.get("chartTitle")), asText(parsed.get("chart_title")), title);
+                String mermaidSource = firstNonBlank(
+                        asText(parsed.get("mermaidSource")),
+                        asText(parsed.get("mermaid_source")),
+                        asText(parsed.get("source")),
+                        extractFirstMermaidSource(response)
+                );
+                if (content.isBlank()) {
+                    content = "# " + title + "\n\n" + "## 关键模块说明\n\n- 请查看下方图表了解整体结构。";
+                }
+                content = normalizeGeneratedMarkdown(content, title);
+                if (mermaidSource.isBlank()) {
+                    mermaidSource = buildFallbackMermaidSource(chartTitle);
+                }
+                return new ChartFileDraft(filename, title, content, chartTitle, stripMermaidFence(mermaidSource), replyMessage);
+            } catch (Exception ignored) {
+                // fall through to fallback
+            }
+        }
+
+        String filename = inferFilenameFromUserTextSmart(latestUserText, extension);
+        String title = inferTitleFromFilename(filename);
+        String mermaidSource = firstNonBlank(extractFirstMermaidSource(response), buildFallbackMermaidSource(title));
+        String content = normalizeGeneratedMarkdown(stripMermaidFence(response), title);
+        return new ChartFileDraft(filename, title, content, title, mermaidSource, "");
+    }
+
+    private String ensureMermaidBlock(String content, String mermaidSource) {
+        String body = content == null ? "" : content.trim();
+        String source = stripMermaidFence(mermaidSource);
+        if (body.contains("```mermaid")) {
+            return body;
+        }
+        if (body.isBlank()) {
+            body = "## 图表说明";
+        }
+        return body + "\n\n## 图表\n\n```mermaid\n" + source + "\n```\n";
+    }
+
+    private String extractFirstMermaidSource(String text) {
+        Matcher matcher = MERMAID_FENCE_PATTERN.matcher(text == null ? "" : text);
+        if (matcher.find()) {
+            return matcher.group(1).trim();
+        }
+        return "";
+    }
+
+    private String stripMermaidBlocks(String content) {
+        if (content == null || content.isBlank()) {
+            return "";
+        }
+        return MERMAID_FENCE_PATTERN.matcher(content)
+                .replaceAll("")
+                .replaceAll("(?m)^\\s*" + Pattern.quote(ToolExecutor.STRUCTURED_CHART_MARKER) + "\\{.*}\\s*$", "")
+                .replaceAll("\\n{3,}", "\n\n")
+                .trim();
+    }
+
+    private String stripMermaidFence(String text) {
+        String value = text == null ? "" : text.trim();
+        Matcher matcher = MERMAID_FENCE_PATTERN.matcher(value);
+        if (matcher.find()) {
+            return matcher.group(1).trim();
+        }
+        return value
+                .replaceFirst("^```mermaid\\s*", "")
+                .replaceFirst("\\s*```$", "")
+                .trim();
+    }
+
+    private String buildFallbackMermaidSource(String title) {
+        String safeTitle = firstNonBlank(title, "报告结构");
+        return "flowchart TD\n"
+                + "    A[" + escapeMermaidLabel(safeTitle) + "] --> B[核心模块]\n"
+                + "    A --> C[关键流程]\n"
+                + "    A --> D[输出结果]\n";
+    }
+
+    private String escapeMermaidLabel(String text) {
+        return (text == null ? "" : text)
+                .replace("[", " ")
+                .replace("]", " ")
+                .replace("\"", "'")
+                .trim();
+    }
+
+    private List<Map<String, Object>> buildDeterministicFilePrompt(List<Map<String, Object>> messages,
+                                                                   String extension,
+                                                                   List<String> uploadedImagePaths) {
+        List<Map<String, Object>> promptMessages = new ArrayList<>();
+        boolean docx = ".docx".equalsIgnoreCase(extension);
+        boolean hasImages = uploadedImagePaths != null && !uploadedImagePaths.isEmpty();
         String contentRules = ".docx".equalsIgnoreCase(extension)
-                ? "content must be human-readable document body in plain text or Markdown-style structure. "
+                ? "content must be valid Markdown for a document body. "
                 + "Do not output HTML, XML, CSS, JavaScript, MHTML, or office markup. "
                 + "Do not include tags such as <html>, <head>, <style>, <body>, <table> or <!DOCTYPE>. "
-                + "Use headings, paragraphs, bullet lists and simple Markdown tables only."
-                : "content must be the full body of the file.";
+                + "Use '# Title', '## Section', normal paragraphs, '- ' bullet lists, '1. ' numbered lists, simple Markdown tables, and Markdown image syntax only. "
+                + "Do not include Mermaid charts, relationship diagrams, flowcharts, or generated chart images in Word/docx content. "
+                + "Put one blank line before and after each heading, list, table, and paragraph. "
+                + "Never concatenate headings, list items, tables, images, or paragraphs on the same line."
+                : "content must be the full body of the file as valid Markdown. "
+                + "Use '# Title', '## Section', normal paragraphs, '- ' bullet lists, '1. ' numbered lists and simple Markdown tables. "
+                + "Put one blank line before and after each heading, list, table, and paragraph. "
+                + "Never concatenate headings, list items, tables, or paragraphs on the same line.";
+        String imageRules = docx && hasImages
+                ? " Uploaded image paths available for embedding: " + String.join(", ", uploadedImagePaths) + ". "
+                + "When the user asks for a Word/docx document, include each relevant uploaded image in content using Markdown image syntax like ![caption](workspace-relative-path). "
+                + "Use the exact paths listed above. Do not use data URLs for document images."
+                : "";
         promptMessages.add(Map.of(
                 "role", "system",
                 "content", "You are generating exactly one downloadable file for the user. "
                         + "Do not mention tools, function calls, workspace checks, or fake code like list_files(). "
-                        + "Return JSON only with keys filename, title, content. "
+                        + "Return JSON only with keys filename, title, content, reply. "
+                        + "reply must be an object with key message. "
+                        + "reply.message must be one short sentence confirming that the file was generated. "
+                        + "Do not summarize content in reply.message. "
                         + "Do not wrap JSON in markdown fences. "
                         + "filename must be a short workspace-relative file name ending with " + extension + ". "
                         + contentRules + " "
+                        + imageRules + " "
                         + "If the user did not specify a filename, choose a concise descriptive one."
         ));
         promptMessages.addAll(messages);
         return promptMessages;
+    }
+
+    private List<String> extractUploadedImagePaths(List<Map<String, Object>> messages) {
+        List<String> paths = new ArrayList<>();
+        if (messages == null) {
+            return paths;
+        }
+        for (Map<String, Object> message : messages) {
+            if (message == null) {
+                continue;
+            }
+            collectUploadedImagePaths(message.get("content"), paths);
+        }
+        return paths;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void collectUploadedImagePaths(Object content, List<String> paths) {
+        if (content instanceof String text) {
+            collectImagePathsFromText(text, paths);
+            return;
+        }
+        if (!(content instanceof List<?> parts)) {
+            return;
+        }
+        for (Object part : parts) {
+            if (!(part instanceof Map<?, ?> rawPart)) {
+                continue;
+            }
+            Map<String, Object> partMap = (Map<String, Object>) rawPart;
+            Object type = partMap.get("type");
+            if ("text".equals(type)) {
+                collectImagePathsFromText(asText(partMap.get("text")), paths);
+            }
+            if ("input_file".equals(type)) {
+                Object inputFile = partMap.get("input_file");
+                if (inputFile instanceof Map<?, ?> rawFile) {
+                    addImagePath(asText(((Map<String, Object>) rawFile).get("filename")), paths);
+                }
+            }
+        }
+    }
+
+    private void collectImagePathsFromText(String text, List<String> paths) {
+        if (text == null || text.isBlank()) {
+            return;
+        }
+        for (String line : text.split("\\R")) {
+            int prefix = line.indexOf("Uploaded image files in workspace:");
+            if (prefix >= 0) {
+                String value = line.substring(prefix + "Uploaded image files in workspace:".length()).trim();
+                int instruction = value.indexOf(". If creating");
+                if (instruction >= 0) {
+                    value = value.substring(0, instruction);
+                }
+                for (String item : value.split(",")) {
+                    addImagePath(item.trim(), paths);
+                }
+            }
+        }
+        Matcher matcher = IMAGE_FILENAME_PATTERN.matcher(text);
+        while (matcher.find()) {
+            addImagePath(matcher.group(1), paths);
+        }
+    }
+
+    private void addImagePath(String path, List<String> paths) {
+        String clean = path == null ? "" : path.trim();
+        if (clean.isBlank() || !isSupportedDocumentImagePath(clean) || paths.contains(clean)) {
+            return;
+        }
+        paths.add(clean);
+    }
+
+    private boolean isSupportedDocumentImagePath(String path) {
+        String lowered = path == null ? "" : path.toLowerCase(Locale.ROOT);
+        return lowered.endsWith(".png")
+                || lowered.endsWith(".jpg")
+                || lowered.endsWith(".jpeg")
+                || lowered.endsWith(".gif")
+                || lowered.endsWith(".bmp")
+                || lowered.endsWith(".webp");
+    }
+
+    private String ensureImageReferences(String content, List<String> uploadedImagePaths) {
+        if (uploadedImagePaths == null || uploadedImagePaths.isEmpty()) {
+            return content == null ? "" : content;
+        }
+        String result = content == null ? "" : content;
+        StringBuilder missing = new StringBuilder();
+        int index = 1;
+        for (String path : uploadedImagePaths) {
+            if (path == null || path.isBlank() || result.contains(path)) {
+                index++;
+                continue;
+            }
+            if (missing.isEmpty()) {
+                missing.append("\n\n## Images\n\n");
+            }
+            missing.append("![Image ").append(index).append("](").append(path).append(")\n\n");
+            index++;
+        }
+        return missing.isEmpty() ? result : result.stripTrailing() + missing;
     }
 
     private FileDraft parseFileDraft(String raw, String latestUserText, String extension) {
@@ -372,7 +678,8 @@ public class ToolCallService {
                         asText(parsed.get("body")),
                         stripCodeFence(response)
                 );
-                return new FileDraft(filename, title, content);
+                String replyMessage = extractStructuredReplyMessage(parsed);
+                return new FileDraft(filename, title, normalizeGeneratedMarkdown(content, title), replyMessage);
             } catch (Exception ignored) {
                 // fall through to text fallback
             }
@@ -380,7 +687,143 @@ public class ToolCallService {
 
         String filename = inferFilenameFromUserTextSmart(latestUserText, extension);
         String title = inferTitleFromFilename(filename);
-        return new FileDraft(filename, title, stripCodeFence(response));
+        return new FileDraft(filename, title, normalizeGeneratedMarkdown(stripCodeFence(response), title), "");
+    }
+
+    private String normalizeGeneratedMarkdown(String content, String title) {
+        if (content == null || content.isBlank()) {
+            return "";
+        }
+        String normalized = content
+                .replace("\r\n", "\n")
+                .replace('\r', '\n')
+                .replace('｜', '|')
+                .trim();
+
+        normalized = normalized.replaceAll("(?m)([^\\n])\\s*(#{1,6})(?=\\S)", "$1\n\n$2 ");
+        normalized = normalized.replaceAll("(?m)^(\\s{0,3}#{1,6})([^\\s#])", "$1 $2");
+        normalized = normalized.replaceAll("(?m)^(\\s{0,3}#{1,6}\\s+.*?)(\\s+#{1,6})\\s*$", "$1");
+        normalized = normalized.replaceAll("([。；;!！?？])\\s*([一二三四五六七八九十]+、)", "$1\n\n$2");
+        normalized = normalized.replaceAll("([。；;!！?？])\\s*(\\d+[.)]\\s+)", "$1\n\n$2");
+        normalized = normalized.replaceAll("([：:；;。!！?？])\\s+-\\s+", "$1\n\n- ");
+
+        List<String> lines = Stream.of(normalized.split("\\n"))
+                .map(String::stripTrailing)
+                .collect(Collectors.toCollection(ArrayList::new));
+        List<String> output = new ArrayList<>();
+        boolean hasHeading = false;
+        boolean previousBlank = true;
+
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i).trim();
+            if (line.isBlank()) {
+                if (!previousBlank) {
+                    output.add("");
+                    previousBlank = true;
+                }
+                continue;
+            }
+
+            line = normalizeMarkdownLine(line);
+            boolean currentBlock = isMarkdownBlockLine(line);
+            boolean previousBlock = !output.isEmpty() && isMarkdownBlockLine(output.get(output.size() - 1));
+
+            if (isMarkdownHeading(line)) {
+                hasHeading = true;
+            }
+            if (currentBlock && !previousBlank && !previousBlock) {
+                output.add("");
+            }
+            output.add(line);
+            previousBlank = false;
+
+            String next = i + 1 < lines.size() ? normalizeMarkdownLine(lines.get(i + 1).trim()) : "";
+            if (currentBlock && !next.isBlank() && !isSameMarkdownGroup(line, next)) {
+                output.add("");
+                previousBlank = true;
+            }
+        }
+
+        while (!output.isEmpty() && output.get(output.size() - 1).isBlank()) {
+            output.remove(output.size() - 1);
+        }
+
+        String result = String.join("\n", output).replaceAll("\\n{3,}", "\n\n").trim();
+        if (!hasHeading && title != null && !title.isBlank()) {
+            result = "# " + stripMarkdownSyntax(title).trim() + "\n\n" + result;
+        }
+        return result + "\n";
+    }
+
+    private String stripMarkdownSyntax(String text) {
+        return text == null ? "" : text
+                .replaceAll("^#{1,6}\\s*", "")
+                .replaceAll("\\s*#{1,6}$", "")
+                .replace("**", "")
+                .replace("__", "")
+                .replace("`", "")
+                .trim();
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractStructuredReplyMessage(Map<String, Object> parsed) {
+        if (parsed == null || parsed.isEmpty()) {
+            return "";
+        }
+        Object reply = parsed.get("reply");
+        if (reply instanceof Map<?, ?> rawReply) {
+            Map<String, Object> replyMap = (Map<String, Object>) rawReply;
+            String message = firstNonBlank(
+                    asText(replyMap.get("message")),
+                    asText(replyMap.get("text")),
+                    asText(replyMap.get("summary"))
+            );
+            if (!message.isBlank()) {
+                return message;
+            }
+        }
+        return firstNonBlank(
+                asText(parsed.get("replyMessage")),
+                asText(parsed.get("reply_message")),
+                asText(parsed.get("message"))
+        );
+    }
+
+    private String normalizeMarkdownLine(String line) {
+        String value = line == null ? "" : line.trim();
+        value = value.replaceFirst("^(#{1,6})([^\\s#])", "$1 $2");
+        value = value.replaceAll("\\s+#{1,6}$", "");
+        value = value.replaceFirst("^([一二三四五六七八九十]+)、\\s*", "## $1、");
+        return value;
+    }
+
+    private boolean isMarkdownBlockLine(String line) {
+        return isMarkdownHeading(line)
+                || isMarkdownListLine(line)
+                || looksLikeMarkdownTableLine(line)
+                || line.startsWith("```");
+    }
+
+    private boolean isMarkdownHeading(String line) {
+        return line != null && line.matches("^#{1,6}\\s+.+");
+    }
+
+    private boolean isMarkdownListLine(String line) {
+        return line != null && line.matches("^([-*+]\\s+.+|\\d+[.)]\\s+.+)");
+    }
+
+    private boolean looksLikeMarkdownTableLine(String line) {
+        return line != null && line.contains("|") && line.chars().filter(ch -> ch == '|').count() >= 2;
+    }
+
+    private boolean isSameMarkdownGroup(String current, String next) {
+        if (current == null || next == null || next.isBlank()) {
+            return false;
+        }
+        if (looksLikeMarkdownTableLine(current) && looksLikeMarkdownTableLine(next)) {
+            return true;
+        }
+        return isMarkdownListLine(current) && isMarkdownListLine(next);
     }
 
     private String extractJsonObject(String text) {
@@ -972,8 +1415,7 @@ public class ToolCallService {
         if (!matcher.find()) {
             return;
         }
-        String url = matcher.group(1);
-        onChunk.accept(formatDownloadLink(url));
+        onChunk.accept(fileGeneratedMessage(matcher.group(1), false));
     }
 
     private void emitStructuredChartIfPresent(String toolResult, Consumer<String> onChunk) {
@@ -994,12 +1436,17 @@ public class ToolCallService {
         StringBuilder output = new StringBuilder();
         Matcher downloadMatcher = DOWNLOAD_URL_PATTERN.matcher(toolResult);
         if (downloadMatcher.find()) {
-            output.append(buildFileReplyIntro(toolResult));
-            output.append(formatDownloadLink(downloadMatcher.group(1)));
+            output.append(fileGeneratedMessage(downloadMatcher.group(1), false));
         }
 
         Matcher structuredMatcher = STRUCTURED_CHART_PATTERN.matcher(toolResult);
         if (structuredMatcher.find()) {
+            if (output.isEmpty()) {
+                String chartIntro = buildChartReplyIntro(structuredMatcher.group(1));
+                if (!chartIntro.isBlank()) {
+                    output.append("\n").append(chartIntro).append("\n");
+                }
+            }
             output.append("\n")
                     .append(ToolExecutor.STRUCTURED_CHART_MARKER)
                     .append(structuredMatcher.group(1))
@@ -1007,17 +1454,89 @@ public class ToolCallService {
         } else {
             Matcher chartMatcher = INLINE_CHART_PATTERN.matcher(toolResult);
             if (chartMatcher.find()) {
-            String markdown = chartMatcher.group(1).trim();
-            if (!markdown.isBlank()) {
-                output.append("\n").append(markdown).append("\n");
-            }
+                String markdown = chartMatcher.group(1).trim();
+                if (!markdown.isBlank()) {
+                    if (output.isEmpty()) {
+                        output.append("\n").append(summarizeChartMarkdown(markdown)).append("\n");
+                    }
+                    output.append("\n").append(markdown).append("\n");
+                }
             }
         }
 
         return output.toString();
     }
 
+    private String buildDirectFileOutput(String toolResult, String replyMessage) {
+        return buildDirectFileOutput(toolResult, replyMessage, false);
+    }
+
+    private String buildDirectFileOutput(String toolResult, String replyMessage, boolean docxChartDegraded) {
+        if (toolResult == null || toolResult.isBlank()) {
+            return "";
+        }
+
+        Matcher downloadMatcher = DOWNLOAD_URL_PATTERN.matcher(toolResult);
+        if (!downloadMatcher.find()) {
+            return buildDirectToolOutput(toolResult);
+        }
+
+        return fileGeneratedMessage(downloadMatcher.group(1), docxChartDegraded);
+    }
+
+    private String sanitizeReplyMessage(String replyMessage) {
+        String message = replyMessage == null ? "" : replyMessage.trim();
+        if (message.isBlank()) {
+            return "";
+        }
+        message = message
+                .replaceAll("(?i)DOWNLOAD_URL:\\s*\\S+", "")
+                .replaceAll("\\[[^\\]]{0,30}]\\([^)]*\\)", "")
+                .replaceAll("[\\r\\n]+", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        if (message.length() > 120) {
+            message = message.substring(0, 120).trim();
+        }
+        return message;
+    }
+
+    private String buildChartReplyIntro(String structuredPayloadJson) {
+        String title = firstNonBlank(extractJsonStringField(structuredPayloadJson, "title"), "图表");
+        return "已生成《" + title + "》图表，下面可以直接查看。";
+    }
+
+    private String summarizeChartMarkdown(String markdown) {
+        String title = extractFirstHeading(markdown);
+        return "已生成" + (title.isBlank() ? "图表" : "《" + title + "》图表") + "，下面可以直接查看。";
+    }
+
+    private String extractFirstHeading(String content) {
+        if (content == null || content.isBlank()) {
+            return "";
+        }
+        for (String line : content.split("\\R")) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("#")) {
+                return trimmed.replaceFirst("^#{1,6}\\s*", "").replaceAll("\\s*#+$", "").trim();
+            }
+        }
+        return "";
+    }
+
     private String formatDownloadLink(String url) {
+        return fileGeneratedMessage(url, false);
+    }
+
+    private String fileGeneratedMessage(String url, boolean docxChartDegraded) {
+        if (url == null || url.isBlank()) {
+            return docxChartDegraded
+                    ? "\n\u6587\u4ef6\u5df2\u751f\u6210\uff0c\u5f53\u524d\u751f\u6210\u7684 Word \u6587\u6863\u65e0\u56fe\u3002\n"
+                    : "\n\u6587\u4ef6\u5df2\u751f\u6210\u3002\n";
+        }
+        if (docxChartDegraded) {
+            return "\n\u6587\u4ef6\u5df2\u751f\u6210\uff0c\u5f53\u524d\u751f\u6210\u7684 Word \u6587\u6863\u65e0\u56fe\uff1a[\u70b9\u51fb\u4e0b\u8f7d](" + url + ")\n";
+        }
         return "\n\u6587\u4ef6\u5df2\u751f\u6210\uff1a[\u70b9\u51fb\u4e0b\u8f7d](" + url + ")\n";
     }
 
@@ -1211,25 +1730,9 @@ public class ToolCallService {
         IntentDecision decision = decideIntent(messages);
         List<Map<String, Object>> allTools = ToolDefinitions.getAll();
         if (decision.outputMode() == OutputMode.PLAIN_REPLY) {
-            List<Map<String, Object>> fallbackTools = new ArrayList<>();
-            for (Map<String, Object> tool : allTools) {
-                Object fnObj = tool.get("function");
-                if (!(fnObj instanceof Map<?, ?> fnMap)) {
-                    continue;
-                }
-                Object nameObj = ((Map<String, Object>) fnMap).get("name");
-                String name = nameObj == null ? "" : nameObj.toString();
-                if ("render_mermaid_chart".equals(name)
-                        || "create_text_file".equals(name)
-                        || "create_docx_file".equals(name)
-                        || "read_file".equals(name)
-                        || "list_files".equals(name)) {
-                    fallbackTools.add(tool);
-                }
-            }
-            log.info("[tool-select] mode={}, matched={}, primary_tool=none, fallback_tools={}",
-                    decision.outputMode(), decision.matchedRules(), fallbackTools.size());
-            return fallbackTools;
+            log.info("[tool-select] mode={}, matched={}, primary_tool=none, tools=0",
+                    decision.outputMode(), decision.matchedRules());
+            return List.of();
         }
         List<Map<String, Object>> selected = new ArrayList<>();
 
@@ -1289,12 +1792,14 @@ public class ToolCallService {
         boolean noFileOutputIntent = looksLikeNoFileOutputIntent(latestUserText);
         addIf(matchedRules, noFileOutputIntent, "NO_FILE_OUTPUT");
 
-        boolean explicitFileOutputIntent = !forcedInlineChartIntent && looksLikeFileOutputIntent(latestUserText);
+        boolean explicitDocxOutputIntent = !forcedInlineChartIntent && looksLikeDocxOutputIntent(latestUserText);
+        boolean explicitFileOutputIntent = !forcedInlineChartIntent
+                && (explicitDocxOutputIntent || looksLikeFileOutputIntent(latestUserText));
         addIf(matchedRules, explicitFileOutputIntent, "FILE_OUTPUT");
         boolean fileOutputIntent = !noFileOutputIntent && explicitFileOutputIntent;
         boolean explicitTextFileOutputIntent = fileOutputIntent && looksLikeTextFileOutputIntent(latestUserText);
         addIf(matchedRules, explicitTextFileOutputIntent, "TEXT_FILE_OUTPUT");
-        boolean docxOutputIntent = fileOutputIntent && !explicitTextFileOutputIntent && looksLikeDocxOutputIntent(latestUserText);
+        boolean docxOutputIntent = fileOutputIntent && !explicitTextFileOutputIntent && explicitDocxOutputIntent;
         addIf(matchedRules, docxOutputIntent, "DOCX_OUTPUT");
         boolean textFileOutputIntent = fileOutputIntent && !docxOutputIntent;
 
@@ -1325,12 +1830,12 @@ public class ToolCallService {
         OutputMode outputMode;
         if (!chartIntent && (noFileOutputIntent || inlineTableIntent)) {
             outputMode = OutputMode.PLAIN_REPLY;
-        } else if (chartIntent && fileOutputIntent) {
+        } else if (chartIntent && fileOutputIntent && !docxOutputIntent) {
             outputMode = OutputMode.CHART_FILE_OUTPUT;
-        } else if (chartIntent) {
-            outputMode = OutputMode.CHART;
         } else if (fileOutputIntent) {
             outputMode = OutputMode.FILE_OUTPUT;
+        } else if (chartIntent) {
+            outputMode = OutputMode.CHART;
         } else if (workspaceReadIntent) {
             outputMode = OutputMode.WORKSPACE_READ;
         } else {
@@ -1358,7 +1863,11 @@ public class ToolCallService {
         if (looksLikeNoFileOutputIntent(t)) {
             return true;
         }
-        if (mentionsMarkdownFile(t) || mentionsDocxFile(t) || containsAny(t, FILE_OUTPUT_KEYWORDS)) {
+        if (mentionsMarkdownFile(t)
+                || mentionsDocxFile(t)
+                || containsAny(t, FILE_OUTPUT_KEYWORDS)
+                || containsFileVerbAndObject(t)
+                || containsDocumentVerbAndObject(t)) {
             return false;
         }
         boolean hasChartWord = t.contains("图")
@@ -1539,6 +2048,7 @@ public class ToolCallService {
         return containsAny(lowered, FILE_OUTPUT_KEYWORDS)
                 || mentionsMarkdownFile(lowered)
                 || mentionsDocxFile(lowered)
+                || containsDocumentVerbAndObject(lowered)
                 || containsFileVerbAndObject(lowered);
     }
 
@@ -1548,7 +2058,8 @@ public class ToolCallService {
         }
         String lowered = text.toLowerCase(Locale.ROOT);
         return containsAny(lowered, DOCX_OUTPUT_KEYWORDS)
-                || mentionsDocxFile(lowered);
+                || mentionsDocxFile(lowered)
+                || containsDocumentVerbAndObject(lowered);
     }
 
     private boolean looksLikeTextFileOutputIntent(String text) {
@@ -1641,8 +2152,10 @@ public class ToolCallService {
         }
         return text.contains(".docx")
                 || text.contains("docx")
+                || text.contains("word文件")
                 || text.contains("word文档")
                 || text.contains("word 文件")
+                || text.contains("word 文档")
                 || text.contains("word file")
                 || text.contains("word document");
     }
@@ -1651,9 +2164,26 @@ public class ToolCallService {
         if (text == null || text.isBlank()) {
             return false;
         }
-        List<String> fileVerbs = List.of("生成", "创建", "写", "导出", "保存", "给我生成", "给我写");
-        List<String> fileObjects = List.of("文件", "文档", "报告", "markdown", "md", "docx", "word");
+        List<String> fileVerbs = List.of(
+                "生成", "创建", "写", "导出", "保存", "给我生成", "给我写",
+                "generate", "create", "write", "export", "save");
+        List<String> fileObjects = List.of(
+                "文件", "文档", "报告", "markdown", "md", "docx", "word",
+                "file", "document", "report");
         return containsAny(text, fileVerbs) && containsAny(text, fileObjects);
+    }
+
+    private boolean containsDocumentVerbAndObject(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        List<String> documentVerbs = List.of(
+                "\u751f\u6210", "\u521b\u5efa", "\u5199", "\u5bfc\u51fa", "\u5236\u4f5c",
+                "\u7ed9\u6211\u751f\u6210", "\u7ed9\u6211\u5199",
+                "generate", "create", "write", "export", "make");
+        List<String> documentObjects = List.of(
+                "\u6587\u6863", "\u62a5\u544a", "word", "docx", "document", "report");
+        return containsAny(text, documentVerbs) && containsAny(text, documentObjects);
     }
 
     private String removeSpecialToolLines(String toolResult) {
@@ -1694,7 +2224,15 @@ public class ToolCallService {
         WORKSPACE_READ
     }
 
-    private record FileDraft(String filename, String title, String content) {}
+    private record FileDraft(String filename, String title, String content, String replyMessage) {}
+
+    private record ChartFileDraft(
+            String filename,
+            String title,
+            String content,
+            String chartTitle,
+            String mermaidSource,
+            String replyMessage) {}
 
     private record IntentDecision(
             OutputMode outputMode,

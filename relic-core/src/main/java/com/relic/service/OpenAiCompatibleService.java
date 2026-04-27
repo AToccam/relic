@@ -209,7 +209,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
 
                 Object contentObj = delta.get("content");
                 String content = MessageHelper.extractTextContent(contentObj);
-                if (content != null && !content.isBlank()) {
+                if (content != null && !content.isEmpty()) {
                     result.getContent().append(content);
                     onChunk.accept(content);
                 }

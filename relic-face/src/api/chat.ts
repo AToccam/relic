@@ -46,10 +46,12 @@ export async function streamChat(
     buffer = lines.pop() ?? ''
 
     for (const line of lines) {
-      const trimmed = line.trim()
-      if (!trimmed.startsWith('data:')) continue
-      const data = trimmed.slice(5).trim()
-      if (data === '[DONE]') return
+      // Preserve payload whitespace/newlines as much as possible.
+      // Only trim the prefix for protocol matching.
+      const protocolLine = line.trimStart()
+      if (!protocolLine.startsWith('data:')) continue
+      const data = protocolLine.slice(5)
+      if (data.trim() === '[DONE]') return
 
       try {
         const json = JSON.parse(data)

@@ -43,7 +43,7 @@ public final class ToolDefinitions {
                                         ),
                                         "content", Map.of(
                                                 "type", "string",
-                                                "description", "Document body in Markdown-like text. Supports headings (#, ##, ###), paragraphs, bullet/numbered lists, simple Markdown tables, and Mermaid fenced blocks. When creating a document with charts, include the chart as ```mermaid ... ``` so it can be embedded visually in the Word file."
+                                                "description", "Document body in Markdown-like text. Supports headings (#, ##, ###), paragraphs, bullet/numbered lists, simple Markdown tables, and Markdown image syntax for uploaded images. Do not include Mermaid charts or generated chart images in Word files."
                                         )
                                 ),
                                 "required", List.of("filename", "content")

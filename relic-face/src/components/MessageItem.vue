@@ -1,8 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useTemplateRef, watch, watchEffect } from 'vue'
-import { marked } from 'marked'
+import { unified } from 'unified'
+import remarkParse from 'remark-parse'
+import remarkGfm from 'remark-gfm'
+import remarkRehype from 'remark-rehype'
+import rehypeStringify from 'rehype-stringify'
 import type { Message } from '@/types'
 import ChartBlock from './ChartBlock.vue'
+
+const markdownProcessor = unified()
+  .use(remarkParse)
+  .use(remarkGfm)
+  .use(remarkRehype)
+  .use(rehypeStringify)
 
 const props = defineProps<{ message: Message }>()
 
@@ -135,7 +145,7 @@ watch(() => props.message.streaming, (streaming) => {
 }, { immediate: true })
 
 function renderMd(text: string): string {
-  return marked.parse(text) as string
+  return String(markdownProcessor.processSync(text.replace(/\r\n?/g, '\n')))
 }
 
 const bubbleRef = useTemplateRef<HTMLElement>('bubble')
@@ -466,6 +476,7 @@ watchEffect(async () => {
 
 .markdown-body :deep(p) { margin: 0 0 8px; }
 .markdown-body :deep(p:last-child) { margin-bottom: 0; }
+.markdown-body :deep(p) { white-space: pre-wrap; }
 .markdown-body :deep(pre) {
   background: #e2e8f0;
   border-radius: 6px;
@@ -490,9 +501,42 @@ watchEffect(async () => {
 .markdown-body :deep(ul),
 .markdown-body :deep(ol) { padding-left: 20px; margin: 6px 0; }
 .markdown-body :deep(li) { margin: 3px 0; }
-.markdown-body :deep(h1),
-.markdown-body :deep(h2),
-.markdown-body :deep(h3) { margin: 10px 0 6px; font-weight: 600; }
+.markdown-body :deep(h1) {
+  margin: 12px 0 8px;
+  font-size: 20px;
+  line-height: 1.35;
+  font-weight: 700;
+}
+.markdown-body :deep(h2) {
+  margin: 10px 0 6px;
+  font-size: 17px;
+  line-height: 1.35;
+  font-weight: 700;
+}
+.markdown-body :deep(h3) {
+  margin: 8px 0 6px;
+  font-size: 15px;
+  line-height: 1.35;
+  font-weight: 600;
+}
+.markdown-body :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+  background: #fff;
+}
+.markdown-body :deep(th),
+.markdown-body :deep(td) {
+  border: 1px solid #cbd5e1;
+  padding: 6px 8px;
+  vertical-align: top;
+  text-align: left;
+}
+.markdown-body :deep(th) {
+  background: #f8fafc;
+  font-weight: 600;
+}
 .markdown-body :deep(blockquote) {
   border-left: 3px solid #cbd5e0;
   padding-left: 10px;

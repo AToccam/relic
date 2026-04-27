@@ -87,7 +87,7 @@ async function loadMermaid() {
       primaryBorderColor: '#2563eb',
       primaryTextColor: '#1e293b',
       lineColor: '#64748b',
-      fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+      fontFamily: '"Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", SimHei, SimSun, Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
     }
   })
   mermaidApi = mermaid

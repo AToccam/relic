@@ -430,6 +430,7 @@ function buildUserMessageContent(
   }
 
   const toolFallbackFiles: string[] = []
+  const uploadedImages: string[] = []
 
   for (const f of files) {
     const mime = (f.mimeType || '').toLowerCase()
@@ -438,6 +439,9 @@ function buildUserMessageContent(
         type: 'image_url',
         image_url: { url: f.dataUrl }
       })
+      if (f.relativePath || f.name) {
+        uploadedImages.push(f.relativePath || f.name)
+      }
       continue
     }
 
@@ -468,6 +472,13 @@ function buildUserMessageContent(
       text:
         `已上传文件到工作区: ${toolFallbackFiles.join(', ')}。` +
         '如果你无法直接读取这些附件，请调用 read_file 工具逐个读取后再回答。'
+    })
+  }
+
+  if (uploadedImages.length > 0) {
+    parts.push({
+      type: 'text',
+      text: `Uploaded image files in workspace: ${uploadedImages.join(', ')}. If creating a Word/docx document, include these images in the document.`
     })
   }
 

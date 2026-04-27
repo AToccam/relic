@@ -12,8 +12,13 @@
   },
   "dependencies": {
     "marked": "^17.0.4",
-    "mermaid": "^11.14.0",
+    "mermaid": "11.10.1",
     "pinia": "^3.0.4",
+    "rehype-stringify": "^10.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.2",
+    "unified": "^11.0.5",
     "vue": "^3.5.29",
     "vue-router": "^5.0.3"
   },
