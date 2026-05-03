@@ -1,0 +1,1 @@
+当请求体中的 ragConfig.enabled=true 且 sourceIds 非空时，后端会先检索相关片段，再把参考资料注入 system prompt，并在 SSE 中返回 citations。

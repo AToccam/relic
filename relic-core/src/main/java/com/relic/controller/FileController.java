@@ -1,9 +1,15 @@
 package com.relic.controller;
 
+import com.relic.rag.ingest.DocumentIngestionService;
 import com.relic.service.GeneratedFileRegistryService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.util.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,9 +19,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -24,6 +33,7 @@ import java.text.Normalizer;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -35,8 +45,14 @@ public class FileController {
     @Autowired
     private GeneratedFileRegistryService generatedFileRegistryService;
 
+    @Autowired(required = false)
+    private DocumentIngestionService documentIngestionService;
+
     @Value("${relic.workspace.path:#{systemProperties['user.home'] + '/.openclaw/workspace'}}")
     private String workspacePath;
+
+    @Value("${relic.rag.ingest.auto-index-on-upload:false}")
+    private boolean autoIndexOnUpload;
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Map<String, Object> upload(@RequestParam("file") MultipartFile file) throws IOException {
@@ -71,13 +87,22 @@ public class FileController {
 
         log.info("上传文件成功: {} -> {}", originalFilename, relativePath);
 
-        return Map.of(
-                "filename", originalFilename,
-                "storedName", storedName,
-                "relativePath", relativePath,
-                "mimeType", mimeType,
-                "size", file.getSize()
-        );
+        boolean indexTriggered = false;
+        if (autoIndexOnUpload && documentIngestionService != null) {
+            documentIngestionService.triggerAutoIndexAsync(relativePath);
+            indexTriggered = true;
+            log.info("上传后已触发自动索引: {}", relativePath);
+        }
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("filename", originalFilename);
+        response.put("storedName", storedName);
+        response.put("relativePath", relativePath);
+        response.put("mimeType", mimeType);
+        response.put("size", file.getSize());
+        response.put("indexTriggered", indexTriggered);
+
+        return response;
     }
 
     @GetMapping("/list")
@@ -123,6 +148,39 @@ public class FileController {
     @GetMapping("/generated/list")
     public Map<String, Object> listGeneratedFiles() {
         return Map.of("items", generatedFileRegistryService.listGeneratedFiles());
+    }
+
+    @GetMapping("/download")
+    public ResponseEntity<Resource> downloadFile(@RequestParam("relativePath") String relativePath) throws IOException {
+        if (!StringUtils.hasText(relativePath)) {
+            throw new IllegalArgumentException("relativePath 不能为空");
+        }
+
+        Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
+        Path target = workspace.resolve(relativePath).normalize();
+
+        if (!target.startsWith(workspace)) {
+            throw new SecurityException("非法下载路径");
+        }
+        if (!Files.exists(target) || !Files.isRegularFile(target)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "文件不存在: " + relativePath);
+        }
+
+        Resource resource = new UrlResource(target.toUri());
+        String filename = target.getFileName().toString();
+        String encodedFilename = URLEncoder.encode(filename, StandardCharsets.UTF_8).replace("+", "%20");
+        String asciiFallback = filename.replaceAll("[^\\x20-\\x7E]", "_").replace("\"", "");
+        if (asciiFallback.isBlank()) {
+            asciiFallback = "download";
+        }
+        String contentDisposition = "attachment; filename=\"" + asciiFallback + "\"; filename*=UTF-8''" + encodedFilename;
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM_VALUE)
+                .header("Content-Transfer-Encoding", "binary")
+                .header("X-Content-Type-Options", "nosniff")
+                .body(resource);
     }
 
     @DeleteMapping
