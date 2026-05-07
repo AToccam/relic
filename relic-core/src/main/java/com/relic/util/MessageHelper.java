@@ -133,7 +133,14 @@ public final class MessageHelper {
             + "- create_text_file: 在工作区创建文本文件\n"
             + "- read_file: 读取工作区中的文件内容\n"
             + "- list_files: 列出工作区中的文件和文件夹\n"
-            + "当用户的问题需要文件操作时，请主动调用相应工具。";
+            + "当用户的问题需要文件操作时，请主动调用相应工具。\n"
+            + "回答展示格式要求（非常重要）：\n"
+            + "1) 使用规范 Markdown；标题必须写成“# 空格 标题”，不要写成“#标题”。\n"
+            + "2) 标题必须单独一行，不要和正文写在同一行。\n"
+            + "3) 表格只允许在表头下面出现一次分隔行（例如 |---|---|---|），不要在数据行之间重复插入分隔行；表格必须单独成块输出，不要夹在段落行内。\n"
+            + "4) 普通正文不要加粗，只加粗少量关键词；小标题后必须加冒号，例如 **地理位置：**。\n"
+            + "5) 列表每项单独一行，列表符号 - 后面必须有一个空格（即“- 内容”）；也可使用“1. 内容”格式。\n"
+            + "6) 每个段落之间保留一个空行；不要把多个信息点挤在同一行，也不要输出半截 Markdown 或混乱排版。";
 
     /**
      * 确保消息列表包含工具引导的 system prompt。
@@ -147,6 +154,27 @@ public final class MessageHelper {
         }
         List<Map<String, Object>> result = new ArrayList<>();
         result.add(Map.of("role", "system", "content", TOOL_SYSTEM_PROMPT));
+        result.addAll(messages);
+        return result;
+    }
+
+    private static final String DISPLAY_MARKDOWN_SYSTEM_PROMPT =
+            "你是一个清晰、可靠的 AI 助手。回答用户时必须使用规范 Markdown：\n"
+            + "1) 标题必须写成“# 标题”“## 标题”，# 后必须有空格，标题必须单独一行。\n"
+            + "2) 段落之间保留一个空行，不要把多个章节、列表项或表格挤在同一行。\n"
+            + "3) 列表每项单独一行，使用“- 内容”或“1. 内容”，符号后必须有空格。\n"
+            + "4) 表格必须是标准 Markdown 表格，表头下一行只放一次分隔行，例如“| --- | --- |”。\n"
+            + "5) 普通正文不要整段加粗；只对少量关键词使用加粗。\n"
+            + "6) 不要输出残缺 Markdown、HTML、XML、CSS、脚本或 Office 标记。";
+
+    public static List<Map<String, Object>> ensureDisplayMarkdownPrompt(List<Map<String, Object>> messages) {
+        for (Map<String, Object> msg : messages) {
+            if ("system".equals(msg.get("role"))) {
+                return messages;
+            }
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        result.add(Map.of("role", "system", "content", DISPLAY_MARKDOWN_SYSTEM_PROMPT));
         result.addAll(messages);
         return result;
     }

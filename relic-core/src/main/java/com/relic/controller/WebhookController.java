@@ -190,6 +190,7 @@ public class WebhookController {
         }
 
         messages = MessageHelper.applySlidingWindow(messages, MAX_HISTORY);
+        messages = MessageHelper.ensureDisplayMarkdownPrompt(messages);
         log.info("【最终发送给 AI 的记忆条数】: {}", messages.size());
         log.info("【当前最新提问】: {}", messages.get(messages.size() - 1).get("content"));
 
