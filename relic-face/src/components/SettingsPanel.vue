@@ -270,6 +270,7 @@ function skillMissingSummary(skill: SkillInfo): string {
           <section class="section">
             <h3 class="section-title">Skills</h3>
             <p class="section-desc">勾选控制启用状态；支持粘贴 ClawHub/GitHub 链接或 ClawHub slug 导入。内置 Skills 默认通常是启用状态。</p>
+            <p class="section-desc">已勾选 Skill 可在聊天框通过 /skillName 直接调用；例如 /my-skill 你的需求。</p>
 
             <label class="bundled-switch">
               <input v-model="showBundledSkills" type="checkbox" />

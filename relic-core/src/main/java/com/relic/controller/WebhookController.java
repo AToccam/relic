@@ -6,6 +6,7 @@ import com.relic.dto.OpenClawRequest;
 import com.relic.rag.model.Citation;
 import com.relic.service.AiRouterService;
 import com.relic.service.ChatHistoryService;
+import com.relic.service.SkillCommandService;
 import com.relic.util.MessageHelper;
 import com.relic.util.OpenAiResponseBuilder;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +34,9 @@ public class WebhookController {
 
     @Autowired
     private ChatHistoryService chatHistoryService;
+
+    @Autowired
+    private SkillCommandService skillCommandService;
 
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -148,6 +152,7 @@ public class WebhookController {
         log.info("收到来自 OpenClaw 的前端指令: {}", userMessage);
 
         List<Map<String, Object>> messages = MessageHelper.buildSingleTurnMessages(userMessage);
+        messages = skillCommandService.rewriteForEnabledSkillCommand(messages);
         String aiReply;
         try {
             long startTime = System.currentTimeMillis();
@@ -195,6 +200,8 @@ public class WebhookController {
                 break;
             }
         }
+
+        messages = skillCommandService.rewriteForEnabledSkillCommand(messages);
 
         final List<Map<String, Object>> finalMessages = messages;
         SseEmitter emitter = new SseEmitter(180_000L);
