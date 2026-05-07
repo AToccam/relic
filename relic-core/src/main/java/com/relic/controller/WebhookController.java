@@ -1,9 +1,12 @@
 package com.relic.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.relic.dto.ChatCompletionRequest;
 import com.relic.dto.OpenClawRequest;
+import com.relic.rag.model.Citation;
 import com.relic.service.AiRouterService;
 import com.relic.service.ChatHistoryService;
+import com.relic.service.SkillCommandService;
 import com.relic.util.MessageHelper;
 import com.relic.util.OpenAiResponseBuilder;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +34,9 @@ public class WebhookController {
 
     @Autowired
     private ChatHistoryService chatHistoryService;
+
+    @Autowired
+    private SkillCommandService skillCommandService;
 
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -146,6 +152,7 @@ public class WebhookController {
         log.info("收到来自 OpenClaw 的前端指令: {}", userMessage);
 
         List<Map<String, Object>> messages = MessageHelper.buildSingleTurnMessages(userMessage);
+        messages = skillCommandService.rewriteForEnabledSkillCommand(messages);
         String aiReply;
         try {
             long startTime = System.currentTimeMillis();
@@ -171,11 +178,12 @@ public class WebhookController {
 
     // OpenAI 兼容格式，流式 SSE 
     @PostMapping(value = "/v1/chat/completions")
-    @SuppressWarnings("unchecked")
-    public SseEmitter handleOpenAIRequest(@RequestBody Map<String, Object> request) {
-        String conversationId = chatHistoryService.normalizeConversationId((String) request.get("conversationId"));
-        List<Map<String, Object>> rawMessages = (List<Map<String, Object>>) request.get("messages");
+    public SseEmitter handleOpenAIRequest(@RequestBody ChatCompletionRequest request) {
+        String conversationId = chatHistoryService.normalizeConversationId(request == null ? null : request.getConversationId());
+        List<Map<String, Object>> rawMessages = request == null ? null : request.getMessages();
         List<Map<String, Object>> messages = MessageHelper.cleanRawMessages(rawMessages);
+        ChatCompletionRequest.RagConfig ragConfig = request == null ? null : request.getRagConfig();
+        Boolean toolsEnabled = request == null ? null : request.getToolsEnabled();
 
         if (messages.isEmpty()) {
             messages.add(MessageHelper.buildUserMessage(""));
@@ -194,12 +202,15 @@ public class WebhookController {
             }
         }
 
+        messages = skillCommandService.rewriteForEnabledSkillCommand(messages);
+
         final List<Map<String, Object>> finalMessages = messages;
         SseEmitter emitter = new SseEmitter(180_000L);
         String chatId = "chatcmpl-" + System.currentTimeMillis();
         String modelName = aiRouter.getProviderNameForMessages(finalMessages);
         long created = System.currentTimeMillis() / 1000;
         AtomicBoolean emitterActive = new AtomicBoolean(true);
+        AtomicBoolean citationsSent = new AtomicBoolean(false);
         StringBuilder assistantOutput = new StringBuilder();
 
         emitter.onCompletion(() -> {
@@ -210,14 +221,18 @@ public class WebhookController {
         Thread streamThread = Thread.startVirtualThread(() -> {
             try {
                 log.info("【流式连接 AI 中...】模式: {}", aiRouter.getMode());
-                aiRouter.streamAuto(finalMessages, content -> {
+                aiRouter.streamAuto(finalMessages, ragConfig, toolsEnabled, content -> {
                     if (!emitterActive.get()) {
                         throw new UncheckedIOException(new IOException("SSE 连接已关闭，终止流式输出"));
                     }
                     assistantOutput.append(content);
                     try {
+                        List<Citation> citations = null;
+                        if (citationsSent.compareAndSet(false, true)) {
+                            citations = aiRouter.getCurrentCitations();
+                        }
                         Map<String, Object> chunk = OpenAiResponseBuilder.buildChunk(
-                            chatId, created, modelName, Map.of("content", content), null);
+                            chatId, created, modelName, Map.of("content", content), null, citations);
                         emitter.send(SseEmitter.event()
                                 .data(mapper.writeValueAsString(chunk), MediaType.APPLICATION_JSON));
                     } catch (IOException e) {

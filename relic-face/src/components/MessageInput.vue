@@ -94,7 +94,7 @@ function isImage(mimeType: string) {
     </div>
     <textarea
       v-model="input"
-      placeholder="输入消息… (Enter 发送，Shift+Enter 换行)"
+      placeholder="输入消息… (可用 /skillName 调用已勾选 Skill；Enter 发送，Shift+Enter 换行)"
       @keydown="handleKeydown"
       rows="3"
     />
