@@ -43,7 +43,17 @@ public class ToolCallService {
     private static final Pattern STRUCTURED_CHART_PATTERN = Pattern.compile(
             ToolExecutor.STRUCTURED_CHART_MARKER + "(\\{.*})");
     private static final Pattern MERMAID_FENCE_PATTERN = Pattern.compile("```mermaid\\s*\\R([\\s\\S]*?)\\R?```");
-    private static final Pattern FILENAME_PATTERN = Pattern.compile("([\\w\\-\\u4e00-\\u9fa5./]+\\.(?:md|txt|docx))", Pattern.CASE_INSENSITIVE);
+    private static final Pattern FILENAME_PATTERN = Pattern.compile("([a-zA-Z]:[/\\\\][\\w\\-\\u4e00-\\u9fa5./\\\\]*\\.(?:md|txt|docx|csv|json|xml|html|py|js|java|ts|log)|[\\w\\-\\u4e00-\\u9fa5./]+\\.(?:md|txt|docx|csv|json|xml|html|py|js|java|ts|log))", Pattern.CASE_INSENSITIVE);
+    // 绝对路径：要求基名是 ASCII，避免把前缀的中文 prose 误吞入文件名
+    private static final Pattern ABSOLUTE_PATH_PATTERN = Pattern.compile(
+            "([a-zA-Z]:[/\\\\](?:[\\w\\-._\\u4e00-\\u9fa5]+[/\\\\])*[A-Za-z0-9_\\-]+\\.[a-zA-Z0-9]{1,10})");
+    // 仅匹配盘符目录前缀（如 E:/、E:/folder/）
+    private static final Pattern DRIVE_DIR_PATTERN = Pattern.compile(
+            "([a-zA-Z]:[/\\\\](?:[\\w\\-._\\u4e00-\\u9fa5]+[/\\\\])*)");
+    // ASCII 基名 + 已知扩展，用于跨 prose 提取
+    private static final Pattern ASCII_FILENAME_PATTERN = Pattern.compile(
+            "((?:[\\w\\-._\\u4e00-\\u9fa5]+[/\\\\])*[A-Za-z0-9_\\-]+\\.(?:md|txt|docx|csv|json|xml|html|py|js|java|ts|log))",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern IMAGE_FILENAME_PATTERN = Pattern.compile("([\\w\\-\\u4e00-\\u9fa5./\\\\]+\\.(?:png|jpe?g|gif|bmp|webp))", Pattern.CASE_INSENSITIVE);
     private static final Pattern MULTI_FILE_COUNT_PATTERN = Pattern.compile("生成\\s*([2-9]|[1-9]\\d|两|二|三|四|五|六|七|八|九)\\s*个?\\s*(文件|文档)");
 
@@ -98,7 +108,10 @@ public class ToolCallService {
             "create document", "generate document", "write a document", "create report", "generate report",
             "document file", "report file", "downloadable document", "downloadable report");
     private static final List<String> TEXT_FILE_OUTPUT_KEYWORDS = List.of(
-            "markdown", ".md", " md", "\u751f\u6210md", "\u751f\u6210 md", "\u6587\u672c\u6587\u4ef6", "text file", ".txt");
+            "markdown", ".md", " md", "\u751f\u6210md", "\u751f\u6210 md", "\u6587\u672c\u6587\u4ef6", "text file", ".txt",
+            "txt\u6587\u4ef6", "txt\u683c\u5f0f", "\u7eaf\u6587\u672c");
+    private static final List<String> TXT_EXTENSION_KEYWORDS = List.of(
+            ".txt", "txt\u6587\u4ef6", "txt\u683c\u5f0f", "txt file", "\u7eaf\u6587\u672c", "plain text");
     private static final List<String> NO_FILE_OUTPUT_KEYWORDS = List.of(
             "\u4e0d\u8981\u751f\u6210\u6587\u4ef6", "\u4e0d\u7528\u751f\u6210\u6587\u4ef6", "\u4e0d\u751f\u6210\u6587\u4ef6",
             "\u4e0d\u8981\u521b\u5efa\u6587\u4ef6", "\u4e0d\u7528\u521b\u5efa\u6587\u4ef6", "\u4e0d\u521b\u5efa\u6587\u4ef6",
@@ -330,7 +343,7 @@ public class ToolCallService {
                                                IntentDecision decision) {
         try {
             String latestUserText = extractLatestUserText(messages);
-            String extension = decision.docxOutputIntent() ? ".docx" : ".md";
+            String extension = decision.docxOutputIntent() ? ".docx" : inferTextFileExtension(latestUserText);
             List<String> uploadedImagePaths = extractUploadedImagePaths(messages);
             List<Map<String, Object>> promptMessages = buildDeterministicFilePrompt(messages, extension, uploadedImagePaths);
             String raw = provider.ask(promptMessages);
@@ -358,7 +371,7 @@ public class ToolCallService {
                                                     IntentDecision decision) {
         try {
             String latestUserText = extractLatestUserText(messages);
-            String extension = decision.docxOutputIntent() ? ".docx" : ".md";
+            String extension = decision.docxOutputIntent() ? ".docx" : inferTextFileExtension(latestUserText);
             List<Map<String, Object>> promptMessages = buildDeterministicChartFilePrompt(messages, extension);
             String raw = provider.ask(promptMessages);
             ChartFileDraft draft = parseChartFileDraft(raw, latestUserText, extension);
@@ -392,6 +405,13 @@ public class ToolCallService {
 
     private List<Map<String, Object>> buildDeterministicChartFilePrompt(List<Map<String, Object>> messages, String extension) {
         List<Map<String, Object>> promptMessages = new ArrayList<>();
+        String overrideDir = com.relic.tool.ToolExecutor.currentWorkingDirectory();
+        boolean overrideActive = overrideDir != null && !overrideDir.isBlank();
+        String filenameRule = overrideActive
+                ? "filename must be a short bare file name (no directory, no drive letter) ending with " + extension
+                + ". The system will automatically place the file under the user's selected working directory ("
+                + overrideDir + "). Do not include any absolute path or drive prefix even if the user's message mentions one. "
+                : "filename must be a short workspace-relative file name ending with " + extension + ". ";
         promptMessages.add(Map.of(
                 "role", "system",
                 "content", "You are generating exactly one downloadable file that includes exactly one Mermaid chart. "
@@ -400,7 +420,7 @@ public class ToolCallService {
                         + "reply.message must be one short sentence confirming that the file was generated. "
                         + "Do not summarize content or chart labels in reply.message. "
                         + "Do not wrap JSON in markdown fences. "
-                        + "filename must be a short workspace-relative file name ending with " + extension + ". "
+                        + filenameRule
                         + "content must be valid Markdown. Use '# Title' and '## Section' headings with one blank line before and after headings. "
                         + "Use '-' for bullet lists, '1.' for numbered lists, and blank lines between paragraphs. "
                         + "Never concatenate headings, list items, tables, or paragraphs on the same line. "
@@ -418,12 +438,12 @@ public class ToolCallService {
         if (!jsonCandidate.isBlank()) {
             try {
                 Map<String, Object> parsed = objectMapper.readValue(jsonCandidate, new TypeReference<>() {});
-                String filename = normalizeGeneratedFilename(firstNonBlank(
+                String filename = normalizeGeneratedFilename(stripDriveIfOverrideActive(firstNonBlank(
                         asText(parsed.get("filename")),
                         asText(parsed.get("file_path")),
                         asText(parsed.get("path")),
                         inferFilenameFromUserTextSmart(latestUserText, extension)
-                ), extension);
+                )), extension);
                 String title = firstNonBlank(asText(parsed.get("title")), inferTitleFromFilename(filename));
                 String content = firstNonBlank(asText(parsed.get("content")), asText(parsed.get("body")));
                 String replyMessage = extractStructuredReplyMessage(parsed);
@@ -527,15 +547,26 @@ public class ToolCallService {
                 + "Do not include Mermaid charts, relationship diagrams, flowcharts, or generated chart images in Word/docx content. "
                 + "Put one blank line before and after each heading, list, table, and paragraph. "
                 + "Never concatenate headings, list items, tables, images, or paragraphs on the same line."
-                : "content must be the full body of the file as valid Markdown. "
-                + "Use '# Title', '## Section', normal paragraphs, '- ' bullet lists, '1. ' numbered lists and simple Markdown tables. "
-                + "Put one blank line before and after each heading, list, table, and paragraph. "
-                + "Never concatenate headings, list items, tables, or paragraphs on the same line.";
+                : ".txt".equalsIgnoreCase(extension)
+                        ? "content must be plain text without any Markdown formatting. "
+                        + "Do not use '#' for headings, '*' or '_' for bold/italic, '-' for bullet lists, or any other Markdown syntax. "
+                        + "Use plain text with line breaks and spacing for structure."
+                        : "content must be the full body of the file as valid Markdown. "
+                        + "Use '# Title', '## Section', normal paragraphs, '- ' bullet lists, '1. ' numbered lists and simple Markdown tables. "
+                        + "Put one blank line before and after each heading, list, table, and paragraph. "
+                        + "Never concatenate headings, list items, tables, or paragraphs on the same line.";
         String imageRules = docx && hasImages
                 ? " Uploaded image paths available for embedding: " + String.join(", ", uploadedImagePaths) + ". "
                 + "When the user asks for a Word/docx document, include each relevant uploaded image in content using Markdown image syntax like ![caption](workspace-relative-path). "
                 + "Use the exact paths listed above. Do not use data URLs for document images."
                 : "";
+        String overrideDir = com.relic.tool.ToolExecutor.currentWorkingDirectory();
+        boolean overrideActive = overrideDir != null && !overrideDir.isBlank();
+        String filenameRule = overrideActive
+                ? "filename must be a short bare file name (no directory, no drive letter) ending with " + extension
+                + ". The system will automatically place the file under the user's selected working directory ("
+                + overrideDir + "). Do not include any absolute path or drive prefix even if the user's message mentions one."
+                : "filename must be a short workspace-relative file name ending with " + extension + ".";
         promptMessages.add(Map.of(
                 "role", "system",
                 "content", "You are generating exactly one downloadable file for the user. "
@@ -545,7 +576,7 @@ public class ToolCallService {
                         + "reply.message must be one short sentence confirming that the file was generated. "
                         + "Do not summarize content in reply.message. "
                         + "Do not wrap JSON in markdown fences. "
-                        + "filename must be a short workspace-relative file name ending with " + extension + ". "
+                        + filenameRule + " "
                         + contentRules + " "
                         + imageRules + " "
                         + "If the user did not specify a filename, choose a concise descriptive one."
@@ -663,12 +694,12 @@ public class ToolCallService {
         if (!jsonCandidate.isBlank()) {
             try {
                 Map<String, Object> parsed = objectMapper.readValue(jsonCandidate, new TypeReference<>() {});
-                String filename = normalizeGeneratedFilename(firstNonBlank(
+                String filename = normalizeGeneratedFilename(stripDriveIfOverrideActive(firstNonBlank(
                         asText(parsed.get("filename")),
                         asText(parsed.get("file_path")),
                         asText(parsed.get("path")),
                         inferFilenameFromUserTextSmart(latestUserText, extension)
-                ), extension);
+                )), extension);
                 String title = firstNonBlank(
                         asText(parsed.get("title")),
                         inferTitleFromFilename(filename)
@@ -854,10 +885,84 @@ public class ToolCallService {
                 .trim();
     }
 
+    /**
+     * 当用户已在 UI 选择工作目录时，剥离绝对路径前缀，仅保留 basename，
+     * 让最终的 resolveAndValidateWritePath 能落到工作目录中。
+     */
+    private String stripDriveIfOverrideActive(String filename) {
+        if (filename == null || filename.isBlank()) {
+            return filename;
+        }
+        if (!com.relic.tool.ToolExecutor.hasWorkingDirectoryOverride()) {
+            return filename;
+        }
+        String normalized = filename.replace('\\', '/');
+        // 形如 E:/foo/bar.txt 或 /abs/path/bar.txt 都视为绝对路径
+        boolean drive = normalized.length() >= 2
+                && Character.isLetter(normalized.charAt(0))
+                && normalized.charAt(1) == ':';
+        boolean unixAbs = normalized.startsWith("/");
+        if (!drive && !unixAbs) {
+            return filename;
+        }
+        int slash = normalized.lastIndexOf('/');
+        return slash >= 0 ? normalized.substring(slash + 1) : normalized;
+    }
+
     private String inferFilenameFromUserTextSmart(String latestUserText, String extension) {
-        String fallback = ".docx".equalsIgnoreCase(extension) ? "document.docx" : "document.md";
+        String fallback = ".docx".equalsIgnoreCase(extension) ? "document.docx"
+                : ".txt".equalsIgnoreCase(extension) ? "document.txt" : "document.md";
         if (latestUserText == null || latestUserText.isBlank()) {
             return fallback;
+        }
+
+        boolean overrideActive = com.relic.tool.ToolExecutor.hasWorkingDirectoryOverride();
+
+        // 1. 完整绝对路径（如 E:/folder/report.docx）
+        Matcher absMatcher = ABSOLUTE_PATH_PATTERN.matcher(latestUserText);
+        if (absMatcher.find()) {
+            String absolutePath = absMatcher.group(1).replace('\\', '/');
+            // 用户已选择工作目录时，UI 选择优先：剥离绝对路径前缀，仅保留 basename
+            if (overrideActive) {
+                int slash = absolutePath.lastIndexOf('/');
+                String basename = slash >= 0 ? absolutePath.substring(slash + 1) : absolutePath;
+                return normalizeGeneratedFilename(basename, extension);
+            }
+            return absolutePath;
+        }
+
+        // 2. 用户分别提到目录前缀和文件名（如 "在 E:/ 下创建 test.txt"），合并两者
+        Matcher driveMatcher = DRIVE_DIR_PATTERN.matcher(latestUserText);
+        if (driveMatcher.find()) {
+            Matcher asciiFile = ASCII_FILENAME_PATTERN.matcher(latestUserText);
+            // 用户已选择工作目录时，忽略消息里的盘符前缀，使用工作目录解析
+            if (overrideActive) {
+                if (asciiFile.find()) {
+                    String fileOnly = asciiFile.group(1).replace('\\', '/');
+                    while (fileOnly.startsWith("/")) {
+                        fileOnly = fileOnly.substring(1);
+                    }
+                    return normalizeGeneratedFilename(fileOnly, extension);
+                }
+            } else {
+                String driveDir = driveMatcher.group(1).replace('\\', '/');
+                if (!driveDir.endsWith("/")) {
+                    driveDir = driveDir + "/";
+                }
+                if (asciiFile.find()) {
+                    String fileOnly = asciiFile.group(1).replace('\\', '/');
+                    while (fileOnly.startsWith("/")) {
+                        fileOnly = fileOnly.substring(1);
+                    }
+                    return driveDir + fileOnly;
+                }
+                String lowered = latestUserText.toLowerCase(Locale.ROOT);
+                String slug = buildTopicSlug(lowered);
+                if (!slug.isBlank()) {
+                    return driveDir + normalizeGeneratedFilename(slug + extension, extension);
+                }
+                return driveDir + normalizeGeneratedFilename(fallback, extension);
+            }
         }
 
         Matcher matcher = FILENAME_PATTERN.matcher(latestUserText);
@@ -2049,7 +2154,8 @@ public class ToolCallService {
                 || mentionsMarkdownFile(lowered)
                 || mentionsDocxFile(lowered)
                 || containsDocumentVerbAndObject(lowered)
-                || containsFileVerbAndObject(lowered);
+                || containsFileVerbAndObject(lowered)
+                || mentionsAbsoluteFilePath(text);
     }
 
     private boolean looksLikeDocxOutputIntent(String text) {
@@ -2069,6 +2175,12 @@ public class ToolCallService {
         String lowered = text.toLowerCase(Locale.ROOT);
         return containsAny(lowered, TEXT_FILE_OUTPUT_KEYWORDS)
                 || mentionsMarkdownFile(lowered);
+    }
+
+    private String inferTextFileExtension(String text) {
+        if (text == null || text.isBlank()) return ".md";
+        String lowered = text.toLowerCase(Locale.ROOT);
+        return containsAny(lowered, TXT_EXTENSION_KEYWORDS) ? ".txt" : ".md";
     }
 
     private boolean looksLikeNoFileOutputIntent(String text) {
@@ -2169,8 +2281,26 @@ public class ToolCallService {
                 "generate", "create", "write", "export", "save");
         List<String> fileObjects = List.of(
                 "文件", "文档", "报告", "markdown", "md", "docx", "word",
-                "file", "document", "report");
-        return containsAny(text, fileVerbs) && containsAny(text, fileObjects);
+                "file", "document", "report",
+                ".txt", ".csv", ".json", ".xml", ".html", ".log", ".py", ".js", ".ts", ".java",
+                "txt文件", "csv文件", "json文件");
+        if (containsAny(text, fileVerbs) && containsAny(text, fileObjects)) {
+            return true;
+        }
+        // 动词 + 任意带扩展名的文件名（如 "创建 test.txt"）
+        return containsAny(text, fileVerbs) && FILENAME_PATTERN.matcher(text).find();
+    }
+
+    private boolean mentionsAbsoluteFilePath(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        // Windows 绝对路径，如 E:/test.txt 或 E:\folder\file.txt
+        if (ABSOLUTE_PATH_PATTERN.matcher(text).find()) {
+            return true;
+        }
+        // Unix 绝对路径且包含文件扩展名，如 /home/user/test.txt
+        return text.matches(".*\\/[^\\s/]+\\.[a-zA-Z0-9]{1,10}.*");
     }
 
     private boolean containsDocumentVerbAndObject(String text) {

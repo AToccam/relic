@@ -7,6 +7,7 @@ import com.relic.rag.model.Citation;
 import com.relic.service.AiRouterService;
 import com.relic.service.ChatHistoryService;
 import com.relic.service.SkillCommandService;
+import com.relic.tool.ToolExecutor;
 import com.relic.util.MessageHelper;
 import com.relic.util.OpenAiResponseBuilder;
 import lombok.extern.slf4j.Slf4j;
@@ -184,6 +185,7 @@ public class WebhookController {
         List<Map<String, Object>> messages = MessageHelper.cleanRawMessages(rawMessages);
         ChatCompletionRequest.RagConfig ragConfig = request == null ? null : request.getRagConfig();
         Boolean toolsEnabled = request == null ? null : request.getToolsEnabled();
+        String workingDirectory = request == null ? null : request.getWorkingDirectory();
 
         if (messages.isEmpty()) {
             messages.add(MessageHelper.buildUserMessage(""));
@@ -220,7 +222,10 @@ public class WebhookController {
 
         Thread streamThread = Thread.startVirtualThread(() -> {
             try {
-                log.info("【流式连接 AI 中...】模式: {}", aiRouter.getMode());
+                ToolExecutor.setWorkingDirectoryContext(workingDirectory);
+                log.info("【流式连接 AI 中...】模式: {}, 工作目录: {}",
+                        aiRouter.getMode(),
+                        workingDirectory == null || workingDirectory.isBlank() ? "(默认workspace)" : workingDirectory);
                 aiRouter.streamAuto(finalMessages, ragConfig, toolsEnabled, content -> {
                     if (!emitterActive.get()) {
                         throw new UncheckedIOException(new IOException("SSE 连接已关闭，终止流式输出"));
@@ -270,6 +275,8 @@ public class WebhookController {
                 } catch (Exception ex) {
                     log.warn("【发送错误消息也失败】SSE 可能已关闭: {}", ex.getMessage());
                 }
+            } finally {
+                ToolExecutor.clearWorkingDirectoryContext();
             }
         });
 

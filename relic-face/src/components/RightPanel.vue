@@ -83,13 +83,13 @@ const filteredFiles = computed(() => {
 })
 
 async function removeGeneratedFile(id: string) {
-  const ok = window.confirm('确认删除这个 AI 生成文件吗？')
+  const ok = window.confirm('是否确认从列表中移除该文件？')
   if (!ok) return
 
   try {
     await studio.removeFile(id)
   } catch (error) {
-    const message = error instanceof Error ? error.message : '删除失败'
+    const message = error instanceof Error ? error.message : '移除失败'
     window.alert(message)
   }
 }

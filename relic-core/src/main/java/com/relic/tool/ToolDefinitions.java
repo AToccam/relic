@@ -13,13 +13,13 @@ public final class ToolDefinitions {
     public static List<Map<String, Object>> getAll() {
         return List.of(
                 buildTool("create_text_file",
-                        "Create or overwrite a text file in the user's workspace.",
+                        "Create or overwrite a text file. Supports workspace-relative paths and absolute paths anywhere on disk.",
                         Map.of(
                                 "type", "object",
                                 "properties", Map.of(
                                         "filename", Map.of(
                                                 "type", "string",
-                                                "description", "Workspace-relative file path, for example docs/notes.md"
+                                                "description", "Absolute path (e.g. C:/Users/user/docs/notes.md) or workspace-relative path (e.g. docs/notes.md or report.txt). Use the exact extension requested by the user."
                                         ),
                                         "content", Map.of(
                                                 "type", "string",
@@ -29,13 +29,13 @@ public final class ToolDefinitions {
                                 "required", List.of("filename", "content")
                         )),
                 buildTool("create_docx_file",
-                        "Create or overwrite a Microsoft Word .docx document in the user's workspace and return a download link. Use this when the user asks for Word, docx, Word document, 文档, Word文档, 报告, 可下载文档, or a document/report without explicitly asking for Markdown or plain text.",
+                        "Create or overwrite a Microsoft Word .docx document and return a download link. Supports workspace-relative paths and absolute paths anywhere on disk. Use this when the user asks for Word, docx, Word document, 文档, Word文档, 报告, 可下载文档, or a document/report without explicitly asking for Markdown or plain text.",
                         Map.of(
                                 "type", "object",
                                 "properties", Map.of(
                                         "filename", Map.of(
                                                 "type", "string",
-                                                "description", "Workspace-relative .docx path, for example reports/summary.docx. Add .docx if omitted."
+                                                "description", "Absolute path (e.g. C:/Users/user/reports/summary.docx) or workspace-relative .docx path (e.g. reports/summary.docx). Add .docx if omitted."
                                         ),
                                         "title", Map.of(
                                                 "type", "string",
@@ -49,25 +49,25 @@ public final class ToolDefinitions {
                                 "required", List.of("filename", "content")
                         )),
                 buildTool("read_file",
-                        "Read a file from the workspace. Supports text, PDF, DOC and DOCX.",
+                        "Read a file from anywhere on disk. Supports text, PDF, DOC and DOCX. Accepts absolute paths (e.g. C:/Users/user/doc.pdf) or workspace-relative paths.",
                         Map.of(
                                 "type", "object",
                                 "properties", Map.of(
                                         "filename", Map.of(
                                                 "type", "string",
-                                                "description", "File path to read"
+                                                "description", "Absolute file path (e.g. C:/Users/user/doc.pdf or /home/user/doc.pdf) or workspace-relative path"
                                         )
                                 ),
                                 "required", List.of("filename")
                         )),
                 buildTool("list_files",
-                        "List files and directories in the workspace.",
+                        "List files and directories. Accepts an absolute path to browse anywhere on disk, or a relative path/empty string for the workspace.",
                         Map.of(
                                 "type", "object",
                                 "properties", Map.of(
                                         "path", Map.of(
                                                 "type", "string",
-                                                "description", "Optional subdirectory path. Empty means workspace root."
+                                                "description", "Absolute directory path (e.g. C:/Users/user/Documents) or workspace-relative subdirectory. Empty means workspace root."
                                         )
                                 ),
                                 "required", List.of()

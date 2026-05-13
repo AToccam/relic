@@ -2,10 +2,35 @@
 import { ref, watch, onUnmounted } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useSourcesStore } from '@/stores/sources'
+import { useWorkspaceStore } from '@/stores/workspace'
 
 const chat = useChatStore()
 const sources = useSourcesStore()
+const workspace = useWorkspaceStore()
 const input = ref('')
+const showWorkingDirEditor = ref(false)
+const workingDirDraft = ref('')
+
+function openWorkingDirEditor() {
+  workingDirDraft.value = workspace.workingDirectory
+  showWorkingDirEditor.value = true
+}
+
+function applyWorkingDir() {
+  workspace.setWorkingDirectory(workingDirDraft.value)
+  showWorkingDirEditor.value = false
+}
+
+function clearWorkingDir() {
+  workspace.clearWorkingDirectory()
+  workingDirDraft.value = ''
+  showWorkingDirEditor.value = false
+}
+
+function cancelWorkingDirEdit() {
+  workingDirDraft.value = workspace.workingDirectory
+  showWorkingDirEditor.value = false
+}
 
 let driftTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -98,6 +123,46 @@ function isImage(mimeType: string) {
       @keydown="handleKeydown"
       rows="3"
     />
+    <div class="working-dir-row">
+      <button
+        v-if="!showWorkingDirEditor"
+        type="button"
+        class="working-dir-btn"
+        :class="{ 'has-value': workspace.hasWorkingDirectory }"
+        @click="openWorkingDirEditor"
+        :title="workspace.hasWorkingDirectory ? workspace.workingDirectory : '设置 AI 操作目录'"
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+        </svg>
+        <span class="working-dir-text">
+          {{ workspace.hasWorkingDirectory ? workspace.workingDirectory : '选择工作目录' }}
+        </span>
+        <button
+          v-if="workspace.hasWorkingDirectory"
+          type="button"
+          class="working-dir-clear"
+          @click.stop="clearWorkingDir"
+          title="恢复默认 workspace"
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </button>
+      <div v-else class="working-dir-editor">
+        <input
+          v-model="workingDirDraft"
+          type="text"
+          class="working-dir-input"
+          placeholder="例如 E:/projects/output 或 C:\\Users\\me\\Desktop"
+          @keydown.enter.prevent="applyWorkingDir"
+          @keydown.esc.prevent="cancelWorkingDirEdit"
+        />
+        <button type="button" class="working-dir-confirm" @click="applyWorkingDir">确定</button>
+        <button type="button" class="working-dir-cancel" @click="cancelWorkingDirEdit">取消</button>
+      </div>
+    </div>
     <div class="input-actions">
       <button
         v-if="!chat.isConversationStreaming(chat.currentConversationId)"
@@ -282,6 +347,127 @@ function isImage(mimeType: string) {
 textarea,
 .input-actions {
   align-self: stretch;
+}
+
+.working-dir-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.working-dir-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 8px;
+  background: #f1f5f9;
+  border: 1px dashed #cbd5e0;
+  border-radius: 999px;
+  color: #64748b;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  max-width: 100%;
+  transition: all 0.15s;
+}
+
+.working-dir-btn:hover {
+  border-color: #6366f1;
+  color: #4338ca;
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.working-dir-btn.has-value {
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.32);
+  color: #4338ca;
+}
+
+.working-dir-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 360px;
+}
+
+.working-dir-clear {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  margin-left: 2px;
+}
+
+.working-dir-clear:hover {
+  background: rgba(239, 68, 68, 0.14);
+  color: #ef4444;
+}
+
+.working-dir-editor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.working-dir-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e0;
+  background: #ffffff;
+  color: #1a202c;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.working-dir-input:focus {
+  border-color: #6366f1;
+}
+
+.working-dir-confirm,
+.working-dir-cancel {
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: inherit;
+  border: 1px solid;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.working-dir-confirm {
+  background: #6366f1;
+  border-color: #6366f1;
+  color: #fff;
+}
+
+.working-dir-confirm:hover {
+  background: #4f46e5;
+}
+
+.working-dir-cancel {
+  background: transparent;
+  border-color: #cbd5e0;
+  color: #64748b;
+}
+
+.working-dir-cancel:hover {
+  background: #f1f5f9;
 }
 
 .input-actions {

@@ -10,9 +10,15 @@ public interface SemanticRouter {
 
     RouteDecision decide(List<Map<String, Object>> messages);
 
+    RouteDecision decide(List<Map<String, Object>> messages, Mode mode);
+
     enum RoutePath {
         FAST,
         TOOL_FIRST
+    }
+
+    enum Mode {
+        SINGLE, MULTI
     }
 
     record RouteDecision(RoutePath path, String reason) {}

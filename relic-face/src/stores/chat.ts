@@ -10,12 +10,14 @@ import {
 import { detectTopicDrift } from '@/api/mode'
 import { useSourcesStore } from '@/stores/sources'
 import { useStudioStore } from '@/stores/studio'
+import { useWorkspaceStore } from '@/stores/workspace'
 import type { Message, MessageContent, MessagePart } from '@/types'
 import type { ConversationSummary, PersistedMessage } from '@/api/chat'
 
 export const useChatStore = defineStore('chat', () => {
   const sources = useSourcesStore()
   const studio = useStudioStore()
+  const workspace = useWorkspaceStore()
   const messages = ref<Message[]>([])
   const conversations = ref<ConversationSummary[]>([])
   const currentConversationId = ref('')
@@ -129,7 +131,8 @@ export const useChatStore = defineStore('chat', () => {
           }
         },
         targetConversationId,
-        abortController.signal
+        abortController.signal,
+        workspace.workingDirectory
       )
 
       await refreshConversations()

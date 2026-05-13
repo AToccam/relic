@@ -88,6 +88,30 @@ public class ToolExecutor {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    // 请求级别的工作目录上下文：相对路径写入时优先以此为基础。
+    private static final ThreadLocal<String> WORKING_DIRECTORY_CONTEXT = new ThreadLocal<>();
+
+    public static void setWorkingDirectoryContext(String workingDirectory) {
+        if (workingDirectory == null || workingDirectory.isBlank()) {
+            WORKING_DIRECTORY_CONTEXT.remove();
+        } else {
+            WORKING_DIRECTORY_CONTEXT.set(workingDirectory.trim());
+        }
+    }
+
+    public static void clearWorkingDirectoryContext() {
+        WORKING_DIRECTORY_CONTEXT.remove();
+    }
+
+    public static String currentWorkingDirectory() {
+        return WORKING_DIRECTORY_CONTEXT.get();
+    }
+
+    public static boolean hasWorkingDirectoryOverride() {
+        String value = WORKING_DIRECTORY_CONTEXT.get();
+        return value != null && !value.isBlank();
+    }
+
     @Value("${relic.workspace.path:#{systemProperties['user.home'] + '/.openclaw/workspace'}}")
     private String workspacePath;
 
@@ -159,13 +183,12 @@ public class ToolExecutor {
             boolean exists = Files.exists(filePath);
             Files.writeString(filePath, content == null ? "" : content, StandardCharsets.UTF_8);
 
-            Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
-            String relativePath = workspace.relativize(filePath).toString().replace('\\', '/');
-            generatedFileRegistryService.registerGeneratedFile(relativePath);
+            String registryKey = backupToWorkspaceIfOutside(filePath);
+            generatedFileRegistryService.registerGeneratedFile(registryKey);
 
             log.info("[create text file] {} ({})", filePath, exists ? "overwritten" : "created");
-            return (exists ? "File overwritten: " : "File created: ") + filename
-                    + "\nDOWNLOAD_URL: " + buildDownloadUrl(relativePath);
+            return (exists ? "File overwritten: " : "File created: ") + filePath.toAbsolutePath()
+                    + "\nDOWNLOAD_URL: " + buildDownloadUrl(registryKey);
         } catch (SecurityException e) {
             return "Security error: " + e.getMessage();
         } catch (IOException e) {
@@ -200,13 +223,12 @@ public class ToolExecutor {
                 document.write(outputStream);
             }
 
-            Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
-            String relativePath = workspace.relativize(filePath).toString().replace('\\', '/');
-            generatedFileRegistryService.registerGeneratedFile(relativePath);
+            String registryKey = backupToWorkspaceIfOutside(filePath);
+            generatedFileRegistryService.registerGeneratedFile(registryKey);
 
             log.info("[create docx file] {} ({})", filePath, exists ? "overwritten" : "created");
-            return (exists ? "Word document overwritten: " : "Word document created: ") + safeFilename
-                    + "\nDOWNLOAD_URL: " + buildDownloadUrl(relativePath);
+            return (exists ? "Word document overwritten: " : "Word document created: ") + filePath.toAbsolutePath()
+                    + "\nDOWNLOAD_URL: " + buildDownloadUrl(registryKey);
         } catch (SecurityException e) {
             return "Security error: " + e.getMessage();
         } catch (Exception e) {
@@ -1386,7 +1408,14 @@ public class ToolExecutor {
             if (subPath == null || subPath.isEmpty()) {
                 dirPath = Path.of(workspacePath).toAbsolutePath().normalize();
             } else {
-                dirPath = resolveAndValidateWritePath(subPath);
+                Path candidate;
+                try {
+                    candidate = Path.of(subPath);
+                } catch (InvalidPathException e) {
+                    return "Invalid path: " + subPath;
+                }
+                Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
+                dirPath = candidate.isAbsolute() ? candidate.normalize() : workspace.resolve(subPath).normalize();
             }
 
             if (!Files.exists(dirPath)) {
@@ -1411,14 +1440,68 @@ public class ToolExecutor {
     }
 
     private Path resolveAndValidateWritePath(String filename) {
-        Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
-        Path resolved = workspace.resolve(filename).normalize();
-
-        if (!resolved.startsWith(workspace)) {
-            throw new SecurityException("Path is outside workspace: " + filename);
+        if (filename == null || filename.isBlank()) {
+            throw new SecurityException("File path must not be empty");
+        }
+        Path candidate;
+        try {
+            candidate = Path.of(filename);
+        } catch (InvalidPathException e) {
+            throw new SecurityException("Invalid path: " + filename);
         }
 
+        String overrideDir = currentWorkingDirectory();
+        boolean overrideActive = overrideDir != null && !overrideDir.isBlank();
+
+        // 当用户已选工作目录时：所有写入一律落在工作目录内，绝对路径只保留 basename。
+        if (overrideActive) {
+            try {
+                Path base = Path.of(overrideDir).toAbsolutePath().normalize();
+                String effectiveName = candidate.isAbsolute()
+                        ? candidate.getFileName().toString()
+                        : filename;
+                Path resolved = base.resolve(effectiveName).normalize();
+                log.info("[ToolExecutor] write path resolved via workingDirectory: input='{}', base='{}', result='{}'",
+                        filename, base, resolved);
+                return resolved;
+            } catch (InvalidPathException e) {
+                log.warn("[ToolExecutor] invalid workingDirectory '{}', falling back to workspace: {}", overrideDir, e.getMessage());
+            }
+        }
+
+        if (candidate.isAbsolute()) {
+            Path normalized = candidate.normalize();
+            log.info("[ToolExecutor] write path is absolute (no override): '{}'", normalized);
+            return normalized;
+        }
+        Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
+        Path resolved = workspace.resolve(filename).normalize();
+        log.info("[ToolExecutor] write path resolved via workspace: input='{}', result='{}'", filename, resolved);
         return resolved;
+    }
+
+    /**
+     * 将文件备份到默认 workspace，并返回 workspace 相对路径（用于注册表/下载链接）。
+     * 若文件已经位于 workspace 内，则返回其原始相对路径，无需复制。
+     */
+    private String backupToWorkspaceIfOutside(Path filePath) {
+        try {
+            Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
+            if (filePath.startsWith(workspace)) {
+                return workspace.relativize(filePath).toString().replace('\\', '/');
+            }
+            Path backupDir = workspace.resolve("generated").normalize();
+            if (!backupDir.startsWith(workspace)) {
+                return filePath.toString().replace('\\', '/');
+            }
+            Files.createDirectories(backupDir);
+            Path backupPath = backupDir.resolve(filePath.getFileName().toString());
+            Files.copy(filePath, backupPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            return workspace.relativize(backupPath).toString().replace('\\', '/');
+        } catch (Exception e) {
+            log.warn("[ToolExecutor] backup to workspace failed for {}: {}", filePath, e.getMessage());
+            return filePath.toString().replace('\\', '/');
+        }
     }
 
     private Path resolveReadPath(String filename) {

@@ -49,6 +49,11 @@ public class DefaultSemanticRouter implements SemanticRouter {
 
     @Override
     public RouteDecision decide(List<Map<String, Object>> messages) {
+        return decide(messages, Mode.SINGLE);
+    }
+
+    @Override
+    public RouteDecision decide(List<Map<String, Object>> messages, Mode mode) {
         String userMessage = extractLatestUserMessage(messages).trim();
         if (userMessage.isEmpty()) {
             return new RouteDecision(RoutePath.FAST, "empty-user-message");
@@ -73,8 +78,13 @@ public class DefaultSemanticRouter implements SemanticRouter {
                     return new RouteDecision(localPath, "local-classifier");
                 }
             } catch (Exception e) {
-                log.warn("Local classifier timed out or failed, falling back to rule routing: {}, budgetMs={}",
-                        e.getClass().getSimpleName(), localClassifierBudgetMs);
+                log.warn("Local classifier timed out or failed, falling back to rule routing: {}, budgetMs={}, mode={}",
+                        e.getClass().getSimpleName(), localClassifierBudgetMs, mode);
+
+                if (mode == Mode.MULTI) {
+                    log.info("MULTI 模式下 Ollama 分类失败，升级路由为 TOOL_FIRST 以保持多 AI 协同");
+                    return new RouteDecision(RoutePath.TOOL_FIRST, "local-classifier-failed-multi-mode-fallback");
+                }
             }
         }
 

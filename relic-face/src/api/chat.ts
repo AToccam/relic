@@ -21,12 +21,17 @@ export async function streamChat(
   messages: Array<{ role: string; content: MessageContent }>,
   onChunk: (text: string) => void,
   conversationId?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  workingDirectory?: string
 ): Promise<void> {
+  const body: Record<string, unknown> = { messages, stream: true, conversationId }
+  if (workingDirectory && workingDirectory.trim()) {
+    body.workingDirectory = workingDirectory.trim()
+  }
   const response = await fetch(`${BASE}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, stream: true, conversationId }),
+    body: JSON.stringify(body),
     signal
   })
 
