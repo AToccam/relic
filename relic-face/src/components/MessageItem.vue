@@ -289,16 +289,22 @@ watchEffect(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   flex-shrink: 0;
-  background: #e2e8f0;
-  color: #4a5568;
+  background: #091e2e;
+  color: #22d3ee;
+  border: 1.5px solid #22d3ee;
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.2);
+  font-family: ui-monospace, 'JetBrains Mono', 'Courier New', monospace;
+  letter-spacing: 0.04em;
 }
 
 .message-item.user .avatar {
-  background: #0891b2;
-  color: #fff;
+  background: #0e4d63;
+  color: #7de8f8;
+  border-color: #38bdf8;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
 }
 
 .bubble {
