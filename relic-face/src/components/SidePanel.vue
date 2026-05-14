@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useSourcesStore } from '@/stores/sources'
 import { useChatStore } from '@/stores/chat'
+import { downloadFile } from '@/api/files'
 
 const sources = useSourcesStore()
 const chat = useChatStore()
@@ -285,6 +286,18 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
               <span v-if="file.uploadError" class="file-error">{{ file.uploadError }}</span>
               <span v-else class="file-path">{{ file.relativePath }}</span>
             </div>
+            <button
+              v-if="file.relativePath && !file.uploadError"
+              class="download-btn"
+              @click.stop="downloadFile(file.relativePath)"
+              title="下载"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            </button>
             <button class="remove-btn" @click.stop="removeFile(file.id)" title="移除">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -711,6 +724,7 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   text-align: center;
 }
 
+.download-btn,
 .remove-btn {
   width: 22px;
   height: 22px;
@@ -724,6 +738,11 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   cursor: pointer;
   flex-shrink: 0;
   transition: all 0.15s;
+}
+
+.download-btn:hover {
+  background: #dbeafe;
+  color: #2563eb;
 }
 
 .remove-btn:hover {
