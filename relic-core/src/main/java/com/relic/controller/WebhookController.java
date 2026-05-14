@@ -6,6 +6,8 @@ import com.relic.dto.OpenClawRequest;
 import com.relic.rag.model.Citation;
 import com.relic.service.AiRouterService;
 import com.relic.service.ChatHistoryService;
+import com.relic.service.SkillCommandService;
+import com.relic.tool.ToolExecutor;
 import com.relic.util.MessageHelper;
 import com.relic.util.OpenAiResponseBuilder;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +35,9 @@ public class WebhookController {
 
     @Autowired
     private ChatHistoryService chatHistoryService;
+
+    @Autowired
+    private SkillCommandService skillCommandService;
 
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -148,6 +153,7 @@ public class WebhookController {
         log.info("收到来自 OpenClaw 的前端指令: {}", userMessage);
 
         List<Map<String, Object>> messages = MessageHelper.buildSingleTurnMessages(userMessage);
+        messages = skillCommandService.rewriteForEnabledSkillCommand(messages);
         String aiReply;
         try {
             long startTime = System.currentTimeMillis();
@@ -179,12 +185,14 @@ public class WebhookController {
         List<Map<String, Object>> messages = MessageHelper.cleanRawMessages(rawMessages);
         ChatCompletionRequest.RagConfig ragConfig = request == null ? null : request.getRagConfig();
         Boolean toolsEnabled = request == null ? null : request.getToolsEnabled();
+        String workingDirectory = request == null ? null : request.getWorkingDirectory();
 
         if (messages.isEmpty()) {
             messages.add(MessageHelper.buildUserMessage(""));
         }
 
         messages = MessageHelper.applySlidingWindow(messages, MAX_HISTORY);
+        messages = MessageHelper.ensureDisplayMarkdownPrompt(messages);
         log.info("【最终发送给 AI 的记忆条数】: {}", messages.size());
         log.info("【当前最新提问】: {}", messages.get(messages.size() - 1).get("content"));
 
@@ -195,6 +203,8 @@ public class WebhookController {
                 break;
             }
         }
+
+        messages = skillCommandService.rewriteForEnabledSkillCommand(messages);
 
         final List<Map<String, Object>> finalMessages = messages;
         SseEmitter emitter = new SseEmitter(180_000L);
@@ -212,7 +222,10 @@ public class WebhookController {
 
         Thread streamThread = Thread.startVirtualThread(() -> {
             try {
-                log.info("【流式连接 AI 中...】模式: {}", aiRouter.getMode());
+                ToolExecutor.setWorkingDirectoryContext(workingDirectory);
+                log.info("【流式连接 AI 中...】模式: {}, 工作目录: {}",
+                        aiRouter.getMode(),
+                        workingDirectory == null || workingDirectory.isBlank() ? "(默认workspace)" : workingDirectory);
                 aiRouter.streamAuto(finalMessages, ragConfig, toolsEnabled, content -> {
                     if (!emitterActive.get()) {
                         throw new UncheckedIOException(new IOException("SSE 连接已关闭，终止流式输出"));
@@ -262,6 +275,8 @@ public class WebhookController {
                 } catch (Exception ex) {
                     log.warn("【发送错误消息也失败】SSE 可能已关闭: {}", ex.getMessage());
                 }
+            } finally {
+                ToolExecutor.clearWorkingDirectoryContext();
             }
         });
 

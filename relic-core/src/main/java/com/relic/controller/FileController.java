@@ -157,9 +157,10 @@ public class FileController {
         }
 
         Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
-        Path target = workspace.resolve(relativePath).normalize();
+        Path candidate = Path.of(relativePath.replace('/', java.io.File.separatorChar));
+        Path target = candidate.isAbsolute() ? candidate.normalize() : workspace.resolve(relativePath).normalize();
 
-        if (!target.startsWith(workspace)) {
+        if (!target.isAbsolute()) {
             throw new SecurityException("非法下载路径");
         }
         if (!Files.exists(target) || !Files.isRegularFile(target)) {

@@ -1,5 +1,6 @@
 package com.relic.service;
 
+import com.relic.util.MessageHelper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,14 +19,20 @@ public class DefaultSemanticRouter implements SemanticRouter {
 
     private static final Pattern TOOL_PATTERN = Pattern.compile(
             "(天气|气温|温度|查一下|帮我查|搜索|检索|最新|新闻|"
-                + "read\\s+file|list\\s+files|create\\s+file|"
-                + "读取文件|列出文件|创建文件|写入文件|"
-                + "读取|读一下|打开|查看|新建|创建|写入|保存|删除|重命名|"
-                + "文件|文档|目录|文件夹)",
+                    + "read\\s+file|list\\s+files|create\\s+file|"
+                    + "读取文件|列出文件|创建文件|写入文件|"
+                    + "读取|读一个|打开|查看|新建|创建|写入|保存|删除|重命名|"
+                    + "文件|文档|目录|文件夹)",
             Pattern.CASE_INSENSITIVE);
 
-        private static final Pattern FILE_EXT_PATTERN = Pattern.compile(
-            "\\.(txt|md|markdown|json|csv|log|yaml|yml|xml|java|py|js|ts)\\b",
+    private static final Pattern FILE_EXT_PATTERN = Pattern.compile(
+            "\\.(txt|md|markdown|json|csv|log|yaml|yml|xml|java|py|js|ts|docx)\\b",
+            Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern CHART_TOOL_PATTERN = Pattern.compile(
+            "(图表|关系图|结构图|流程图|示意图|图示|对比图|时间线|甘特图|柱状图|折线图|饼图|脑图|思维导图|"
+                    + "画图|做图|生成图|画一个图|做一个图|生成一张图|生成一份图|"
+                    + "mermaid|chart|diagram|flowchart|graph|mindmap|timeline|gantt|pie\\s+chart|bar\\s+chart|line\\s+chart)",
             Pattern.CASE_INSENSITIVE);
 
     private final Optional<LocalIntentClassifier> localClassifier;
@@ -42,6 +49,11 @@ public class DefaultSemanticRouter implements SemanticRouter {
 
     @Override
     public RouteDecision decide(List<Map<String, Object>> messages) {
+        return decide(messages, Mode.SINGLE);
+    }
+
+    @Override
+    public RouteDecision decide(List<Map<String, Object>> messages, Mode mode) {
         String userMessage = extractLatestUserMessage(messages).trim();
         if (userMessage.isEmpty()) {
             return new RouteDecision(RoutePath.FAST, "empty-user-message");
@@ -57,24 +69,22 @@ public class DefaultSemanticRouter implements SemanticRouter {
                 if (localDecision.isPresent()) {
                     RoutePath localPath = localDecision.get();
 
-                    // 护栏：规则已经判定为工具时，不允许被本地分类器降级到 FAST
                     if (localPath == RoutePath.FAST && ruleDecision.path() != RoutePath.FAST) {
-                        log.info("本地分类器命中 FAST，但规则路由为 {}，保留规则结果", ruleDecision.path());
-                        return new RouteDecision(ruleDecision.path(), "local-guardrail-preserve-rule");
-                    }
-
-                    // 护栏：只有命中明显工具意图时，才允许走 TOOL_FIRST
-                    if (localPath == RoutePath.TOOL_FIRST && !looksLikeToolIntent(userMessage)) {
-                        log.info("本地分类器命中 TOOL_FIRST，但未检测到工具关键词，回退规则路由: {}",
+                        log.info("Local classifier returned FAST, but rule routing selected {}. Preserving rule decision.",
                                 ruleDecision.path());
-                        return new RouteDecision(ruleDecision.path(), "local-guardrail");
+                        return new RouteDecision(ruleDecision.path(), "local-guardrail-preserve-rule");
                     }
 
                     return new RouteDecision(localPath, "local-classifier");
                 }
             } catch (Exception e) {
-                log.warn("本地分类器超时/异常，已回退规则路由: {}, budgetMs={}",
-                        e.getClass().getSimpleName(), localClassifierBudgetMs);
+                log.warn("Local classifier timed out or failed, falling back to rule routing: {}, budgetMs={}, mode={}",
+                        e.getClass().getSimpleName(), localClassifierBudgetMs, mode);
+
+                if (mode == Mode.MULTI) {
+                    log.info("MULTI 模式下 Ollama 分类失败，升级路由为 TOOL_FIRST 以保持多 AI 协同");
+                    return new RouteDecision(RoutePath.TOOL_FIRST, "local-classifier-failed-multi-mode-fallback");
+                }
             }
         }
 
@@ -91,6 +101,7 @@ public class DefaultSemanticRouter implements SemanticRouter {
 
     private boolean looksLikeToolIntent(String userMessage) {
         return TOOL_PATTERN.matcher(userMessage).find()
+                || CHART_TOOL_PATTERN.matcher(userMessage).find()
                 || FILE_EXT_PATTERN.matcher(userMessage).find();
     }
 
@@ -98,7 +109,8 @@ public class DefaultSemanticRouter implements SemanticRouter {
         for (int i = messages.size() - 1; i >= 0; i--) {
             if ("user".equals(messages.get(i).get("role"))) {
                 Object content = messages.get(i).get("content");
-                return content == null ? "" : content.toString();
+                String text = MessageHelper.extractTextContent(content);
+                return text == null ? "" : text;
             }
         }
         return "";

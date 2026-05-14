@@ -285,14 +285,14 @@ public class AiRouterService {
             }
 
             if (currentMode == Mode.SINGLE) {
-                decision = semanticRouter.decide(preprocessed);
+                decision = semanticRouter.decide(preprocessed, SemanticRouter.Mode.SINGLE);
                 log.info("【语义路由-SINGLE】path={}, reason={}", decision.path(), decision.reason());
 
                 streamSingle(preprocessed, onChunk);
                 return;
             }
 
-            decision = semanticRouter.decide(preprocessed);
+            decision = semanticRouter.decide(preprocessed, SemanticRouter.Mode.MULTI);
             log.info("【语义路由】path={}, reason={}", decision.path(), decision.reason());
 
             switch (decision.path()) {
@@ -353,14 +353,14 @@ public class AiRouterService {
             }
 
             if (currentMode == Mode.SINGLE) {
-                decision = semanticRouter.decide(preprocessed);
+                decision = semanticRouter.decide(preprocessed, SemanticRouter.Mode.SINGLE);
                 log.info("【语义路由-SINGLE】path={}, reason={}", decision.path(), decision.reason());
 
                 List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(preprocessed);
                 enriched = withRagContext(enriched);
                 result = toolCallService.askWithTools(getProvider(resolveToolProviderNameForMessages(preprocessed)), enriched);
             } else {
-                decision = semanticRouter.decide(preprocessed);
+                decision = semanticRouter.decide(preprocessed, SemanticRouter.Mode.MULTI);
                 log.info("【语义路由】path={}, reason={}", decision.path(), decision.reason());
                 if (decision.path() == SemanticRouter.RoutePath.TOOL_FIRST) {
                     log.info("【语义路由】TOOL_FIRST 在 MULTI 模式下走多 AI 协同");

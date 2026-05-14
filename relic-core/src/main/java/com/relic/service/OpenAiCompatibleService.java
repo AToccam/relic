@@ -209,7 +209,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
 
                 Object contentObj = delta.get("content");
                 String content = MessageHelper.extractTextContent(contentObj);
-                if (content != null && !content.isBlank()) {
+                if (content != null && !content.isEmpty()) {
                     result.getContent().append(content);
                     onChunk.accept(content);
                 }
@@ -370,35 +370,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
     }
 
     protected boolean shouldForceToolChoice(List<Map<String, Object>> messages) {
-        if (hasToolInteraction(messages)) {
-            return false;
-        }
-
-        String latestUserText = extractLatestUserText(messages).toLowerCase(Locale.ROOT);
-        if (latestUserText.isBlank()) {
-            return false;
-        }
-
-        return latestUserText.contains("调用工具")
-                || latestUserText.contains("使用工具")
-                || latestUserText.contains("读取文件")
-                || latestUserText.contains("帮我列出")
-                || latestUserText.contains("列出工作区")
-                || latestUserText.contains("创建文件")
-                || latestUserText.contains("生成文件")
-                || latestUserText.contains("图表")
-                || latestUserText.contains("画图")
-                || latestUserText.contains("关系图")
-                || latestUserText.contains("流程图")
-                || latestUserText.contains("思维导图")
-                || latestUserText.contains("mermaid")
-                || latestUserText.contains("chart")
-                || latestUserText.contains("diagram")
-                || latestUserText.contains("flowchart")
-                || latestUserText.contains("list_files")
-                || latestUserText.contains("read_file")
-                || latestUserText.contains("create_text_file")
-                || latestUserText.contains("create_mermaid_chart_file");
+        return !hasToolInteraction(messages);
     }
 
     private boolean hasToolInteraction(List<Map<String, Object>> messages) {

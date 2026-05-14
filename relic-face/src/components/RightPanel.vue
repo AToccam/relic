@@ -1,67 +1,132 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import ComingSoonModal from './ComingSoonModal.vue'
+import { computed, ref } from 'vue'
 import { useStudioStore } from '@/stores/studio'
 
-const modal = ref<string | null>(null)
 const studio = useStudioStore()
 
+const selectedFormat = ref('all')
+
+interface FormatTab {
+  key: string
+  label: string
+  extensions: string[]
+  icon: string
+}
+
+const formatTabs: FormatTab[] = [
+  { key: 'all',  label: '全部',    extensions: [],                                 icon: 'M9 12h6M12 9v6' },
+  { key: 'md',   label: 'Markdown', extensions: ['.md'],                           icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8' },
+  { key: 'pdf',  label: 'PDF',      extensions: ['.pdf'],                          icon: 'M7 21h10a2 2 0 0 0 2-2V9.414a1 1 0 0 0-.293-.707l-5.414-5.414A1 1 0 0 0 12.586 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2z' },
+  { key: 'docx', label: 'Word',     extensions: ['.docx', '.doc'],                 icon: 'M4 6h16v12H4zM8 12h8M12 8v8' },
+  { key: 'pptx', label: 'PPT',      extensions: ['.pptx', '.ppt'],                 icon: 'M2 3h20v14H2zM8 21h8M12 17v4' },
+  { key: 'xlsx', label: 'Excel',    extensions: ['.xlsx', '.xls', '.csv'],         icon: 'M3 3h18v18H3zM8 8h8M8 12h8M8 16h4' },
+  { key: 'txt',  label: 'Text',     extensions: ['.txt'],                          icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M10 13H8M16 17H8' },
+  { key: 'html', label: 'HTML',     extensions: ['.html', '.htm'],                 icon: 'M12 18l-4-4 4-4M16 6l4 4-4 4' },
+  { key: 'json', label: 'JSON',     extensions: ['.json'],                         icon: 'M16 18l6-6-6-6M8 6l-6 6 6 6' },
+  { key: 'img',  label: '图片',     extensions: ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp'], icon: 'M4 16l4.586-4.586a2 2 0 0 1 2.828 0L16 16M14 14l1.586-1.586a2 2 0 0 1 2.828 0L22 16M2 4h20v16H2z' },
+  { key: 'other',label: '其他',     extensions: [],                                 icon: 'M5 12h14M12 5v14' },
+]
+
+function getExt(filename: string): string {
+  const dot = filename.lastIndexOf('.')
+  if (dot < 0) return ''
+  return filename.substring(dot).toLowerCase()
+}
+
+const formatCounts = computed(() => {
+  const counts: Record<string, number> = {}
+  for (const tab of formatTabs) {
+    counts[tab.key] = 0
+  }
+  for (const file of studio.files) {
+    const ext = getExt(file.name)
+    let matched = false
+    for (const tab of formatTabs) {
+      if (tab.key === 'all' || tab.key === 'other') continue
+      if (tab.extensions.includes(ext)) {
+        counts[tab.key]!++
+        matched = true
+        break
+      }
+    }
+    if (!matched) {
+      counts['other']!++
+    }
+  }
+  counts['all'] = studio.files.length
+  return counts
+})
+
+const visibleTabs = computed(() => {
+  return formatTabs.filter(tab => {
+    if (tab.key === 'all') return true
+    return formatCounts.value[tab.key]! > 0
+  })
+})
+
+const filteredFiles = computed(() => {
+  if (selectedFormat.value === 'all') return studio.files
+  const tab = formatTabs.find(t => t.key === selectedFormat.value)
+  if (!tab) return studio.files
+
+  if (tab.key === 'other') {
+    return studio.files.filter(file => {
+      const ext = getExt(file.name)
+      return !formatTabs.some(t => t.key !== 'all' && t.key !== 'other' && t.extensions.includes(ext))
+    })
+  }
+
+  return studio.files.filter(file => {
+    const ext = getExt(file.name)
+    return tab.extensions.includes(ext)
+  })
+})
+
 async function removeGeneratedFile(id: string) {
-  const ok = window.confirm('确认删除这个 AI 生成文件吗？')
+  const ok = window.confirm('是否确认从列表中移除该文件？')
   if (!ok) return
 
   try {
     await studio.removeFile(id)
   } catch (error) {
-    const message = error instanceof Error ? error.message : '删除失败'
+    const message = error instanceof Error ? error.message : '移除失败'
     window.alert(message)
   }
 }
-
-const cards = [
-  { title: '音频概览', icon: 'M9 19V6l12-3v13M9 19c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm12-3c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2z' },
-  { title: '演示文稿', icon: 'M2 3h20v14H2zM8 21h8M12 17v4' },
-  { title: '思维导图', icon: 'M12 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM3 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm18 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM12 18a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM12 6v4M5 12h4m6 0h4M12 16v-4' },
-  { title: '报告', icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8' },
-  { title: '闪卡', icon: 'M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2zM12 11v2' },
-  { title: '信息图', icon: 'M18 20V10M12 20V4M6 20v-6' },
-]
 </script>
 
 <template>
   <aside class="right-panel">
     <div class="panel-header">
       <span class="panel-title">Studio</span>
-      <button class="header-icon-btn" @click="modal = '更多选项'" title="更多">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" />
-        </svg>
-      </button>
     </div>
 
     <div class="panel-body">
-      <p class="cards-hint">选择输出类型，Studio 将为你生成内容</p>
-      <div class="cards-grid">
+      <!-- Format filter tabs -->
+      <div class="format-tabs">
         <button
-          v-for="card in cards"
-          :key="card.title"
-          class="studio-card"
-          @click="modal = card.title"
+          v-for="tab in visibleTabs"
+          :key="tab.key"
+          class="format-tab"
+          :class="{ active: selectedFormat === tab.key }"
+          @click="selectedFormat = tab.key"
         >
-          <svg class="card-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-            <path :d="card.icon" />
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path :d="tab.icon" />
           </svg>
-          <span class="card-title">{{ card.title }}</span>
+          <span class="tab-label">{{ tab.label }}</span>
+          <span class="tab-count">{{ formatCounts[tab.key] }}</span>
         </button>
       </div>
 
-      <div class="generated-header">AI 生成文件 · {{ studio.files.length }}</div>
+      <!-- Generated files section -->
+      <div class="generated-header">AI 生成文件 · {{ filteredFiles.length }}</div>
 
       <div v-if="studio.loading" class="studio-loading">正在同步文件...</div>
 
-      <template v-else-if="studio.hasFiles">
+      <template v-else-if="filteredFiles.length > 0">
         <div
-          v-for="file in studio.files"
+          v-for="file in filteredFiles"
           :key="file.id"
           class="generated-item"
         >
@@ -92,12 +157,6 @@ const cards = [
       </div>
     </div>
   </aside>
-
-  <ComingSoonModal
-    v-if="modal"
-    :title="modal"
-    @close="modal = null"
-  />
 </template>
 
 <style scoped>
@@ -128,73 +187,72 @@ const cards = [
   color: #1a202c;
 }
 
-.header-icon-btn {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  border: none;
-  background: transparent;
-  color: #a0aec0;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.header-icon-btn:hover {
-  background: #e2e8f0;
-  color: #4a5568;
-}
-
 .panel-body {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 12px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   scrollbar-width: thin;
   scrollbar-color: #cbd5e0 transparent;
 }
 
-.cards-hint {
+/* Format tabs */
+.format-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.format-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #64748b;
+  cursor: pointer;
+  font-family: inherit;
   font-size: 12px;
-  color: #a0aec0;
-  line-height: 1.5;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.format-tab:hover {
+  border-color: #6366f1;
+  color: #4a5568;
+}
+
+.format-tab.active {
+  background: #6366f1;
+  border-color: #6366f1;
+  color: #ffffff;
+}
+
+.format-tab.active .tab-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+.tab-label {
+  font-weight: 500;
+}
+
+.tab-count {
+  font-size: 10px;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: #94a3b8;
+  padding: 1px 5px;
+  border-radius: 10px;
+  min-width: 16px;
   text-align: center;
 }
 
-.cards-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.studio-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 16px 8px;
-  border-radius: 10px;
-  border: 1px solid #e2e8f0;
-  background: #ffffff;
-  cursor: pointer;
-  transition: all 0.15s;
-  font-family: inherit;
-}
-
-.studio-card:hover {
-  border-color: #6366f1;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.12);
-  background: #fafafe;
-}
-
 .generated-header {
-  margin-top: 2px;
-  margin-bottom: 2px;
   font-size: 12px;
   font-weight: 600;
   color: #4a5568;
@@ -276,16 +334,6 @@ const cards = [
   color: #dc2626;
 }
 
-.card-icon {
-  color: #6366f1;
-}
-
-.card-title {
-  font-size: 12px;
-  font-weight: 500;
-  color: #4a5568;
-}
-
 .studio-empty {
   display: flex;
   flex-direction: column;
@@ -302,11 +350,5 @@ const cards = [
   font-weight: 500;
   color: #a0aec0;
   margin: 0;
-}
-
-.studio-empty span {
-  font-size: 12px;
-  color: #cbd5e0;
-  line-height: 1.5;
 }
 </style>

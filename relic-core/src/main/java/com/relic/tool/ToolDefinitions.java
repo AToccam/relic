@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 定义所有可用工具（Function Calling）供模型调用。
+ * Tool definitions exposed to AI providers that support function calling.
  */
 public final class ToolDefinitions {
 
@@ -13,65 +13,89 @@ public final class ToolDefinitions {
     public static List<Map<String, Object>> getAll() {
         return List.of(
                 buildTool("create_text_file",
-                        "在用户工作区创建或覆盖一个文本文件。",
+                        "Create or overwrite a text file. Supports workspace-relative paths and absolute paths anywhere on disk.",
                         Map.of(
                                 "type", "object",
                                 "properties", Map.of(
                                         "filename", Map.of(
                                                 "type", "string",
-                                                "description", "文件路径（可包含子目录），例如 docs/notes.md"
+                                                "description", "Absolute path (e.g. C:/Users/user/docs/notes.md) or workspace-relative path (e.g. docs/notes.md or report.txt). Use the exact extension requested by the user."
                                         ),
                                         "content", Map.of(
                                                 "type", "string",
-                                                "description", "写入文件的文本内容"
+                                                "description", "Text content to write into the file"
+                                        )
+                                ),
+                                "required", List.of("filename", "content")
+                        )),
+                buildTool("create_docx_file",
+                        "Create or overwrite a Microsoft Word .docx document and return a download link. Supports workspace-relative paths and absolute paths anywhere on disk. Use this when the user asks for Word, docx, Word document, 文档, Word文档, 报告, 可下载文档, or a document/report without explicitly asking for Markdown or plain text.",
+                        Map.of(
+                                "type", "object",
+                                "properties", Map.of(
+                                        "filename", Map.of(
+                                                "type", "string",
+                                                "description", "Absolute path (e.g. C:/Users/user/reports/summary.docx) or workspace-relative .docx path (e.g. reports/summary.docx). Add .docx if omitted."
+                                        ),
+                                        "title", Map.of(
+                                                "type", "string",
+                                                "description", "Document title"
+                                        ),
+                                        "content", Map.of(
+                                                "type", "string",
+                                                "description", "Document body in Markdown-like text. Supports headings (#, ##, ###), paragraphs, bullet/numbered lists, simple Markdown tables, and Markdown image syntax for uploaded images. Do not include Mermaid charts or generated chart images in Word files."
                                         )
                                 ),
                                 "required", List.of("filename", "content")
                         )),
                 buildTool("read_file",
-                        "读取工作区中指定文件内容（支持文本/PDF/DOC/DOCX）。",
+                        "Read a file from anywhere on disk. Supports text, PDF, DOC and DOCX. Accepts absolute paths (e.g. C:/Users/user/doc.pdf) or workspace-relative paths.",
                         Map.of(
                                 "type", "object",
                                 "properties", Map.of(
                                         "filename", Map.of(
                                                 "type", "string",
-                                                "description", "要读取的文件路径"
+                                                "description", "Absolute file path (e.g. C:/Users/user/doc.pdf or /home/user/doc.pdf) or workspace-relative path"
                                         )
                                 ),
                                 "required", List.of("filename")
                         )),
                 buildTool("list_files",
-                        "列出工作区中的文件和目录。",
+                        "List files and directories. Accepts an absolute path to browse anywhere on disk, or a relative path/empty string for the workspace.",
                         Map.of(
                                 "type", "object",
                                 "properties", Map.of(
                                         "path", Map.of(
                                                 "type", "string",
-                                                "description", "子目录路径，留空表示根目录"
+                                                "description", "Absolute directory path (e.g. C:/Users/user/Documents) or workspace-relative subdirectory. Empty means workspace root."
                                         )
                                 ),
                                 "required", List.of()
                         )),
-                buildTool("create_mermaid_chart_file",
-                        "创建 Mermaid 图表 Markdown 文件（支持 pie/bar/line/flowchart）。信息不完整时也要直接生成默认图，不要反问用户。",
+                buildTool("render_mermaid_chart",
+                        "Render an inline Mermaid chart directly in chat without creating or saving any file. Use this for normal chart, diagram, flowchart, mind map, timeline, class diagram, sequence diagram, relationship diagram and visualization requests. Prefer concise summary diagrams by default: for relationship/comparison charts use one clear center topic, no more than 5 top-level dimensions, no more than 18 nodes and 24 edges, and short labels. Do not make encyclopedia-style sprawling graphs unless the user explicitly asks for a detailed chart. Generate one chart by default; if the user explicitly asks for multiple/separate charts, call this once per chart, up to 3 charts.",
                         Map.of(
                                 "type", "object",
                                 "properties", Map.of(
-                                        "filename", Map.of(
-                                                "type", "string",
-                                                "description", "目标 Markdown 路径，例如 docs/sales-q1.md"
-                                        ),
                                         "chartType", Map.of(
                                                 "type", "string",
-                                                "description", "图表类型：pie/bar/line/flowchart（可省略）"
+                                                "description", "Optional chart type hint, such as pie, bar, line, flowchart, mindmap, timeline, sequenceDiagram, classDiagram or erDiagram"
                                         ),
                                         "title", Map.of(
                                                 "type", "string",
-                                                "description", "图表标题（可省略）"
+                                                "description", "Chart title"
+                                        ),
+                                        "content", Map.of(
+                                                "type", "string",
+                                                "description", "Complete Mermaid source or Markdown containing a mermaid code block. Prefer this for all non-trivial diagrams. For comparison/relationship charts, summarize the core point instead of listing every detail: use one center topic, up to 5 top-level dimensions, up to 18 nodes, up to 24 edges, and concise labels. Every visible node must have a meaningful user-facing label. Do not expose raw internal IDs such as P1, D1 or E1 as node text."
+                                        ),
+                                        "mermaidSource", Map.of(
+                                                "type", "string",
+                                                "description", "Alias of content. Use raw Mermaid syntax such as flowchart LR, graph TD, mindmap, timeline, sequenceDiagram, classDiagram, erDiagram, etc."
                                         ),
                                         "data", Map.of(
                                                 "type", "array",
-                                                "description", "数值图表数据，每项为 {label, value}；关系图可省略",
+                                                "description", "Optional numeric chart data for simple pie/bar/line charts. Each item is {label, value}.",
                                                 "items", Map.of(
                                                         "type", "object",
                                                         "properties", Map.of(
@@ -82,7 +106,7 @@ public final class ToolDefinitions {
                                                 )
                                         )
                                 ),
-                                "required", List.of("filename")
+                                "required", List.of()
                         ))
         );
     }
