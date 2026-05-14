@@ -41,6 +41,10 @@ async function onDrop(e: DragEvent) {
   }
 }
 
+async function indexFile(id: string) {
+  await sources.indexFile(id)
+}
+
 async function removeFile(id: string) {
   const ok = window.confirm('确认删除这个文件吗？将同时删除上传目录中的文件。')
   if (!ok) return
@@ -137,6 +141,13 @@ function resolveHistoryTitle(item: { title?: string; lastPreview?: string }): st
   }
   const preview = (item.lastPreview || '').trim()
   return preview || '新对话'
+}
+
+function ragStatusLabel(status: string, chunkCount?: number): string {
+  if (status === 'INDEXING') return '索引中…'
+  if (status === 'COMPLETED') return chunkCount ? `已索引 ${chunkCount} 块` : '已索引'
+  if (status === 'FAILED') return '索引失败'
+  return '未索引'
 }
 
 function handleOutsideClick() {
@@ -285,7 +296,23 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
               <span class="file-size">{{ file.sizeLabel }}</span>
               <span v-if="file.uploadError" class="file-error">{{ file.uploadError }}</span>
               <span v-else class="file-path">{{ file.relativePath }}</span>
+              <span
+                v-if="!file.uploadError && file.ragStatus"
+                :class="['rag-badge', `rag-${file.ragStatus.toLowerCase()}`]"
+              >
+                {{ ragStatusLabel(file.ragStatus, file.ragChunkCount) }}
+              </span>
             </div>
+            <button
+              v-if="file.relativePath && !file.uploadError && !file.ragIndexing && file.ragStatus !== 'COMPLETED'"
+              class="index-btn"
+              @click.stop="indexFile(file.id)"
+              title="建立 RAG 索引"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              </svg>
+            </button>
             <button
               v-if="file.relativePath && !file.uploadError"
               class="download-btn"
@@ -724,6 +751,40 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   text-align: center;
 }
 
+.rag-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid;
+  align-self: flex-start;
+  white-space: nowrap;
+}
+
+.rag-badge.rag-not_indexed {
+  color: #94a3b8;
+  border-color: #e2e8f0;
+  background: #f8fafc;
+}
+
+.rag-badge.rag-indexing {
+  color: #7c3aed;
+  border-color: rgba(124, 58, 237, 0.25);
+  background: rgba(124, 58, 237, 0.07);
+}
+
+.rag-badge.rag-completed {
+  color: #15803d;
+  border-color: rgba(21, 128, 61, 0.25);
+  background: rgba(21, 128, 61, 0.07);
+}
+
+.rag-badge.rag-failed {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.25);
+  background: rgba(220, 38, 38, 0.07);
+}
+
+.index-btn,
 .download-btn,
 .remove-btn {
   width: 22px;
@@ -738,6 +799,11 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   cursor: pointer;
   flex-shrink: 0;
   transition: all 0.15s;
+}
+
+.index-btn:hover {
+  background: rgba(124, 58, 237, 0.1);
+  color: #7c3aed;
 }
 
 .download-btn:hover {
