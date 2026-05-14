@@ -163,8 +163,8 @@ async function removeGeneratedFile(id: string) {
 .right-panel {
   flex: 1;
   min-width: 0;
-  background: #0d1626;
-  border: 1px solid #1d3256;
+  background: #f8f9fa;
+  border: 1px solid #e2e8f0;
   border-radius: 12px;
   display: flex;
   flex-direction: column;
@@ -177,14 +177,14 @@ async function removeGeneratedFile(id: string) {
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  border-bottom: 1px solid #1d3256;
+  border-bottom: 1px solid #e2e8f0;
   flex-shrink: 0;
 }
 
 .panel-title {
   font-size: 14px;
   font-weight: 600;
-  color: #dae7f7;
+  color: #1a202c;
 }
 
 .panel-body {
@@ -195,7 +195,7 @@ async function removeGeneratedFile(id: string) {
   flex-direction: column;
   gap: 12px;
   scrollbar-width: thin;
-  scrollbar-color: #234070 transparent;
+  scrollbar-color: #cbd5e0 transparent;
 }
 
 /* Format tabs */
@@ -211,9 +211,9 @@ async function removeGeneratedFile(id: string) {
   gap: 4px;
   padding: 5px 10px;
   border-radius: 8px;
-  border: 1px solid #1d3256;
-  background: #111e33;
-  color: #4a6285;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #64748b;
   cursor: pointer;
   font-family: inherit;
   font-size: 12px;
@@ -222,19 +222,19 @@ async function removeGeneratedFile(id: string) {
 }
 
 .format-tab:hover {
-  border-color: #22d3ee;
-  color: #6688b0;
+  border-color: #6366f1;
+  color: #4a5568;
 }
 
 .format-tab.active {
-  background: #22d3ee;
-  border-color: #22d3ee;
-  color: #111e33;
+  background: #6366f1;
+  border-color: #6366f1;
+  color: #ffffff;
 }
 
 .format-tab.active .tab-count {
   background: rgba(255, 255, 255, 0.25);
-  color: #111e33;
+  color: #ffffff;
 }
 
 .tab-label {
@@ -244,8 +244,8 @@ async function removeGeneratedFile(id: string) {
 .tab-count {
   font-size: 10px;
   font-weight: 600;
-  background: #172540;
-  color: #4a6a98;
+  background: #f1f5f9;
+  color: #94a3b8;
   padding: 1px 5px;
   border-radius: 10px;
   min-width: 16px;
@@ -255,19 +255,19 @@ async function removeGeneratedFile(id: string) {
 .generated-header {
   font-size: 12px;
   font-weight: 600;
-  color: #6688b0;
+  color: #4a5568;
 }
 
 .studio-loading {
   font-size: 12px;
-  color: #4a6a98;
+  color: #94a3b8;
   padding: 6px 2px;
 }
 
 .generated-item {
-  border: 1px solid #1d3256;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  background: #111e33;
+  background: #ffffff;
   padding: 8px;
   display: flex;
   align-items: flex-start;
@@ -281,8 +281,8 @@ async function removeGeneratedFile(id: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #0e1729;
-  color: #4a6285;
+  background: #f8fafc;
+  color: #64748b;
   flex-shrink: 0;
 }
 
@@ -305,12 +305,12 @@ async function removeGeneratedFile(id: string) {
 
 .file-size {
   font-size: 11px;
-  color: #4a6285;
+  color: #64748b;
 }
 
 .file-path {
   font-size: 11px;
-  color: #4a6a98;
+  color: #94a3b8;
   word-break: break-all;
 }
 
@@ -320,7 +320,7 @@ async function removeGeneratedFile(id: string) {
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #4a6a98;
+  color: #94a3b8;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -330,7 +330,7 @@ async function removeGeneratedFile(id: string) {
 }
 
 .remove-btn:hover {
-  background: #2d0d0d;
+  background: #fee2e2;
   color: #dc2626;
 }
 
@@ -341,14 +341,14 @@ async function removeGeneratedFile(id: string) {
   gap: 8px;
   text-align: center;
   padding: 16px 4px;
-  color: #234070;
+  color: #cbd5e0;
   user-select: none;
 }
 
 .studio-empty p {
   font-size: 13px;
   font-weight: 500;
-  color: #3d5878;
+  color: #a0aec0;
   margin: 0;
 }
 </style>

@@ -347,8 +347,8 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 .side-panel {
   flex: 1;
   min-width: 0;
-  background: #0d1626;
-  border: 1px solid #1d3256;
+  background: #f8f9fa;
+  border: 1px solid #e2e8f0;
   border-radius: 12px;
   display: flex;
   flex-direction: column;
@@ -361,14 +361,14 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  border-bottom: 1px solid #1d3256;
+  border-bottom: 1px solid #e2e8f0;
   flex-shrink: 0;
 }
 
 .panel-title {
   font-size: 14px;
   font-weight: 600;
-  color: #dae7f7;
+  color: #1a202c;
 }
 
 .header-icon-btn {
@@ -380,19 +380,19 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   border-radius: 6px;
   border: none;
   background: transparent;
-  color: #3d5878;
+  color: #a0aec0;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .header-icon-btn:hover {
-  background: #1d3256;
-  color: #6688b0;
+  background: #e2e8f0;
+  color: #4a5568;
 }
 
 .header-icon-btn.active {
-  background: #0d2233;
-  color: #0ea5c9;
+  background: #e0e7ff;
+  color: #4f46e5;
 }
 
 .panel-body {
@@ -403,14 +403,14 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   flex-direction: column;
   gap: 12px;
   scrollbar-width: thin;
-  scrollbar-color: #234070 transparent;
+  scrollbar-color: #cbd5e0 transparent;
 }
 
 .section {
   min-height: 0;
-  border: 1px solid #1d3256;
+  border: 1px solid #e2e8f0;
   border-radius: 10px;
-  background: #111e33;
+  background: #ffffff;
   display: flex;
   flex-direction: column;
   padding: 8px;
@@ -428,9 +428,9 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .history-item {
   position: relative;
-  border: 1px solid #1d3256;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  background: #0e1729;
+  background: #f8fafc;
   padding: 8px;
   display: flex;
   flex-direction: column;
@@ -455,14 +455,14 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #4a6285;
+  color: #64748b;
   background: transparent;
   cursor: pointer;
 }
 
 .history-menu-btn:hover {
-  background: #0d2233;
-  color: #0ea5c9;
+  background: #dbeafe;
+  color: #1d4ed8;
 }
 
 .history-menu {
@@ -470,9 +470,9 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   right: 8px;
   top: 30px;
   min-width: 96px;
-  border: 1px solid #1d3256;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  background: #111e33;
+  background: #ffffff;
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
   z-index: 10;
   padding: 4px;
@@ -486,12 +486,12 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   border-radius: 6px;
   padding: 6px 8px;
   font-size: 12px;
-  color: #d5e8f8;
+  color: #0f172a;
   cursor: pointer;
 }
 
 .history-menu-item:hover {
-  background: #172540;
+  background: #f1f5f9;
 }
 
 .history-menu-item.danger {
@@ -499,7 +499,7 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 }
 
 .history-menu-item.danger:hover {
-  background: #2d0d0d;
+  background: #fee2e2;
 }
 
 .history-item + .history-item {
@@ -507,18 +507,18 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 }
 
 .history-item:hover {
-  border-color: #22d3ee;
-  background: #0d2233;
+  border-color: #6366f1;
+  background: #eef2ff;
 }
 
 .history-item.active {
-  border-color: #0ea5c9;
-  background: #0d2233;
+  border-color: #4f46e5;
+  background: #e0e7ff;
 }
 
 .history-title {
   font-size: 12px;
-  color: #c8ddf5;
+  color: #1e293b;
   width: 100%;
   text-align: left;
   overflow: hidden;
@@ -528,7 +528,7 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .history-meta {
   font-size: 10px;
-  color: #4a6285;
+  color: #64748b;
 }
 
 .history-pending {
@@ -536,7 +536,7 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   padding: 1px 6px;
   border-radius: 999px;
   font-size: 10px;
-  color: #22d3ee;
+  color: #7c3aed;
   border: 1px solid rgba(124, 58, 237, 0.28);
   background: rgba(124, 58, 237, 0.08);
 }
@@ -549,44 +549,44 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   gap: 8px;
   padding: 20px 12px;
   border-radius: 10px;
-  border: 1.5px dashed #234070;
-  background: #111e33;
+  border: 1.5px dashed #cbd5e0;
+  background: #ffffff;
   cursor: pointer;
   transition: all 0.15s;
   text-align: center;
-  color: #3d5878;
+  color: #a0aec0;
   flex-shrink: 0;
 }
 
 .drop-zone:hover,
 .drop-zone.dragging {
-  border-color: #22d3ee;
-  background: rgba(34, 211, 238, 0.04);
-  color: #22d3ee;
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.04);
+  color: #6366f1;
 }
 
 .drop-title {
   font-size: 13px;
   font-weight: 500;
-  color: #6688b0;
+  color: #4a5568;
   margin: 0;
 }
 
 .drop-zone:hover .drop-title,
 .drop-zone.dragging .drop-title {
-  color: #22d3ee;
+  color: #6366f1;
 }
 
 .drop-hint {
   font-size: 11px;
-  color: #3d5878;
+  color: #a0aec0;
   line-height: 1.4;
 }
 
 .source-section-title {
   font-size: 11px;
   font-weight: 600;
-  color: #3d5878;
+  color: #a0aec0;
   text-transform: uppercase;
   letter-spacing: 0.8px;
   padding: 4px 4px 0;
@@ -610,35 +610,35 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   height: 30px;
   padding: 0 10px;
   border-radius: 8px;
-  border: 1px solid #1d3256;
-  background: #111e33;
-  color: #c8ddf5;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #1e293b;
   font-size: 12px;
 }
 
 .history-search-input:focus {
   outline: none;
-  border-color: #22d3ee;
-  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.15);
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
 }
 
 .history-search-clear {
   border: none;
   background: transparent;
-  color: #0ea5c9;
+  color: #4f46e5;
   font-size: 11px;
   padding: 4px;
   cursor: pointer;
 }
 
 .history-search-clear:hover {
-  color: #0891b2;
+  color: #4338ca;
 }
 
 .section-action-btn {
   border: none;
   background: transparent;
-  color: #22d3ee;
+  color: #6366f1;
   font-size: 11px;
   padding: 4px;
   cursor: pointer;
@@ -646,9 +646,9 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .selection-tip {
   font-size: 11px;
-  color: #4a6285;
-  background: #172540;
-  border: 1px solid #1d3256;
+  color: #64748b;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 6px 8px;
 }
@@ -659,8 +659,8 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   gap: 8px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: #111e33;
-  border: 1px solid #1d3256;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   transition: box-shadow 0.15s;
   cursor: pointer;
 }
@@ -670,8 +670,8 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 }
 
 .source-item.selected {
-  border-color: #22d3ee;
-  background: rgba(34, 211, 238, 0.06);
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.06);
 }
 
 .source-item.error {
@@ -702,8 +702,8 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   width: 28px;
   height: 28px;
   border-radius: 6px;
-  background: rgba(34, 211, 238, 0.1);
-  color: #22d3ee;
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -721,7 +721,7 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 .file-name {
   font-size: 12px;
   font-weight: 500;
-  color: #dae7f7;
+  color: #1a202c;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -729,12 +729,12 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .file-size {
   font-size: 11px;
-  color: #3d5878;
+  color: #a0aec0;
 }
 
 .file-path {
   font-size: 10px;
-  color: #4a6a98;
+  color: #94a3b8;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -747,7 +747,7 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .uploading {
   font-size: 12px;
-  color: #22d3ee;
+  color: #6366f1;
   text-align: center;
 }
 
@@ -761,13 +761,13 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 }
 
 .rag-badge.rag-not_indexed {
-  color: #4a6a98;
-  border-color: #1d3256;
-  background: #0e1729;
+  color: #94a3b8;
+  border-color: #e2e8f0;
+  background: #f8fafc;
 }
 
 .rag-badge.rag-indexing {
-  color: #22d3ee;
+  color: #7c3aed;
   border-color: rgba(124, 58, 237, 0.25);
   background: rgba(124, 58, 237, 0.07);
 }
@@ -795,7 +795,7 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   border-radius: 4px;
   border: none;
   background: transparent;
-  color: #234070;
+  color: #cbd5e0;
   cursor: pointer;
   flex-shrink: 0;
   transition: all 0.15s;
@@ -803,16 +803,16 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .index-btn:hover {
   background: rgba(124, 58, 237, 0.1);
-  color: #22d3ee;
+  color: #7c3aed;
 }
 
 .download-btn:hover {
-  background: #0d2233;
-  color: #0891b2;
+  background: #dbeafe;
+  color: #2563eb;
 }
 
 .remove-btn:hover {
-  background: #2d0d0d;
+  background: #fee2e2;
   color: #ef4444;
 }
 
@@ -835,13 +835,13 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 .empty-hint p {
   font-size: 13px;
   font-weight: 500;
-  color: #3d5878;
+  color: #a0aec0;
   margin: 0;
 }
 
 .empty-hint span {
   font-size: 12px;
-  color: #234070;
+  color: #cbd5e0;
   line-height: 1.5;
 }
 </style>
