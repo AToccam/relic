@@ -46,6 +46,7 @@ defineEmits<{ openSettings: [] }>()
   padding: 0 20px;
   background: #0d1626;
   border-bottom: 1px solid #1d3256;
+  box-shadow: 0 2px 20px rgba(34, 211, 238, 0.1), 0 1px 0 rgba(34, 211, 238, 0.08);
   user-select: none;
 }
 
@@ -94,7 +95,6 @@ defineEmits<{ openSettings: [] }>()
   color: #22d3ee;
   letter-spacing: 0.1em;
   font-family: ui-monospace, 'JetBrains Mono', 'Courier New', monospace;
-  opacity: 0.7;
 }
 
 .nav-center {
@@ -106,7 +106,7 @@ defineEmits<{ openSettings: [] }>()
 .nav-title {
   font-size: 13px;
   font-weight: 400;
-  color: #3d5878;
+  color: #7fb3d3;
   max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
@@ -153,7 +153,7 @@ defineEmits<{ openSettings: [] }>()
   border-radius: 6px;
   border: 1px solid #1d3256;
   background: transparent;
-  color: #3d5878;
+  color: #6fa8c8;
   cursor: pointer;
   transition: all 0.15s;
 }
