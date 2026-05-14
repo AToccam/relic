@@ -1,4 +1,4 @@
-import type { MessageContent } from '@/types'
+import type { Citation, MessageContent } from '@/types'
 
 const BASE = '/api'
 
@@ -29,7 +29,8 @@ export async function streamChat(
   signal?: AbortSignal,
   workingDirectory?: string,
   toolsEnabled?: boolean,
-  ragConfig?: RagConfig
+  ragConfig?: RagConfig,
+  onCitations?: (citations: Citation[]) => void
 ): Promise<void> {
   const body: Record<string, unknown> = { messages, stream: true, conversationId }
   if (workingDirectory && workingDirectory.trim()) {
@@ -75,6 +76,9 @@ export async function streamChat(
         const json = JSON.parse(data)
         const content = json.choices?.[0]?.delta?.content
         if (content) onChunk(content)
+        if (onCitations && Array.isArray(json.citations) && json.citations.length > 0) {
+          onCitations(json.citations as Citation[])
+        }
       } catch {
         // ignore parse errors for malformed chunks
       }

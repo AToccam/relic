@@ -1,9 +1,16 @@
+export interface Citation {
+  id: string
+  sourceId: string
+  snippet: string
+}
+
 export interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
   payloadContent?: MessageContent
   streaming?: boolean
+  citations?: Citation[]
 }
 
 export interface TextPart {

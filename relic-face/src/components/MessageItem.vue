@@ -229,6 +229,16 @@ watchEffect(async () => {
             :source="seg.text"
           />
         </template>
+
+        <details v-if="message.citations && message.citations.length > 0" class="citations-block">
+          <summary class="citations-summary">参考来源 ({{ message.citations.length }})</summary>
+          <div class="citations-list">
+            <div v-for="(c, i) in message.citations" :key="i" class="citation-item">
+              <span class="citation-source">{{ c.sourceId }}</span>
+              <p class="citation-snippet">{{ c.snippet }}</p>
+            </div>
+          </div>
+        </details>
       </template>
 
       <template v-else>
@@ -472,6 +482,66 @@ watchEffect(async () => {
 
 :deep(pre:hover .copy-btn) {
   opacity: 1;
+}
+
+.citations-block {
+  margin-top: 8px;
+  border: 1px solid rgba(99, 102, 241, 0.18);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.citations-summary {
+  padding: 6px 10px;
+  background: rgba(99, 102, 241, 0.05);
+  color: #4338ca;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.citations-summary::-webkit-details-marker { display: none; }
+
+.citations-summary::before {
+  content: '▶ ';
+  font-size: 10px;
+}
+
+details[open] .citations-summary::before {
+  content: '▼ ';
+}
+
+.citations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.citation-item {
+  border-left: 3px solid rgba(99, 102, 241, 0.3);
+  padding-left: 8px;
+}
+
+.citation-source {
+  font-size: 11px;
+  font-weight: 600;
+  color: #4338ca;
+  display: block;
+  margin-bottom: 2px;
+  word-break: break-all;
+}
+
+.citation-snippet {
+  font-size: 12px;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  max-height: 80px;
+  overflow-y: auto;
 }
 
 .markdown-body :deep(p) { margin: 0 0 8px; }

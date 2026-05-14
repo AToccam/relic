@@ -144,7 +144,10 @@ export const useChatStore = defineStore('chat', () => {
         abortController.signal,
         workspace.workingDirectory,
         settings.toolsEnabled,
-        ragConfig
+        ragConfig,
+        (citations) => {
+          assistantMsg.citations = citations
+        }
       )
 
       await refreshConversations()
