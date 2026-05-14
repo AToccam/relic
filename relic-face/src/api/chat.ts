@@ -17,13 +17,19 @@ export interface PersistedMessage {
   createdAt?: string
 }
 
+export interface RagConfig {
+  enabled: boolean
+  sourceIds: string[]
+}
+
 export async function streamChat(
   messages: Array<{ role: string; content: MessageContent }>,
   onChunk: (text: string) => void,
   conversationId?: string,
   signal?: AbortSignal,
   workingDirectory?: string,
-  toolsEnabled?: boolean
+  toolsEnabled?: boolean,
+  ragConfig?: RagConfig
 ): Promise<void> {
   const body: Record<string, unknown> = { messages, stream: true, conversationId }
   if (workingDirectory && workingDirectory.trim()) {
@@ -31,6 +37,9 @@ export async function streamChat(
   }
   if (toolsEnabled === false) {
     body.toolsEnabled = false
+  }
+  if (ragConfig && ragConfig.enabled && ragConfig.sourceIds.length > 0) {
+    body.ragConfig = ragConfig
   }
   const response = await fetch(`${BASE}/v1/chat/completions`, {
     method: 'POST',

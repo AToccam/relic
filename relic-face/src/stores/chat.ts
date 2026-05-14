@@ -5,7 +5,8 @@ import {
   getConversationHistory,
   listConversations,
   renameConversation as renameConversationApi,
-  streamChat
+  streamChat,
+  type RagConfig
 } from '@/api/chat'
 import { detectTopicDrift } from '@/api/mode'
 import { useSourcesStore } from '@/stores/sources'
@@ -123,6 +124,13 @@ export const useChatStore = defineStore('chat', () => {
         .filter(m => m.id !== assistantMsg.id)
         .map(m => ({ role: m.role, content: m.payloadContent ?? m.content }))
 
+      const ragSourceIds = selectedFiles
+        .map(f => f.relativePath)
+        .filter(Boolean)
+      const ragConfig: RagConfig | undefined = ragSourceIds.length > 0
+        ? { enabled: true, sourceIds: ragSourceIds }
+        : undefined
+
       await streamChat(
         payload,
         (chunk) => {
@@ -135,7 +143,8 @@ export const useChatStore = defineStore('chat', () => {
         targetConversationId,
         abortController.signal,
         workspace.workingDirectory,
-        settings.toolsEnabled
+        settings.toolsEnabled,
+        ragConfig
       )
 
       await refreshConversations()
