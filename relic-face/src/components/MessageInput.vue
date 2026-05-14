@@ -1,15 +1,44 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useSourcesStore } from '@/stores/sources'
 import { useWorkspaceStore } from '@/stores/workspace'
+import { useSettingsStore } from '@/stores/settings'
 
 const chat = useChatStore()
 const sources = useSourcesStore()
 const workspace = useWorkspaceStore()
+const settings = useSettingsStore()
 const input = ref('')
 const showWorkingDirEditor = ref(false)
 const workingDirDraft = ref('')
+const selectedSuggestionIndex = ref(-1)
+
+const slashQuery = computed(() => {
+  const val = input.value
+  if (!val.startsWith('/')) return null
+  if (val.indexOf(' ') !== -1) return null
+  return val.slice(1)
+})
+
+const skillSuggestions = computed(() => {
+  if (slashQuery.value === null) return []
+  const query = slashQuery.value.toLowerCase()
+  return settings.skills
+    .filter(s => !s.disabled && s.name.toLowerCase().startsWith(query))
+    .slice(0, 8)
+})
+
+const showSuggestions = computed(() => skillSuggestions.value.length > 0)
+
+watch(slashQuery, () => {
+  selectedSuggestionIndex.value = -1
+})
+
+function selectSuggestion(name: string) {
+  input.value = `/${name} `
+  selectedSuggestionIndex.value = -1
+}
 
 function openWorkingDirEditor() {
   workingDirDraft.value = workspace.workingDirectory
@@ -68,6 +97,38 @@ function onDriftNewConv() {
 }
 
 function handleKeydown(e: KeyboardEvent) {
+  if (showSuggestions.value) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      selectedSuggestionIndex.value = Math.min(selectedSuggestionIndex.value + 1, skillSuggestions.value.length - 1)
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      selectedSuggestionIndex.value = Math.max(selectedSuggestionIndex.value - 1, 0)
+      return
+    }
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      const idx = selectedSuggestionIndex.value >= 0 ? selectedSuggestionIndex.value : 0
+      const skill = skillSuggestions.value[idx]
+      if (skill) selectSuggestion(skill.name)
+      return
+    }
+    if (e.key === 'Enter' && selectedSuggestionIndex.value >= 0) {
+      e.preventDefault()
+      const skill = skillSuggestions.value[selectedSuggestionIndex.value]
+      if (skill) selectSuggestion(skill.name)
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      input.value = ''
+      selectedSuggestionIndex.value = -1
+      return
+    }
+  }
+
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     handleSend()
@@ -117,12 +178,25 @@ function isImage(mimeType: string) {
       </div>
       <button class="drift-close" @click="chat.clearDrift()">×</button>
     </div>
-    <textarea
-      v-model="input"
-      placeholder="输入消息… (可用 /skillName 调用已勾选 Skill；Enter 发送，Shift+Enter 换行)"
-      @keydown="handleKeydown"
-      rows="3"
-    />
+    <div class="textarea-wrapper">
+      <div v-if="showSuggestions" class="skill-suggestions">
+        <div
+          v-for="(skill, i) in skillSuggestions"
+          :key="skill.name"
+          :class="['skill-suggestion-item', { active: i === selectedSuggestionIndex }]"
+          @mousedown.prevent="selectSuggestion(skill.name)"
+        >
+          <span class="suggestion-name">{{ skill.emoji ? `${skill.emoji} ` : '' }}/{{ skill.name }}</span>
+          <span class="suggestion-desc">{{ skill.description }}</span>
+        </div>
+      </div>
+      <textarea
+        v-model="input"
+        placeholder="输入消息… (可用 /skillName 调用已勾选 Skill；Enter 发送，Shift+Enter 换行)"
+        @keydown="handleKeydown"
+        rows="3"
+      />
+    </div>
     <div class="working-dir-row">
       <button
         v-if="!showWorkingDirEditor"
@@ -344,9 +418,59 @@ function isImage(mimeType: string) {
   background: rgba(245, 158, 11, 0.15);
 }
 
-textarea,
+.textarea-wrapper,
 .input-actions {
   align-self: stretch;
+}
+
+.textarea-wrapper {
+  position: relative;
+}
+
+.skill-suggestions {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  z-index: 200;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.skill-suggestion-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.skill-suggestion-item:hover,
+.skill-suggestion-item.active {
+  background: #eef2ff;
+}
+
+.suggestion-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #4338ca;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.suggestion-desc {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .working-dir-row {
@@ -475,7 +599,8 @@ textarea,
 }
 
 textarea {
-  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
   resize: none;
   background: #f8f9fa;
   color: #1a202c;
