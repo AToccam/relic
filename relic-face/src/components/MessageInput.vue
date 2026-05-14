@@ -256,12 +256,12 @@ function isImage(mimeType: string) {
 <style scoped>
 .input-area {
   padding: 12px 20px 16px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid #1d3256;
   display: flex;
   flex-direction: column;
   gap: 10px;
   align-items: stretch;
-  background: #ffffff;
+  background: #111e33;
 }
 
 .chip-row {
@@ -277,10 +277,10 @@ function isImage(mimeType: string) {
   gap: 5px;
   padding: 4px 8px 4px 6px;
   border-radius: 6px;
-  background: rgba(99, 102, 241, 0.08);
-  border: 1px solid rgba(99, 102, 241, 0.22);
+  background: rgba(34, 211, 238, 0.08);
+  border: 1px solid rgba(34, 211, 238, 0.22);
   font-size: 12px;
-  color: #4338ca;
+  color: #0891b2;
   max-width: 200px;
 }
 
@@ -293,7 +293,7 @@ function isImage(mimeType: string) {
 }
 
 .chip-icon {
-  color: #6366f1;
+  color: #22d3ee;
   flex-shrink: 0;
 }
 
@@ -307,7 +307,7 @@ function isImage(mimeType: string) {
 
 .chip-size {
   font-size: 10px;
-  color: #818cf8;
+  color: #67e8f9;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -318,7 +318,7 @@ function isImage(mimeType: string) {
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: #818cf8;
+  color: #67e8f9;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -335,7 +335,7 @@ function isImage(mimeType: string) {
 
 .chip-unselected-hint {
   font-size: 11px;
-  color: #a0aec0;
+  color: #3d5878;
   white-space: nowrap;
 }
 
@@ -432,10 +432,10 @@ function isImage(mimeType: string) {
   bottom: calc(100% + 6px);
   left: 0;
   right: 0;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: #111e33;
+  border: 1px solid #1d3256;
   border-radius: 10px;
-  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(34, 211, 238, 0.1);
   overflow: hidden;
   z-index: 200;
   max-height: 260px;
@@ -453,20 +453,20 @@ function isImage(mimeType: string) {
 
 .skill-suggestion-item:hover,
 .skill-suggestion-item.active {
-  background: #eef2ff;
+  background: #0d2233;
 }
 
 .suggestion-name {
   font-size: 13px;
   font-weight: 600;
-  color: #4338ca;
+  color: #22d3ee;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .suggestion-desc {
   font-size: 12px;
-  color: #64748b;
+  color: #4a6285;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -485,10 +485,10 @@ function isImage(mimeType: string) {
   align-items: center;
   gap: 6px;
   padding: 4px 10px 4px 8px;
-  background: #f1f5f9;
-  border: 1px dashed #cbd5e0;
+  background: #172540;
+  border: 1px dashed #234070;
   border-radius: 999px;
-  color: #64748b;
+  color: #4a6285;
   cursor: pointer;
   font-family: inherit;
   font-size: 12px;
@@ -497,15 +497,15 @@ function isImage(mimeType: string) {
 }
 
 .working-dir-btn:hover {
-  border-color: #6366f1;
-  color: #4338ca;
-  background: rgba(99, 102, 241, 0.08);
+  border-color: #22d3ee;
+  color: #0891b2;
+  background: rgba(34, 211, 238, 0.08);
 }
 
 .working-dir-btn.has-value {
-  background: rgba(99, 102, 241, 0.08);
-  border: 1px solid rgba(99, 102, 241, 0.32);
-  color: #4338ca;
+  background: rgba(34, 211, 238, 0.08);
+  border: 1px solid rgba(34, 211, 238, 0.32);
+  color: #0891b2;
 }
 
 .working-dir-text {
@@ -549,9 +549,9 @@ function isImage(mimeType: string) {
   min-width: 0;
   padding: 5px 10px;
   border-radius: 6px;
-  border: 1px solid #cbd5e0;
-  background: #ffffff;
-  color: #1a202c;
+  border: 1px solid #234070;
+  background: #111e33;
+  color: #dae7f7;
   font-size: 12px;
   font-family: inherit;
   outline: none;
@@ -559,7 +559,7 @@ function isImage(mimeType: string) {
 }
 
 .working-dir-input:focus {
-  border-color: #6366f1;
+  border-color: #22d3ee;
 }
 
 .working-dir-confirm,
@@ -575,23 +575,23 @@ function isImage(mimeType: string) {
 }
 
 .working-dir-confirm {
-  background: #6366f1;
-  border-color: #6366f1;
-  color: #fff;
+  background: #22d3ee;
+  border-color: #22d3ee;
+  color: #080f1e;
 }
 
 .working-dir-confirm:hover {
-  background: #4f46e5;
+  background: #0ea5c9;
 }
 
 .working-dir-cancel {
   background: transparent;
-  border-color: #cbd5e0;
-  color: #64748b;
+  border-color: #234070;
+  color: #4a6285;
 }
 
 .working-dir-cancel:hover {
-  background: #f1f5f9;
+  background: #172540;
 }
 
 .input-actions {
@@ -602,9 +602,9 @@ textarea {
   width: 100%;
   box-sizing: border-box;
   resize: none;
-  background: #f8f9fa;
-  color: #1a202c;
-  border: 1px solid #e2e8f0;
+  background: #0d1626;
+  color: #dae7f7;
+  border: 1px solid #1d3256;
   border-radius: 8px;
   padding: 10px 12px;
   font-size: 14px;
@@ -616,12 +616,12 @@ textarea {
 }
 
 textarea:focus {
-  border-color: #6366f1;
-  background: #ffffff;
+  border-color: #22d3ee;
+  background: #111e33;
 }
 
 textarea::placeholder {
-  color: #a0aec0;
+  color: #3d5878;
 }
 
 .input-actions {
@@ -643,12 +643,12 @@ textarea::placeholder {
 }
 
 .send-btn {
-  background: #6366f1;
-  color: #fff;
+  background: #22d3ee;
+  color: #080f1e;
 }
 
 .send-btn:hover:not(:disabled) {
-  background: #4f46e5;
+  background: #0ea5c9;
 }
 
 .send-btn:disabled {
@@ -658,7 +658,7 @@ textarea::placeholder {
 
 .stop-btn {
   background: #ef4444;
-  color: #fff;
+  color: #dae7f7;
 }
 
 .stop-btn:hover {

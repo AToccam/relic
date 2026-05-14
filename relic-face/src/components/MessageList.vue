@@ -44,7 +44,7 @@ watch(
   flex-direction: column;
   gap: 4px;
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e0 transparent;
+  scrollbar-color: #1e3354 transparent;
 }
 
 .empty-hint {
@@ -53,20 +53,25 @@ watch(
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #a0aec0;
   text-align: center;
   user-select: none;
+  gap: 10px;
 }
 
 .empty-hint p {
-  font-size: 22px;
-  font-weight: 600;
-  color: #4a5568;
-  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 800;
+  color: #22d3ee;
+  margin: 0;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-family: ui-monospace, 'JetBrains Mono', 'Courier New', monospace;
+  opacity: 0.55;
 }
 
 .empty-hint span {
-  font-size: 14px;
-  color: #a0aec0;
+  font-size: 13px;
+  color: #3d5878;
+  letter-spacing: 0.02em;
 }
 </style>

@@ -368,8 +368,8 @@ function skillMissingSummary(skill: SkillInfo): string {
 .panel {
   width: 380px;
   height: 100%;
-  background: #ffffff;
-  border-left: 1px solid #e2e8f0;
+  background: #111e33;
+  border-left: 1px solid #1d3256;
   display: flex;
   flex-direction: column;
   box-shadow: -4px 0 24px rgba(0, 0, 0, 0.08);
@@ -381,14 +381,14 @@ function skillMissingSummary(skill: SkillInfo): string {
   align-items: center;
   justify-content: space-between;
   padding: 0 20px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid #1d3256;
   flex-shrink: 0;
 }
 
 .panel-title {
   font-size: 16px;
   font-weight: 600;
-  color: #1a202c;
+  color: #dae7f7;
 }
 
 .close-btn {
@@ -398,16 +398,16 @@ function skillMissingSummary(skill: SkillInfo): string {
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #1d3256;
   background: transparent;
-  color: #718096;
+  color: #506898;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .close-btn:hover {
-  background: #f1f5f9;
-  color: #1a202c;
+  background: #172540;
+  color: #dae7f7;
 }
 
 .panel-body {
@@ -418,7 +418,7 @@ function skillMissingSummary(skill: SkillInfo): string {
   flex-direction: column;
   gap: 24px;
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e0 transparent;
+  scrollbar-color: #234070 transparent;
 }
 
 .section {
@@ -430,14 +430,14 @@ function skillMissingSummary(skill: SkillInfo): string {
 .section-title {
   font-size: 12px;
   font-weight: 600;
-  color: #718096;
+  color: #506898;
   text-transform: uppercase;
   letter-spacing: 0.8px;
 }
 
 .section-desc {
   font-size: 12px;
-  color: #a0aec0;
+  color: #3d5878;
   line-height: 1.5;
   margin-top: -4px;
 }
@@ -454,27 +454,27 @@ function skillMissingSummary(skill: SkillInfo): string {
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  border: 1px solid #e2e8f0;
-  background: #f8f9fa;
-  color: #718096;
+  border: 1px solid #1d3256;
+  background: #0d1626;
+  color: #506898;
   transition: all 0.15s;
   font-family: inherit;
 }
 
 .mode-btn.active {
-  background: #6366f1;
-  border-color: #6366f1;
-  color: #fff;
+  background: #22d3ee;
+  border-color: #22d3ee;
+  color: #080f1e;
 }
 
 .mode-btn:not(.active):hover {
-  border-color: #6366f1;
-  color: #6366f1;
+  border-color: #22d3ee;
+  color: #22d3ee;
 }
 
 .mode-hint {
   font-size: 12px;
-  color: #a0aec0;
+  color: #3d5878;
   line-height: 1.4;
 }
 
@@ -482,9 +482,9 @@ function skillMissingSummary(skill: SkillInfo): string {
   width: 100%;
   height: 36px;
   border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  background: #ffffff;
-  color: #2d3748;
+  border: 1px solid #1d3256;
+  background: #111e33;
+  color: #b0c8e8;
   font-size: 13px;
   padding: 0 10px;
   outline: none;
@@ -492,13 +492,13 @@ function skillMissingSummary(skill: SkillInfo): string {
 }
 
 .provider-select:focus {
-  border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+  border-color: #22d3ee;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.12);
 }
 
 .provider-select:disabled {
-  background: #f8f9fa;
-  color: #a0aec0;
+  background: #0d1626;
+  color: #3d5878;
 }
 
 .provider-row {
@@ -507,8 +507,8 @@ function skillMissingSummary(skill: SkillInfo): string {
   justify-content: space-between;
   padding: 10px 12px;
   border-radius: 8px;
-  background: #f8f9fa;
-  border: 1px solid #e2e8f0;
+  background: #0d1626;
+  border: 1px solid #1d3256;
 }
 
 .provider-left {
@@ -521,8 +521,8 @@ function skillMissingSummary(skill: SkillInfo): string {
   width: 28px;
   height: 28px;
   border-radius: 6px;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #8b5cf6);
+  color: #dae7f7;
   font-size: 12px;
   font-weight: 700;
   display: flex;
@@ -533,7 +533,7 @@ function skillMissingSummary(skill: SkillInfo): string {
 .provider-name {
   font-size: 13px;
   font-weight: 500;
-  color: #1a202c;
+  color: #dae7f7;
   text-transform: capitalize;
 }
 
@@ -564,17 +564,17 @@ function skillMissingSummary(skill: SkillInfo): string {
   padding: 4px 12px;
   font-size: 12px;
   border-radius: 6px;
-  border: 1px solid #e2e8f0;
-  background: #ffffff;
-  color: #4a5568;
+  border: 1px solid #1d3256;
+  background: #111e33;
+  color: #6688b0;
   cursor: pointer;
   transition: all 0.15s;
   font-family: inherit;
 }
 
 .test-btn:hover:not(:disabled) {
-  border-color: #6366f1;
-  color: #6366f1;
+  border-color: #22d3ee;
+  color: #22d3ee;
 }
 
 .test-btn:disabled {
@@ -584,7 +584,7 @@ function skillMissingSummary(skill: SkillInfo): string {
 
 .no-providers {
   font-size: 13px;
-  color: #a0aec0;
+  color: #3d5878;
   padding: 8px 0;
 }
 
@@ -595,10 +595,10 @@ function skillMissingSummary(skill: SkillInfo): string {
 
 .multi-input {
   flex: 1;
-  background: #f8f9fa;
-  border: 1px solid #e2e8f0;
+  background: #0d1626;
+  border: 1px solid #1d3256;
   border-radius: 8px;
-  color: #1a202c;
+  color: #dae7f7;
   font-size: 13px;
   padding: 8px 10px;
   outline: none;
@@ -607,8 +607,8 @@ function skillMissingSummary(skill: SkillInfo): string {
 }
 
 .multi-input:focus {
-  border-color: #6366f1;
-  background: #ffffff;
+  border-color: #22d3ee;
+  background: #111e33;
 }
 
 .multi-btn {
@@ -618,15 +618,15 @@ function skillMissingSummary(skill: SkillInfo): string {
   font-weight: 500;
   cursor: pointer;
   border: none;
-  background: #6366f1;
-  color: #fff;
+  background: #22d3ee;
+  color: #080f1e;
   transition: background 0.15s;
   font-family: inherit;
   white-space: nowrap;
 }
 
 .multi-btn:hover:not(:disabled) {
-  background: #4f46e5;
+  background: #0ea5c9;
 }
 
 .multi-btn:disabled {
@@ -642,12 +642,12 @@ function skillMissingSummary(skill: SkillInfo): string {
 
 .multi-cost {
   font-size: 11px;
-  color: #a0aec0;
+  color: #3d5878;
 }
 
 .advisor-card {
-  background: #f8f9fa;
-  border: 1px solid #e2e8f0;
+  background: #0d1626;
+  border: 1px solid #1d3256;
   border-radius: 8px;
   padding: 10px 12px;
 }
@@ -655,7 +655,7 @@ function skillMissingSummary(skill: SkillInfo): string {
 .advisor-name {
   font-size: 11px;
   font-weight: 600;
-  color: #6366f1;
+  color: #22d3ee;
   text-transform: capitalize;
   display: block;
   margin-bottom: 4px;
@@ -663,7 +663,7 @@ function skillMissingSummary(skill: SkillInfo): string {
 
 .advisor-reply {
   font-size: 12px;
-  color: #4a5568;
+  color: #6688b0;
   line-height: 1.5;
   word-break: break-all;
   white-space: pre-wrap;
@@ -678,8 +678,8 @@ function skillMissingSummary(skill: SkillInfo): string {
   gap: 8px;
   padding: 12px;
   border-radius: 8px;
-  background: #f8f9fa;
-  border: 1px solid #e2e8f0;
+  background: #0d1626;
+  border: 1px solid #1d3256;
 }
 
 .role-label {
@@ -697,9 +697,9 @@ function skillMissingSummary(skill: SkillInfo): string {
 }
 
 .advisor-tag {
-  background: rgba(99, 102, 241, 0.1);
-  color: #6366f1;
-  border: 1px solid rgba(99, 102, 241, 0.25);
+  background: rgba(34, 211, 238, 0.1);
+  color: #22d3ee;
+  border: 1px solid rgba(34, 211, 238, 0.25);
 }
 
 .leader-tag {
@@ -710,7 +710,7 @@ function skillMissingSummary(skill: SkillInfo): string {
 
 .role-desc {
   font-size: 12px;
-  color: #a0aec0;
+  color: #3d5878;
 }
 
 .role-options {
@@ -726,8 +726,8 @@ function skillMissingSummary(skill: SkillInfo): string {
   gap: 6px;
   padding: 5px 10px;
   border-radius: 6px;
-  border: 1px solid #e2e8f0;
-  background: #ffffff;
+  border: 1px solid #1d3256;
+  background: #111e33;
   cursor: pointer;
   transition: all 0.15s;
   user-select: none;
@@ -735,25 +735,25 @@ function skillMissingSummary(skill: SkillInfo): string {
 
 .role-checkbox:hover,
 .role-radio:hover {
-  border-color: #6366f1;
+  border-color: #22d3ee;
 }
 
 .role-checkbox input,
 .role-radio input {
-  accent-color: #6366f1;
+  accent-color: #22d3ee;
   cursor: pointer;
 }
 
 .role-name {
   font-size: 12px;
   font-weight: 500;
-  color: #4a5568;
+  color: #6688b0;
   text-transform: capitalize;
 }
 
 .role-tip {
   font-size: 11px;
-  color: #cbd5e0;
+  color: #234070;
   margin-top: -2px;
 }
 
@@ -792,10 +792,10 @@ function skillMissingSummary(skill: SkillInfo): string {
 
 .skill-import-input {
   flex: 1;
-  background: #f8f9fa;
-  border: 1px solid #e2e8f0;
+  background: #0d1626;
+  border: 1px solid #1d3256;
   border-radius: 8px;
-  color: #1a202c;
+  color: #dae7f7;
   font-size: 12px;
   padding: 8px 10px;
   outline: none;
@@ -804,8 +804,8 @@ function skillMissingSummary(skill: SkillInfo): string {
 }
 
 .skill-import-input:focus {
-  border-color: #6366f1;
-  background: #ffffff;
+  border-color: #22d3ee;
+  background: #111e33;
 }
 
 .skill-import-btn {
@@ -815,15 +815,15 @@ function skillMissingSummary(skill: SkillInfo): string {
   font-weight: 600;
   cursor: pointer;
   border: none;
-  background: #6366f1;
-  color: #fff;
+  background: #22d3ee;
+  color: #080f1e;
   transition: background 0.15s;
   font-family: inherit;
   white-space: nowrap;
 }
 
 .skill-import-btn:hover:not(:disabled) {
-  background: #4f46e5;
+  background: #0ea5c9;
 }
 
 .skill-import-btn:disabled {
@@ -833,7 +833,7 @@ function skillMissingSummary(skill: SkillInfo): string {
 
 .skill-tip {
   font-size: 11px;
-  color: #64748b;
+  color: #4a6285;
 }
 
 .skill-tip.ok {
@@ -846,7 +846,7 @@ function skillMissingSummary(skill: SkillInfo): string {
 
 .skill-empty {
   font-size: 12px;
-  color: #94a3b8;
+  color: #4a6a98;
   padding: 6px 0;
 }
 
@@ -861,7 +861,7 @@ function skillMissingSummary(skill: SkillInfo): string {
 
 .toggle-label {
   font-size: 13px;
-  color: #1a202c;
+  color: #dae7f7;
   line-height: 1.4;
 }
 
@@ -869,7 +869,7 @@ function skillMissingSummary(skill: SkillInfo): string {
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-  accent-color: #6366f1;
+  accent-color: #22d3ee;
   cursor: pointer;
 }
 
@@ -878,12 +878,12 @@ function skillMissingSummary(skill: SkillInfo): string {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #475569;
+  color: #3d5878;
   user-select: none;
 }
 
 .bundled-switch input {
-  accent-color: #6366f1;
+  accent-color: #22d3ee;
 }
 
 .skills-list {
@@ -900,8 +900,8 @@ function skillMissingSummary(skill: SkillInfo): string {
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: #0e1729;
+  border: 1px solid #1d3256;
   border-radius: 8px;
   padding: 10px;
 }
@@ -915,7 +915,7 @@ function skillMissingSummary(skill: SkillInfo): string {
 
 .skill-row-left input {
   margin-top: 2px;
-  accent-color: #6366f1;
+  accent-color: #22d3ee;
 }
 
 .skill-meta {
@@ -933,20 +933,20 @@ function skillMissingSummary(skill: SkillInfo): string {
 .skill-name {
   font-size: 12px;
   font-weight: 700;
-  color: #0f172a;
+  color: #d5e8f8;
 }
 
 .skill-source {
   font-size: 10px;
-  color: #475569;
-  background: #e2e8f0;
+  color: #3d5878;
+  background: #1d3256;
   border-radius: 999px;
   padding: 1px 7px;
 }
 
 .skill-desc {
   font-size: 11px;
-  color: #475569;
+  color: #3d5878;
   line-height: 1.5;
   margin: 0;
 }
@@ -961,7 +961,7 @@ function skillMissingSummary(skill: SkillInfo): string {
 .skill-state {
   font-size: 10px;
   color: #b45309;
-  background: #fef3c7;
+  background: #2a1a00;
   border: 1px solid #fde68a;
   border-radius: 999px;
   padding: 2px 7px;
@@ -970,13 +970,13 @@ function skillMissingSummary(skill: SkillInfo): string {
 
 .skill-state.eligible {
   color: #166534;
-  background: #dcfce7;
+  background: #0a2515;
   border-color: #86efac;
 }
 
 .skill-state.blocked {
   color: #991b1b;
-  background: #fee2e2;
+  background: #2d0d0d;
   border-color: #fecaca;
 }
 </style>

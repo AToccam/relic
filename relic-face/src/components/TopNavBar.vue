@@ -12,7 +12,7 @@ defineEmits<{ openSettings: [] }>()
       <span class="logo-icon">R</span>
       <div class="logo-text">
         <span class="logo-name">Relic</span>
-        <span class="logo-sub">AI Agent</span>
+        <span class="logo-sub">// AI · AGENT</span>
       </div>
     </div>
 
@@ -44,49 +44,57 @@ defineEmits<{ openSettings: [] }>()
   align-items: center;
   justify-content: space-between;
   padding: 0 20px;
-  background: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
+  background: #0d1626;
+  border-bottom: 1px solid #1d3256;
   user-select: none;
 }
 
 .nav-left {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-width: 180px;
+  gap: 12px;
+  min-width: 200px;
 }
 
 .logo-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  width: 36px;
+  height: 36px;
+  border-radius: 7px;
+  border: 1.5px solid #22d3ee;
+  background: #091e2e;
+  box-shadow: 0 0 14px rgba(34, 211, 238, 0.28), inset 0 0 8px rgba(34, 211, 238, 0.07);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  font-weight: 700;
-  color: #fff;
+  font-size: 17px;
+  font-weight: 800;
+  color: #22d3ee;
+  font-family: ui-monospace, 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
   flex-shrink: 0;
+  letter-spacing: -0.02em;
 }
 
 .logo-text {
   display: flex;
   flex-direction: column;
-  line-height: 1.2;
+  line-height: 1.25;
+  gap: 1px;
 }
 
 .logo-name {
   font-size: 15px;
-  font-weight: 700;
-  color: #1a202c;
-  letter-spacing: 0.3px;
+  font-weight: 800;
+  color: #dae7f7;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 .logo-sub {
-  font-size: 10px;
-  color: #a0aec0;
-  letter-spacing: 1px;
+  font-size: 9px;
+  color: #22d3ee;
+  letter-spacing: 0.1em;
+  font-family: ui-monospace, 'JetBrains Mono', 'Courier New', monospace;
+  opacity: 0.7;
 }
 
 .nav-center {
@@ -96,42 +104,44 @@ defineEmits<{ openSettings: [] }>()
 }
 
 .nav-title {
-  font-size: 15px;
-  font-weight: 500;
-  color: #4a5568;
+  font-size: 13px;
+  font-weight: 400;
+  color: #3d5878;
   max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: 0.02em;
 }
 
 .nav-right {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 180px;
+  gap: 10px;
+  min-width: 200px;
   justify-content: flex-end;
 }
 
 .mode-badge {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 999px;
-  letter-spacing: 0.5px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 4px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  font-family: ui-monospace, 'JetBrains Mono', 'Courier New', monospace;
 }
 
 .mode-badge.multi {
-  background: rgba(99, 102, 241, 0.1);
-  color: #6366f1;
-  border: 1px solid rgba(99, 102, 241, 0.25);
+  background: rgba(167, 139, 250, 0.1);
+  color: #a78bfa;
+  border: 1px solid rgba(167, 139, 250, 0.28);
 }
 
 .mode-badge.single {
-  background: rgba(59, 130, 246, 0.1);
-  color: #3b82f6;
-  border: 1px solid rgba(59, 130, 246, 0.25);
+  background: rgba(34, 211, 238, 0.08);
+  color: #22d3ee;
+  border: 1px solid rgba(34, 211, 238, 0.22);
 }
 
 .icon-btn {
@@ -140,18 +150,18 @@ defineEmits<{ openSettings: [] }>()
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  border: 1px solid #1d3256;
   background: transparent;
-  color: #718096;
+  color: #3d5878;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .icon-btn:hover {
-  background: #f1f5f9;
-  color: #1a202c;
-  border-color: #cbd5e0;
+  background: #172540;
+  color: #22d3ee;
+  border-color: #234070;
 }
 </style>
 

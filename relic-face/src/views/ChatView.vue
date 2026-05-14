@@ -47,7 +47,7 @@ onMounted(async () => {
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
-  background: #e8eaf0;
+  background: #080f1e;
 }
 
 .chat-body {
@@ -63,8 +63,8 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #ffffff;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
+  background: #0d1626;
+  border-radius: 10px;
+  border: 1px solid #1d3256;
 }
 </style>

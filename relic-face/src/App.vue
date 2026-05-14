@@ -22,8 +22,8 @@ html, body, #app {
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
     'Microsoft YaHei', sans-serif;
-  background: #f8f9fa;
-  color: #1a202c;
+  background: #080f1e;
+  color: #dae7f7;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -37,16 +37,16 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e0;
+  background: #1e3354;
   border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a0aec0;
+  background: #2a4870;
 }
 
 ::selection {
-  background: rgba(99, 102, 241, 0.2);
-  color: #1a202c;
+  background: rgba(34, 211, 238, 0.2);
+  color: #dae7f7;
 }
 </style>

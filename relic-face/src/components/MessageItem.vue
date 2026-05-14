@@ -292,13 +292,13 @@ watchEffect(async () => {
   font-size: 12px;
   font-weight: 600;
   flex-shrink: 0;
-  background: #e2e8f0;
-  color: #4a5568;
+  background: #1d3256;
+  color: #6688b0;
 }
 
 .message-item.user .avatar {
-  background: #6366f1;
-  color: #fff;
+  background: #22d3ee;
+  color: #080f1e;
 }
 
 .bubble {
@@ -307,17 +307,19 @@ watchEffect(async () => {
   border-radius: 12px;
   line-height: 1.6;
   font-size: 14px;
-  background: #f1f5f9;
-  color: #1a202c;
+  background: #111e33;
+  color: #dae7f7;
   word-break: break-word;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  border: 1px solid #1d3256;
 }
 
 .message-item.user .bubble {
-  background: #6366f1;
-  color: #fff;
+  background: #0c2840;
+  border: 1px solid #1a4f72;
+  color: #a8d8f2;
   border-bottom-right-radius: 4px;
 }
 
@@ -333,7 +335,7 @@ watchEffect(async () => {
 .cursor {
   display: inline-block;
   animation: blink 0.8s step-end infinite;
-  color: #6366f1;
+  color: #22d3ee;
   margin-left: 2px;
 }
 
@@ -346,7 +348,7 @@ watchEffect(async () => {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  border: 1px solid rgba(99, 102, 241, 0.18);
+  border: 1px solid rgba(34, 211, 238, 0.18);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -356,11 +358,11 @@ watchEffect(async () => {
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  background: rgba(99, 102, 241, 0.05);
+  background: rgba(34, 211, 238, 0.05);
   border: none;
   cursor: pointer;
   font-size: 12px;
-  color: #4338ca;
+  color: #0891b2;
   font-family: inherit;
   text-align: left;
   width: 100%;
@@ -368,7 +370,7 @@ watchEffect(async () => {
 }
 
 .process-toggle:hover {
-  background: rgba(99, 102, 241, 0.1);
+  background: rgba(34, 211, 238, 0.1);
 }
 
 .toggle-arrow {
@@ -405,9 +407,9 @@ watchEffect(async () => {
 }
 
 .seg-tool {
-  background: rgba(99, 102, 241, 0.08);
-  border: 1px solid rgba(99, 102, 241, 0.2);
-  color: #4338ca;
+  background: rgba(34, 211, 238, 0.08);
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  color: #0891b2;
 }
 
 .seg-status {
@@ -472,9 +474,9 @@ watchEffect(async () => {
   font-size: 11px;
   font-family: inherit;
   border-radius: 4px;
-  border: 1px solid #94a3b8;
-  background: #ffffff;
-  color: #475569;
+  border: 1px solid #4a6a98;
+  background: #111e33;
+  color: #3d5878;
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.15s;
@@ -486,7 +488,7 @@ watchEffect(async () => {
 
 .citations-block {
   margin-top: 8px;
-  border: 1px solid rgba(99, 102, 241, 0.18);
+  border: 1px solid rgba(34, 211, 238, 0.18);
   border-radius: 8px;
   overflow: hidden;
   font-size: 12px;
@@ -494,8 +496,8 @@ watchEffect(async () => {
 
 .citations-summary {
   padding: 6px 10px;
-  background: rgba(99, 102, 241, 0.05);
-  color: #4338ca;
+  background: rgba(34, 211, 238, 0.05);
+  color: #0891b2;
   font-weight: 500;
   cursor: pointer;
   list-style: none;
@@ -521,14 +523,14 @@ details[open] .citations-summary::before {
 }
 
 .citation-item {
-  border-left: 3px solid rgba(99, 102, 241, 0.3);
+  border-left: 3px solid rgba(34, 211, 238, 0.3);
   padding-left: 8px;
 }
 
 .citation-source {
   font-size: 11px;
   font-weight: 600;
-  color: #4338ca;
+  color: #0891b2;
   display: block;
   margin-bottom: 2px;
   word-break: break-all;
@@ -536,7 +538,7 @@ details[open] .citations-summary::before {
 
 .citation-snippet {
   font-size: 12px;
-  color: #64748b;
+  color: #4a6285;
   margin: 0;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -548,7 +550,7 @@ details[open] .citations-summary::before {
 .markdown-body :deep(p:last-child) { margin-bottom: 0; }
 .markdown-body :deep(p) { white-space: pre-wrap; }
 .markdown-body :deep(pre) {
-  background: #e2e8f0;
+  background: #1d3256;
   border-radius: 6px;
   padding: 10px 12px;
   overflow-x: auto;
@@ -556,17 +558,17 @@ details[open] .citations-summary::before {
   font-size: 13px;
 }
 .markdown-body :deep(code) {
-  background: #e2e8f0;
+  background: #1d3256;
   border-radius: 4px;
   padding: 1px 4px;
   font-size: 13px;
   font-family: 'Consolas', 'Monaco', monospace;
-  color: #6366f1;
+  color: #22d3ee;
 }
 .markdown-body :deep(pre code) {
   padding: 0;
   background: none;
-  color: #1a202c;
+  color: #dae7f7;
 }
 .markdown-body :deep(ul),
 .markdown-body :deep(ol) { padding-left: 20px; margin: 6px 0; }
@@ -598,19 +600,19 @@ details[open] .citations-summary::before {
 }
 .markdown-body :deep(th),
 .markdown-body :deep(td) {
-  border: 1px solid #cbd5e1;
+  border: 1px solid #1d3256;
   padding: 6px 8px;
   vertical-align: top;
   text-align: left;
 }
 .markdown-body :deep(th) {
-  background: #f8fafc;
+  background: #0e1729;
   font-weight: 600;
 }
 .markdown-body :deep(blockquote) {
-  border-left: 3px solid #cbd5e0;
+  border-left: 3px solid #234070;
   padding-left: 10px;
-  color: #718096;
+  color: #506898;
   margin: 6px 0;
 }
 </style>
