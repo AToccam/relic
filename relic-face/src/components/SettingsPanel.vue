@@ -116,6 +116,21 @@ function skillMissingSummary(skill: SkillInfo): string {
             </p>
           </section>
 
+          <!-- 工具开关 -->
+          <section class="section">
+            <h3 class="section-title">Function Calling</h3>
+            <label class="toggle-row">
+              <span class="toggle-label">启用工具调用（web_search / 文件读写 等）</span>
+              <input
+                type="checkbox"
+                class="toggle-checkbox"
+                :checked="settings.toolsEnabled"
+                @change="settings.toolsEnabled = ($event.target as HTMLInputElement).checked"
+              />
+            </label>
+            <p class="mode-hint">关闭后跳过 Function Calling 循环，AI 直接回答。</p>
+          </section>
+
           <!-- Single 模型选择 -->
           <section v-if="settings.mode === 'single'" class="section">
             <h3 class="section-title">Single 模型选择</h3>
@@ -833,6 +848,29 @@ function skillMissingSummary(skill: SkillInfo): string {
   font-size: 12px;
   color: #94a3b8;
   padding: 6px 0;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-label {
+  font-size: 13px;
+  color: #1a202c;
+  line-height: 1.4;
+}
+
+.toggle-checkbox {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  accent-color: #6366f1;
+  cursor: pointer;
 }
 
 .bundled-switch {

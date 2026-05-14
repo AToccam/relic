@@ -22,11 +22,15 @@ export async function streamChat(
   onChunk: (text: string) => void,
   conversationId?: string,
   signal?: AbortSignal,
-  workingDirectory?: string
+  workingDirectory?: string,
+  toolsEnabled?: boolean
 ): Promise<void> {
   const body: Record<string, unknown> = { messages, stream: true, conversationId }
   if (workingDirectory && workingDirectory.trim()) {
     body.workingDirectory = workingDirectory.trim()
+  }
+  if (toolsEnabled === false) {
+    body.toolsEnabled = false
   }
   const response = await fetch(`${BASE}/v1/chat/completions`, {
     method: 'POST',
