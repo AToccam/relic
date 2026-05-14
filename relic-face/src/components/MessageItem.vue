@@ -339,8 +339,9 @@ watchEffect(async () => {
 .cursor {
   display: inline-block;
   animation: blink 0.8s step-end infinite;
-  color: #0891b2;
+  color: #22d3ee;
   margin-left: 2px;
+  text-shadow: 0 0 8px rgba(34, 211, 238, 0.6);
 }
 
 @keyframes blink {
