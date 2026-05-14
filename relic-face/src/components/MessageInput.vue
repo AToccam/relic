@@ -277,10 +277,10 @@ function isImage(mimeType: string) {
   gap: 5px;
   padding: 4px 8px 4px 6px;
   border-radius: 6px;
-  background: rgba(99, 102, 241, 0.08);
-  border: 1px solid rgba(99, 102, 241, 0.22);
+  background: rgba(8, 145, 178, 0.08);
+  border: 1px solid rgba(8, 145, 178, 0.22);
   font-size: 12px;
-  color: #4338ca;
+  color: #0369a1;
   max-width: 200px;
 }
 
@@ -293,7 +293,7 @@ function isImage(mimeType: string) {
 }
 
 .chip-icon {
-  color: #6366f1;
+  color: #0891b2;
   flex-shrink: 0;
 }
 
@@ -307,7 +307,7 @@ function isImage(mimeType: string) {
 
 .chip-size {
   font-size: 10px;
-  color: #818cf8;
+  color: #38bdf8;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -318,7 +318,7 @@ function isImage(mimeType: string) {
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: #818cf8;
+  color: #38bdf8;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -453,13 +453,13 @@ function isImage(mimeType: string) {
 
 .skill-suggestion-item:hover,
 .skill-suggestion-item.active {
-  background: #eef2ff;
+  background: #f0f9ff;
 }
 
 .suggestion-name {
   font-size: 13px;
   font-weight: 600;
-  color: #4338ca;
+  color: #0369a1;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -497,15 +497,15 @@ function isImage(mimeType: string) {
 }
 
 .working-dir-btn:hover {
-  border-color: #6366f1;
-  color: #4338ca;
-  background: rgba(99, 102, 241, 0.08);
+  border-color: #0891b2;
+  color: #0369a1;
+  background: rgba(8, 145, 178, 0.08);
 }
 
 .working-dir-btn.has-value {
-  background: rgba(99, 102, 241, 0.08);
-  border: 1px solid rgba(99, 102, 241, 0.32);
-  color: #4338ca;
+  background: rgba(8, 145, 178, 0.08);
+  border: 1px solid rgba(8, 145, 178, 0.32);
+  color: #0369a1;
 }
 
 .working-dir-text {
@@ -559,7 +559,7 @@ function isImage(mimeType: string) {
 }
 
 .working-dir-input:focus {
-  border-color: #6366f1;
+  border-color: #0891b2;
 }
 
 .working-dir-confirm,
@@ -575,13 +575,13 @@ function isImage(mimeType: string) {
 }
 
 .working-dir-confirm {
-  background: #6366f1;
-  border-color: #6366f1;
+  background: #0891b2;
+  border-color: #0891b2;
   color: #fff;
 }
 
 .working-dir-confirm:hover {
-  background: #4f46e5;
+  background: #0e7490;
 }
 
 .working-dir-cancel {
@@ -616,7 +616,7 @@ textarea {
 }
 
 textarea:focus {
-  border-color: #6366f1;
+  border-color: #0891b2;
   background: #ffffff;
 }
 
@@ -643,12 +643,12 @@ textarea::placeholder {
 }
 
 .send-btn {
-  background: #6366f1;
+  background: #0891b2;
   color: #fff;
 }
 
 .send-btn:hover:not(:disabled) {
-  background: #4f46e5;
+  background: #0e7490;
 }
 
 .send-btn:disabled {

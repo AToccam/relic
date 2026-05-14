@@ -222,13 +222,13 @@ async function removeGeneratedFile(id: string) {
 }
 
 .format-tab:hover {
-  border-color: #6366f1;
+  border-color: #0891b2;
   color: #4a5568;
 }
 
 .format-tab.active {
-  background: #6366f1;
-  border-color: #6366f1;
+  background: #0891b2;
+  border-color: #0891b2;
   color: #ffffff;
 }
 

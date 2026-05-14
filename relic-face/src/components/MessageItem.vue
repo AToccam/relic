@@ -297,7 +297,7 @@ watchEffect(async () => {
 }
 
 .message-item.user .avatar {
-  background: #6366f1;
+  background: #0891b2;
   color: #fff;
 }
 
@@ -316,7 +316,7 @@ watchEffect(async () => {
 }
 
 .message-item.user .bubble {
-  background: #6366f1;
+  background: #0891b2;
   color: #fff;
   border-bottom-right-radius: 4px;
 }
@@ -333,7 +333,7 @@ watchEffect(async () => {
 .cursor {
   display: inline-block;
   animation: blink 0.8s step-end infinite;
-  color: #6366f1;
+  color: #0891b2;
   margin-left: 2px;
 }
 
@@ -346,7 +346,7 @@ watchEffect(async () => {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  border: 1px solid rgba(99, 102, 241, 0.18);
+  border: 1px solid rgba(8, 145, 178, 0.18);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -356,11 +356,11 @@ watchEffect(async () => {
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  background: rgba(99, 102, 241, 0.05);
+  background: rgba(8, 145, 178, 0.05);
   border: none;
   cursor: pointer;
   font-size: 12px;
-  color: #4338ca;
+  color: #0369a1;
   font-family: inherit;
   text-align: left;
   width: 100%;
@@ -368,7 +368,7 @@ watchEffect(async () => {
 }
 
 .process-toggle:hover {
-  background: rgba(99, 102, 241, 0.1);
+  background: rgba(8, 145, 178, 0.1);
 }
 
 .toggle-arrow {
@@ -405,9 +405,9 @@ watchEffect(async () => {
 }
 
 .seg-tool {
-  background: rgba(99, 102, 241, 0.08);
-  border: 1px solid rgba(99, 102, 241, 0.2);
-  color: #4338ca;
+  background: rgba(8, 145, 178, 0.08);
+  border: 1px solid rgba(8, 145, 178, 0.2);
+  color: #0369a1;
 }
 
 .seg-status {
@@ -486,7 +486,7 @@ watchEffect(async () => {
 
 .citations-block {
   margin-top: 8px;
-  border: 1px solid rgba(99, 102, 241, 0.18);
+  border: 1px solid rgba(8, 145, 178, 0.18);
   border-radius: 8px;
   overflow: hidden;
   font-size: 12px;
@@ -494,8 +494,8 @@ watchEffect(async () => {
 
 .citations-summary {
   padding: 6px 10px;
-  background: rgba(99, 102, 241, 0.05);
-  color: #4338ca;
+  background: rgba(8, 145, 178, 0.05);
+  color: #0369a1;
   font-weight: 500;
   cursor: pointer;
   list-style: none;
@@ -521,14 +521,14 @@ details[open] .citations-summary::before {
 }
 
 .citation-item {
-  border-left: 3px solid rgba(99, 102, 241, 0.3);
+  border-left: 3px solid rgba(8, 145, 178, 0.3);
   padding-left: 8px;
 }
 
 .citation-source {
   font-size: 11px;
   font-weight: 600;
-  color: #4338ca;
+  color: #0369a1;
   display: block;
   margin-bottom: 2px;
   word-break: break-all;
@@ -561,7 +561,7 @@ details[open] .citations-summary::before {
   padding: 1px 4px;
   font-size: 13px;
   font-family: 'Consolas', 'Monaco', monospace;
-  color: #6366f1;
+  color: #0891b2;
 }
 .markdown-body :deep(pre code) {
   padding: 0;

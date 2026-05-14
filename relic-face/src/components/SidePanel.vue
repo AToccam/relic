@@ -392,7 +392,7 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .header-icon-btn.active {
   background: #e0e7ff;
-  color: #4f46e5;
+  color: #0e7490;
 }
 
 .panel-body {
@@ -507,12 +507,12 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 }
 
 .history-item:hover {
-  border-color: #6366f1;
-  background: #eef2ff;
+  border-color: #0891b2;
+  background: #f0f9ff;
 }
 
 .history-item.active {
-  border-color: #4f46e5;
+  border-color: #0e7490;
   background: #e0e7ff;
 }
 
@@ -560,9 +560,9 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .drop-zone:hover,
 .drop-zone.dragging {
-  border-color: #6366f1;
-  background: rgba(99, 102, 241, 0.04);
-  color: #6366f1;
+  border-color: #0891b2;
+  background: rgba(8, 145, 178, 0.04);
+  color: #0891b2;
 }
 
 .drop-title {
@@ -574,7 +574,7 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .drop-zone:hover .drop-title,
 .drop-zone.dragging .drop-title {
-  color: #6366f1;
+  color: #0891b2;
 }
 
 .drop-hint {
@@ -618,27 +618,27 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .history-search-input:focus {
   outline: none;
-  border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  border-color: #0891b2;
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.15);
 }
 
 .history-search-clear {
   border: none;
   background: transparent;
-  color: #4f46e5;
+  color: #0e7490;
   font-size: 11px;
   padding: 4px;
   cursor: pointer;
 }
 
 .history-search-clear:hover {
-  color: #4338ca;
+  color: #0369a1;
 }
 
 .section-action-btn {
   border: none;
   background: transparent;
-  color: #6366f1;
+  color: #0891b2;
   font-size: 11px;
   padding: 4px;
   cursor: pointer;
@@ -670,8 +670,8 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 }
 
 .source-item.selected {
-  border-color: #6366f1;
-  background: rgba(99, 102, 241, 0.06);
+  border-color: #0891b2;
+  background: rgba(8, 145, 178, 0.06);
 }
 
 .source-item.error {
@@ -702,8 +702,8 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   width: 28px;
   height: 28px;
   border-radius: 6px;
-  background: rgba(99, 102, 241, 0.1);
-  color: #6366f1;
+  background: rgba(8, 145, 178, 0.1);
+  color: #0891b2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -747,7 +747,7 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .uploading {
   font-size: 12px;
-  color: #6366f1;
+  color: #0891b2;
   text-align: center;
 }
 
