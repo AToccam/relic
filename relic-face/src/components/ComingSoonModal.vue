@@ -46,7 +46,7 @@ defineEmits<{ close: [] }>()
 }
 
 .modal-icon {
-  color: #6366f1;
+  color: #0891b2;
   opacity: 0.8;
 }
 
@@ -71,7 +71,7 @@ defineEmits<{ close: [] }>()
   padding: 8px 32px;
   border-radius: 8px;
   border: none;
-  background: #6366f1;
+  background: #0891b2;
   color: #fff;
   font-size: 14px;
   font-weight: 500;
@@ -81,6 +81,6 @@ defineEmits<{ close: [] }>()
 }
 
 .modal-close:hover {
-  background: #4f46e5;
+  background: #0e7490;
 }
 </style>

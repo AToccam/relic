@@ -5,12 +5,14 @@ import {
   getConversationHistory,
   listConversations,
   renameConversation as renameConversationApi,
-  streamChat
+  streamChat,
+  type RagConfig
 } from '@/api/chat'
 import { detectTopicDrift } from '@/api/mode'
 import { useSourcesStore } from '@/stores/sources'
 import { useStudioStore } from '@/stores/studio'
 import { useWorkspaceStore } from '@/stores/workspace'
+import { useSettingsStore } from '@/stores/settings'
 import type { Message, MessageContent, MessagePart } from '@/types'
 import type { ConversationSummary, PersistedMessage } from '@/api/chat'
 
@@ -18,6 +20,7 @@ export const useChatStore = defineStore('chat', () => {
   const sources = useSourcesStore()
   const studio = useStudioStore()
   const workspace = useWorkspaceStore()
+  const settings = useSettingsStore()
   const messages = ref<Message[]>([])
   const conversations = ref<ConversationSummary[]>([])
   const currentConversationId = ref('')
@@ -121,6 +124,13 @@ export const useChatStore = defineStore('chat', () => {
         .filter(m => m.id !== assistantMsg.id)
         .map(m => ({ role: m.role, content: m.payloadContent ?? m.content }))
 
+      const ragSourceIds = selectedFiles
+        .map(f => f.relativePath)
+        .filter(Boolean)
+      const ragConfig: RagConfig | undefined = ragSourceIds.length > 0
+        ? { enabled: true, sourceIds: ragSourceIds }
+        : undefined
+
       await streamChat(
         payload,
         (chunk) => {
@@ -132,7 +142,12 @@ export const useChatStore = defineStore('chat', () => {
         },
         targetConversationId,
         abortController.signal,
-        workspace.workingDirectory
+        workspace.workingDirectory,
+        settings.toolsEnabled,
+        ragConfig,
+        (citations) => {
+          assistantMsg.citations = citations
+        }
       )
 
       await refreshConversations()

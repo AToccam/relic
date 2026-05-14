@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useSourcesStore } from '@/stores/sources'
 import { useChatStore } from '@/stores/chat'
+import { downloadFile } from '@/api/files'
 
 const sources = useSourcesStore()
 const chat = useChatStore()
@@ -38,6 +39,10 @@ async function onDrop(e: DragEvent) {
   if (e.dataTransfer?.files.length) {
     await addFiles(e.dataTransfer.files)
   }
+}
+
+async function indexFile(id: string) {
+  await sources.indexFile(id)
 }
 
 async function removeFile(id: string) {
@@ -136,6 +141,13 @@ function resolveHistoryTitle(item: { title?: string; lastPreview?: string }): st
   }
   const preview = (item.lastPreview || '').trim()
   return preview || '新对话'
+}
+
+function ragStatusLabel(status: string, chunkCount?: number): string {
+  if (status === 'INDEXING') return '索引中…'
+  if (status === 'COMPLETED') return chunkCount ? `已索引 ${chunkCount} 块` : '已索引'
+  if (status === 'FAILED') return '索引失败'
+  return '未索引'
 }
 
 function handleOutsideClick() {
@@ -284,7 +296,35 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
               <span class="file-size">{{ file.sizeLabel }}</span>
               <span v-if="file.uploadError" class="file-error">{{ file.uploadError }}</span>
               <span v-else class="file-path">{{ file.relativePath }}</span>
+              <span
+                v-if="!file.uploadError && file.ragStatus"
+                :class="['rag-badge', `rag-${file.ragStatus.toLowerCase()}`]"
+              >
+                {{ ragStatusLabel(file.ragStatus, file.ragChunkCount) }}
+              </span>
             </div>
+            <button
+              v-if="file.relativePath && !file.uploadError && !file.ragIndexing && file.ragStatus !== 'COMPLETED'"
+              class="index-btn"
+              @click.stop="indexFile(file.id)"
+              title="建立 RAG 索引"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              </svg>
+            </button>
+            <button
+              v-if="file.relativePath && !file.uploadError"
+              class="download-btn"
+              @click.stop="downloadFile(file.relativePath)"
+              title="下载"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            </button>
             <button class="remove-btn" @click.stop="removeFile(file.id)" title="移除">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -352,7 +392,7 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .header-icon-btn.active {
   background: #e0e7ff;
-  color: #4f46e5;
+  color: #0e7490;
 }
 
 .panel-body {
@@ -467,12 +507,12 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 }
 
 .history-item:hover {
-  border-color: #6366f1;
-  background: #eef2ff;
+  border-color: #0891b2;
+  background: #f0f9ff;
 }
 
 .history-item.active {
-  border-color: #4f46e5;
+  border-color: #0e7490;
   background: #e0e7ff;
 }
 
@@ -520,9 +560,9 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .drop-zone:hover,
 .drop-zone.dragging {
-  border-color: #6366f1;
-  background: rgba(99, 102, 241, 0.04);
-  color: #6366f1;
+  border-color: #0891b2;
+  background: rgba(8, 145, 178, 0.04);
+  color: #0891b2;
 }
 
 .drop-title {
@@ -534,7 +574,7 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .drop-zone:hover .drop-title,
 .drop-zone.dragging .drop-title {
-  color: #6366f1;
+  color: #0891b2;
 }
 
 .drop-hint {
@@ -578,27 +618,27 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .history-search-input:focus {
   outline: none;
-  border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  border-color: #0891b2;
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.15);
 }
 
 .history-search-clear {
   border: none;
   background: transparent;
-  color: #4f46e5;
+  color: #0e7490;
   font-size: 11px;
   padding: 4px;
   cursor: pointer;
 }
 
 .history-search-clear:hover {
-  color: #4338ca;
+  color: #0369a1;
 }
 
 .section-action-btn {
   border: none;
   background: transparent;
-  color: #6366f1;
+  color: #0891b2;
   font-size: 11px;
   padding: 4px;
   cursor: pointer;
@@ -630,8 +670,8 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 }
 
 .source-item.selected {
-  border-color: #6366f1;
-  background: rgba(99, 102, 241, 0.06);
+  border-color: #0891b2;
+  background: rgba(8, 145, 178, 0.06);
 }
 
 .source-item.error {
@@ -662,8 +702,8 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   width: 28px;
   height: 28px;
   border-radius: 6px;
-  background: rgba(99, 102, 241, 0.1);
-  color: #6366f1;
+  background: rgba(8, 145, 178, 0.1);
+  color: #0891b2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -707,10 +747,45 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .uploading {
   font-size: 12px;
-  color: #6366f1;
+  color: #0891b2;
   text-align: center;
 }
 
+.rag-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid;
+  align-self: flex-start;
+  white-space: nowrap;
+}
+
+.rag-badge.rag-not_indexed {
+  color: #94a3b8;
+  border-color: #e2e8f0;
+  background: #f8fafc;
+}
+
+.rag-badge.rag-indexing {
+  color: #7c3aed;
+  border-color: rgba(124, 58, 237, 0.25);
+  background: rgba(124, 58, 237, 0.07);
+}
+
+.rag-badge.rag-completed {
+  color: #15803d;
+  border-color: rgba(21, 128, 61, 0.25);
+  background: rgba(21, 128, 61, 0.07);
+}
+
+.rag-badge.rag-failed {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.25);
+  background: rgba(220, 38, 38, 0.07);
+}
+
+.index-btn,
+.download-btn,
 .remove-btn {
   width: 22px;
   height: 22px;
@@ -724,6 +799,16 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   cursor: pointer;
   flex-shrink: 0;
   transition: all 0.15s;
+}
+
+.index-btn:hover {
+  background: rgba(124, 58, 237, 0.1);
+  color: #7c3aed;
+}
+
+.download-btn:hover {
+  background: #dbeafe;
+  color: #2563eb;
 }
 
 .remove-btn:hover {

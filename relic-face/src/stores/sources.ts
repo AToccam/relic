@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { deleteSourceFile, listSourceFiles, uploadSourceFile } from '@/api/files'
+import { getRagIndexStatus, triggerRagIndex, type RagIndexStatus } from '@/api/rag'
 
 export interface SourceFileItem {
   id: string
@@ -13,6 +14,9 @@ export interface SourceFileItem {
   conversationId: string
   dataUrl?: string
   uploadError?: string
+  ragStatus?: RagIndexStatus
+  ragChunkCount?: number
+  ragIndexing?: boolean
 }
 
 interface UploadResult {
@@ -158,6 +162,38 @@ export const useSourcesStore = defineStore('sources', () => {
     files.value = []
   }
 
+  async function indexFile(id: string): Promise<void> {
+    const item = files.value.find(f => f.id === id)
+    if (!item || !item.relativePath || item.uploadError) return
+
+    item.ragIndexing = true
+    item.ragStatus = 'INDEXING'
+    try {
+      await triggerRagIndex(item.relativePath)
+    } catch {
+      item.ragStatus = 'FAILED'
+      item.ragIndexing = false
+      return
+    }
+
+    // 轮询直到终态
+    const poll = async () => {
+      try {
+        const result = await getRagIndexStatus(item.relativePath)
+        item.ragStatus = result.status
+        item.ragChunkCount = result.chunkCount
+        if (result.status === 'INDEXING') {
+          window.setTimeout(poll, 2000)
+        } else {
+          item.ragIndexing = false
+        }
+      } catch {
+        item.ragIndexing = false
+      }
+    }
+    window.setTimeout(poll, 2000)
+  }
+
   function migrateSelectedFilesToConversation(newConversationId: string) {
     const convId = currentConversationId.value
     for (const file of files.value) {
@@ -183,7 +219,8 @@ export const useSourcesStore = defineStore('sources', () => {
     setAllUsableSelection,
     clearAll,
     loadPersistedFiles,
-    migrateSelectedFilesToConversation
+    migrateSelectedFilesToConversation,
+    indexFile
   }
 })
 
