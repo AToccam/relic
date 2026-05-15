@@ -4,11 +4,23 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.relic.dto.ToolCallResult;
 import com.relic.service.AiProvider;
+import com.relic.util.RequestDeadline;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -137,7 +149,46 @@ public class ToolCallService {
 
     @Autowired
     private ToolExecutor toolExecutor;
+
+    @Value("${relic.tools.execution-timeout-ms:60000}")
+    private long toolExecutionTimeoutMs;
+
+    @Value("${relic.tools.executor.pool-size:4}")
+    private int toolExecutorPoolSize;
+
+    @Value("${relic.tools.executor.queue-size:32}")
+    private int toolExecutorQueueSize;
+
+    private ExecutorService toolWorkerExecutor;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @PostConstruct
+    public void initToolWorkerExecutor() {
+        int poolSize = Math.max(1, toolExecutorPoolSize);
+        int queueSize = Math.max(1, toolExecutorQueueSize);
+        AtomicInteger counter = new AtomicInteger();
+        ThreadFactory threadFactory = task -> {
+            Thread thread = new Thread(task, "relic-tool-worker-" + counter.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        };
+        toolWorkerExecutor = new ThreadPoolExecutor(
+                poolSize,
+                poolSize,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(queueSize),
+                threadFactory,
+                new ThreadPoolExecutor.AbortPolicy());
+    }
+
+    @PreDestroy
+    public void shutdownToolWorkerExecutor() {
+        if (toolWorkerExecutor != null) {
+            toolWorkerExecutor.shutdownNow();
+        }
+    }
 
     public String askWithTools(AiProvider provider, List<Map<String, Object>> messages) {
         IntentDecision decision = decideIntent(messages);
@@ -358,7 +409,7 @@ public class ToolCallService {
             args.put("content", content);
 
             String toolName = decision.docxOutputIntent() ? "create_docx_file" : "create_text_file";
-            String toolResult = toolExecutor.execute(toolName, objectMapper.writeValueAsString(args));
+            String toolResult = executeToolWithTimeout(toolName, objectMapper.writeValueAsString(args));
             return buildDirectFileOutput(toolResult, draft.replyMessage(), decision.docxOutputIntent() && decision.chartIntent());
         } catch (Exception e) {
             log.warn("[deterministic-file] create failed: {}", e.getMessage());
@@ -379,7 +430,7 @@ public class ToolCallService {
             Map<String, Object> chartArgs = new HashMap<>();
             chartArgs.put("title", draft.chartTitle());
             chartArgs.put("content", draft.mermaidSource());
-            String chartResult = toolExecutor.execute("render_mermaid_chart", objectMapper.writeValueAsString(chartArgs));
+            String chartResult = executeToolWithTimeout("render_mermaid_chart", objectMapper.writeValueAsString(chartArgs));
             if (isChartValidationError(chartResult) || !hasInlineChart(chartResult)) {
                 return "⚠️ 图表生成失败：" + removeSpecialToolLines(chartResult);
             }
@@ -395,7 +446,7 @@ public class ToolCallService {
             fileArgs.put("content", content);
 
             String toolName = decision.docxOutputIntent() ? "create_docx_file" : "create_text_file";
-            String fileResult = toolExecutor.execute(toolName, objectMapper.writeValueAsString(fileArgs));
+            String fileResult = executeToolWithTimeout(toolName, objectMapper.writeValueAsString(fileArgs));
             return buildDirectFileOutput(fileResult, draft.replyMessage(), decision.docxOutputIntent() && decision.chartIntent());
         } catch (Exception e) {
             log.warn("[deterministic-chart-file] create failed: {}", e.getMessage());
@@ -1142,12 +1193,53 @@ public class ToolCallService {
             return "已达到本次请求可创建文件上限(" + guard.maxCreates + ")。如需一次生成多个文件，请明确说明“生成多个文件”。";
         }
 
-        String result = toolExecutor.execute(toolName, tc.getArgumentsString());
+        String result = executeToolWithTimeout(toolName, tc.getArgumentsString());
 
         if (isCreateTool(toolName) && hasDownloadUrl(result)) {
             guard.createdCount++;
         }
         return result;
+    }
+
+    private String executeToolWithTimeout(String toolName, String arguments) {
+        RequestDeadline.throwIfExpired();
+        long timeoutMs = RequestDeadline.remainingMillis(Math.max(1_000L, toolExecutionTimeoutMs));
+        if (timeoutMs <= 0L) {
+            return "请求处理超时，请稍后重试。";
+        }
+        Long deadline = RequestDeadline.currentDeadlineEpochMillis();
+        String workingDirectory = ToolExecutor.currentWorkingDirectory();
+        CompletableFuture<String> future;
+        try {
+            future = CompletableFuture.supplyAsync(() -> {
+                RequestDeadline.setDeadlineEpochMillis(deadline);
+                ToolExecutor.setWorkingDirectoryContext(workingDirectory);
+                try {
+                    return toolExecutor.execute(toolName, arguments);
+                } finally {
+                    RequestDeadline.clear();
+                    ToolExecutor.clearWorkingDirectoryContext();
+                }
+            }, toolWorkerExecutor);
+        } catch (Exception e) {
+            log.warn("[tool-rejected] {} could not be scheduled: {}", toolName, e.getMessage());
+            return "工具执行队列已满，请稍后重试。";
+        }
+        try {
+            return future.get(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            log.warn("[tool-timeout] {} exceeded {} ms", toolName, timeoutMs);
+            return "工具执行超时，请稍后重试或缩小本次请求。";
+        } catch (InterruptedException e) {
+            future.cancel(true);
+            Thread.currentThread().interrupt();
+            return "工具执行被中断，请稍后重试。";
+        } catch (Exception e) {
+            Throwable cause = e.getCause() == null ? e : e.getCause();
+            log.warn("[tool-error] {} failed: {}", toolName, cause.getMessage());
+            return "工具调用失败：" + cause.getMessage();
+        }
     }
 
     private boolean isBlockedRepeatedChartCall(ToolCallResult.ToolCall tc, CreateGuard guard) {

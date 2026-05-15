@@ -2,10 +2,13 @@ package com.relic.service;
 
 import com.relic.dto.ToolCallResult;
 import com.relic.util.MessageHelper;
+import com.relic.util.RequestDeadline;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.client.HttpStatusCodeException;
 
@@ -29,6 +32,12 @@ import java.util.function.Consumer;
 
 @Slf4j
 public abstract class OpenAiCompatibleService implements AiProvider {
+    @Value("${relic.openai-compatible.connect-timeout-ms:20000}")
+    private int compatibleConnectTimeoutMs;
+
+    @Value("${relic.openai-compatible.request-timeout-ms:300000}")
+    private int compatibleRequestTimeoutMs;
+
     // 支持自定义temperature，默认0.7
     protected double getTemperature() { return 0.7; }
 
@@ -53,6 +62,20 @@ public abstract class OpenAiCompatibleService implements AiProvider {
 
     protected long getOverloadRetryBaseDelayMs() {
         return 1200L;
+    }
+
+    private long connectTimeoutWithinDeadline() {
+        RequestDeadline.throwIfExpired();
+        long configured = Math.max(3_000L, compatibleConnectTimeoutMs);
+        long remaining = RequestDeadline.remainingMillis(configured);
+        return Math.max(1L, remaining);
+    }
+
+    private long requestTimeoutWithinDeadline() {
+        RequestDeadline.throwIfExpired();
+        long configured = Math.max(30_000L, compatibleRequestTimeoutMs);
+        long remaining = RequestDeadline.remainingMillis(configured);
+        return Math.max(1L, remaining);
     }
 
     @Override
@@ -109,7 +132,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
                                           List<Map<String, Object>> tools,
                                           Consumer<String> onChunk) throws Exception {
         HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(20))
+                .connectTimeout(Duration.ofMillis(connectTimeoutWithinDeadline()))
                 .build();
 
         HttpHeaders headers = new HttpHeaders();
@@ -127,7 +150,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(getUrl()))
-                .timeout(Duration.ofSeconds(300))
+                .timeout(Duration.ofMillis(requestTimeoutWithinDeadline()))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + getApiKey())
                 .header("Accept", "text/event-stream")
@@ -136,6 +159,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
 
         int maxAttempts = Math.max(1, getOverloadRetryTimes() + 1);
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            RequestDeadline.throwIfExpired();
             HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 return parseStreamResponse(response.body(), onChunk, messages, tools);
@@ -150,7 +174,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
             if (isRetryableOverload(response.statusCode(), errorBody) && attempt < maxAttempts) {
                 long delayMs = getOverloadRetryBaseDelayMs() * attempt;
                 log.warn("{} 发生 429/overloaded，第 {}/{} 次重试，{}ms 后继续", providerDisplayName(), attempt, maxAttempts, delayMs);
-                sleepQuietly(delayMs);
+                sleepQuietly(RequestDeadline.remainingMillis(delayMs));
                 continue;
             }
 
@@ -304,7 +328,10 @@ public abstract class OpenAiCompatibleService implements AiProvider {
     @SuppressWarnings("unchecked")
     protected Map<String, Object> callOnce(List<Map<String, Object>> messages,
                                            List<Map<String, Object>> tools) {
-        RestTemplate restTemplate = new RestTemplate();
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Math.toIntExact(connectTimeoutWithinDeadline()));
+        requestFactory.setReadTimeout(Math.toIntExact(requestTimeoutWithinDeadline()));
+        RestTemplate restTemplate = new RestTemplate(requestFactory);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -321,6 +348,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
         int maxAttempts = Math.max(1, getOverloadRetryTimes() + 1);
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
+                RequestDeadline.throwIfExpired();
                 Map<String, Object> response = restTemplate.postForObject(getUrl(), entity, Map.class);
                 List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
                 return choices.get(0);
@@ -330,7 +358,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
                 if (isRetryableOverload(status, body) && attempt < maxAttempts) {
                     long delayMs = getOverloadRetryBaseDelayMs() * attempt;
                     log.warn("{} 非流式请求遇到 429/overloaded，第 {}/{} 次重试，{}ms 后继续", providerDisplayName(), attempt, maxAttempts, delayMs);
-                    sleepQuietly(delayMs);
+                    sleepQuietly(RequestDeadline.remainingMillis(delayMs));
                     continue;
                 }
                 throw new RuntimeException(providerDisplayName() + " API 错误 (HTTP " + status + "): " + body, e);

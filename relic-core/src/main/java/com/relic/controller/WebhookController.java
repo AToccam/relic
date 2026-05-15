@@ -10,8 +10,10 @@ import com.relic.service.SkillCommandService;
 import com.relic.tool.ToolExecutor;
 import com.relic.util.MessageHelper;
 import com.relic.util.OpenAiResponseBuilder;
+import com.relic.util.RequestDeadline;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -38,6 +40,9 @@ public class WebhookController {
 
     @Autowired
     private SkillCommandService skillCommandService;
+
+    @Value("${relic.request.timeout-ms:180000}")
+    private long requestTimeoutMs;
 
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -207,7 +212,8 @@ public class WebhookController {
         messages = skillCommandService.rewriteForEnabledSkillCommand(messages);
 
         final List<Map<String, Object>> finalMessages = messages;
-        SseEmitter emitter = new SseEmitter(180_000L);
+        long effectiveTimeoutMs = Math.max(10_000L, requestTimeoutMs);
+        SseEmitter emitter = new SseEmitter(effectiveTimeoutMs);
         String chatId = "chatcmpl-" + System.currentTimeMillis();
         String modelName = aiRouter.getProviderNameForMessages(finalMessages);
         long created = System.currentTimeMillis() / 1000;
@@ -222,6 +228,7 @@ public class WebhookController {
 
         Thread streamThread = Thread.startVirtualThread(() -> {
             try {
+                RequestDeadline.start(effectiveTimeoutMs);
                 ToolExecutor.setWorkingDirectoryContext(workingDirectory);
                 log.info("【流式连接 AI 中...】模式: {}, 工作目录: {}",
                         aiRouter.getMode(),
@@ -276,15 +283,31 @@ public class WebhookController {
                     log.warn("【发送错误消息也失败】SSE 可能已关闭: {}", ex.getMessage());
                 }
             } finally {
+                RequestDeadline.clear();
                 ToolExecutor.clearWorkingDirectoryContext();
             }
         });
 
-        // SSE 超时时中断虚拟线程，防止上游流式读取的阻塞
         emitter.onTimeout(() -> {
             emitterActive.set(false);
             streamThread.interrupt();
-            log.warn("【SSE 连接超时，已中断流式线程】");
+            log.warn("[SSE] request timed out after {} ms, stream thread interrupted", effectiveTimeoutMs);
+            try {
+                Map<String, Object> errChunk = OpenAiResponseBuilder.buildChunk(
+                        chatId, created, modelName,
+                        Map.of("content", "\n\n请求处理超时，请稍后重试。"), null);
+                emitter.send(SseEmitter.event()
+                        .data(mapper.writeValueAsString(errChunk), MediaType.APPLICATION_JSON));
+                Map<String, Object> stopChunk = OpenAiResponseBuilder.buildChunk(
+                        chatId, created, modelName, Map.of(), "stop");
+                emitter.send(SseEmitter.event()
+                        .data(mapper.writeValueAsString(stopChunk), MediaType.APPLICATION_JSON));
+                emitter.send(SseEmitter.event().data("[DONE]", MediaType.TEXT_PLAIN));
+            } catch (Exception e) {
+                log.warn("[SSE] failed to send timeout message: {}", e.getMessage());
+            } finally {
+                emitter.complete();
+            }
         });
 
         return emitter;

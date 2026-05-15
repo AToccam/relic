@@ -6,6 +6,16 @@ spring:
     name: relic-core
 
 relic:
+  request:
+    timeout-ms: 180000
+  openai-compatible:
+    connect-timeout-ms: 20000
+    request-timeout-ms: 300000
+  tools:
+    execution-timeout-ms: 60000
+    executor:
+      pool-size: 4
+      queue-size: 32
   openclaw:
     gateway-path: ${user.dir}/../relic-gateway
     config-path: ${user.home}/.openclaw/openclaw.json
@@ -41,6 +51,7 @@ relic:
     multimodal-providers: qwen,kimi
     # 顾问 provider 列表（逗号分隔），用于 MULTI 模式
     advisors: deepseek,kimi
+    advisor-timeout-ms: 90000
     # 开启后会优先调用 LocalIntentClassifier（若存在实现 Bean）
     enable-local-classifier: true
     # 本地语义分类最长等待时间，建议 >= classify-timeout-ms
