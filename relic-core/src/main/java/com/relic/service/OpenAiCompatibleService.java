@@ -2,10 +2,14 @@ package com.relic.service;
 
 import com.relic.dto.ToolCallResult;
 import com.relic.util.MessageHelper;
+import com.relic.util.RequestDeadline;
+import com.relic.util.TimeoutMessages;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.client.HttpStatusCodeException;
 
@@ -29,7 +33,13 @@ import java.util.function.Consumer;
 
 @Slf4j
 public abstract class OpenAiCompatibleService implements AiProvider {
-    // 支持自定义temperature，默认0.7
+    @Value("${relic.openai-compatible.connect-timeout-ms:20000}")
+    private int compatibleConnectTimeoutMs;
+
+    @Value("${relic.openai-compatible.request-timeout-ms:300000}")
+    private int compatibleRequestTimeoutMs;
+
+    // 鏀寔鑷畾涔塼emperature锛岄粯璁?.7
     protected double getTemperature() { return 0.7; }
 
     protected abstract String getApiKey();
@@ -46,13 +56,37 @@ public abstract class OpenAiCompatibleService implements AiProvider {
         return true;
     }
 
-    // 429/overloaded 的额外重试次数（总尝试次数 = 1 + retry）
+    // 429/overloaded 鐨勯澶栭噸璇曟鏁帮紙鎬诲皾璇曟鏁?= 1 + retry锛?
     protected int getOverloadRetryTimes() {
         return 2;
     }
 
     protected long getOverloadRetryBaseDelayMs() {
         return 1200L;
+    }
+
+    private long connectTimeoutWithinDeadline() {
+        RequestDeadline.throwIfExpired();
+        long configured = Math.max(3_000L, compatibleConnectTimeoutMs);
+        long remaining = RequestDeadline.remainingMillis(configured);
+        return Math.max(1L, remaining);
+    }
+
+    private long requestTimeoutWithinDeadline() {
+        RequestDeadline.throwIfExpired();
+        long configured = Math.max(30_000L, compatibleRequestTimeoutMs);
+        long remaining = RequestDeadline.remainingMillis(configured);
+        return Math.max(1L, remaining);
+    }
+
+    private String modelFailureMessage(Throwable error) {
+        String timeoutMessage = TimeoutMessages.modelTimeout(providerDisplayName(), error);
+        if (timeoutMessage != null) {
+            return timeoutMessage;
+        }
+        String message = error == null ? "" : error.getMessage();
+        return "调用 " + providerDisplayName() + " 模型失败："
+                + (message == null || message.isBlank() ? "未知错误" : message);
     }
 
     @Override
@@ -78,7 +112,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
             Map<String, Object> message = (Map<String, Object>) choice.get("message");
             return MessageHelper.extractTextContent(message.get("content"));
         } catch (Exception e) {
-            return "连接 " + providerDisplayName() + " 失败：" + e.getMessage();
+            return modelFailureMessage(e);
         }
     }
 
@@ -98,8 +132,8 @@ public abstract class OpenAiCompatibleService implements AiProvider {
             Map<String, Object> choice = callOnce(messages, tools);
             return parseToolCallResult(choice);
         } catch (Exception e) {
-            log.error("{} askWithTools 失败", providerDisplayName(), e);
-            return ToolCallResult.textOnly("连接 " + providerDisplayName() + " 失败：" + e.getMessage());
+            log.error("{} askWithTools 澶辫触", providerDisplayName(), e);
+            return ToolCallResult.textOnly(modelFailureMessage(e));
         }
     }
 
@@ -109,7 +143,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
                                           List<Map<String, Object>> tools,
                                           Consumer<String> onChunk) throws Exception {
         HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(20))
+                .connectTimeout(Duration.ofMillis(connectTimeoutWithinDeadline()))
                 .build();
 
         HttpHeaders headers = new HttpHeaders();
@@ -127,7 +161,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(getUrl()))
-                .timeout(Duration.ofSeconds(300))
+                .timeout(Duration.ofMillis(requestTimeoutWithinDeadline()))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + getApiKey())
                 .header("Accept", "text/event-stream")
@@ -136,6 +170,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
 
         int maxAttempts = Math.max(1, getOverloadRetryTimes() + 1);
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            RequestDeadline.throwIfExpired();
             HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 return parseStreamResponse(response.body(), onChunk, messages, tools);
@@ -149,16 +184,17 @@ public abstract class OpenAiCompatibleService implements AiProvider {
 
             if (isRetryableOverload(response.statusCode(), errorBody) && attempt < maxAttempts) {
                 long delayMs = getOverloadRetryBaseDelayMs() * attempt;
-                log.warn("{} 发生 429/overloaded，第 {}/{} 次重试，{}ms 后继续", providerDisplayName(), attempt, maxAttempts, delayMs);
-                sleepQuietly(delayMs);
+                log.warn("{} hit 429/overloaded, retry {}/{} after {}ms",
+                        providerDisplayName(), attempt, maxAttempts, delayMs);
+                sleepQuietly(RequestDeadline.remainingMillis(delayMs));
                 continue;
             }
 
-            throw new RuntimeException(providerDisplayName() + " API 错误 (HTTP "
+            throw new RuntimeException(providerDisplayName() + " API 閿欒 (HTTP "
                     + response.statusCode() + "): " + errorBody);
         }
 
-        throw new RuntimeException(providerDisplayName() + " 服务暂时繁忙，请稍后重试");
+        throw new RuntimeException(providerDisplayName() + " 鏈嶅姟鏆傛椂绻佸繖锛岃绋嶅悗閲嶈瘯");
     }
 
     @SuppressWarnings("unchecked")
@@ -187,7 +223,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
                 try {
                     chunk = new com.fasterxml.jackson.databind.ObjectMapper().readValue(data, Map.class);
                 } catch (Exception ignored) {
-                    // 跳过心跳或非 JSON 片段
+                    // 璺宠繃蹇冭烦鎴栭潪 JSON 鐗囨
                     continue;
                 }
 
@@ -255,7 +291,8 @@ public abstract class OpenAiCompatibleService implements AiProvider {
         if ("tool_calls".equals(result.getFinishReason()) && !hasExecutableToolCall(result)) {
             ToolCallResult fallback = fallbackToolCallsByNonStream(messages, tools);
             if (fallback != null && hasExecutableToolCall(fallback)) {
-                log.info("{} 流式 tool_calls 无有效工具名，已回退非流式补偿解析", providerDisplayName());
+                log.info("{} stream tool_calls had no executable tool name; falling back to non-stream parsing",
+                        providerDisplayName());
                 return fallback;
             }
         }
@@ -269,7 +306,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
             Map<String, Object> choice = callOnce(messages, tools);
             return parseToolCallResult(choice);
         } catch (Exception e) {
-            log.warn("{} 非流式补偿解析失败: {}", providerDisplayName(), e.getMessage());
+            log.warn("{} 闈炴祦寮忚ˉ鍋胯В鏋愬け璐? {}", providerDisplayName(), e.getMessage());
             return null;
         }
     }
@@ -304,7 +341,10 @@ public abstract class OpenAiCompatibleService implements AiProvider {
     @SuppressWarnings("unchecked")
     protected Map<String, Object> callOnce(List<Map<String, Object>> messages,
                                            List<Map<String, Object>> tools) {
-        RestTemplate restTemplate = new RestTemplate();
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Math.toIntExact(connectTimeoutWithinDeadline()));
+        requestFactory.setReadTimeout(Math.toIntExact(requestTimeoutWithinDeadline()));
+        RestTemplate restTemplate = new RestTemplate(requestFactory);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -321,6 +361,7 @@ public abstract class OpenAiCompatibleService implements AiProvider {
         int maxAttempts = Math.max(1, getOverloadRetryTimes() + 1);
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
+                RequestDeadline.throwIfExpired();
                 Map<String, Object> response = restTemplate.postForObject(getUrl(), entity, Map.class);
                 List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
                 return choices.get(0);
@@ -329,15 +370,16 @@ public abstract class OpenAiCompatibleService implements AiProvider {
                 int status = e.getStatusCode().value();
                 if (isRetryableOverload(status, body) && attempt < maxAttempts) {
                     long delayMs = getOverloadRetryBaseDelayMs() * attempt;
-                    log.warn("{} 非流式请求遇到 429/overloaded，第 {}/{} 次重试，{}ms 后继续", providerDisplayName(), attempt, maxAttempts, delayMs);
-                    sleepQuietly(delayMs);
+                    log.warn("{} non-stream request hit 429/overloaded, retry {}/{} after {}ms",
+                            providerDisplayName(), attempt, maxAttempts, delayMs);
+                    sleepQuietly(RequestDeadline.remainingMillis(delayMs));
                     continue;
                 }
-                throw new RuntimeException(providerDisplayName() + " API 错误 (HTTP " + status + "): " + body, e);
+                throw new RuntimeException(providerDisplayName() + " API 閿欒 (HTTP " + status + "): " + body, e);
             }
         }
 
-        throw new RuntimeException(providerDisplayName() + " 服务暂时繁忙，请稍后重试");
+        throw new RuntimeException(providerDisplayName() + " 鏈嶅姟鏆傛椂绻佸繖锛岃绋嶅悗閲嶈瘯");
     }
 
     protected boolean isRetryableOverload(int statusCode, String responseBody) {

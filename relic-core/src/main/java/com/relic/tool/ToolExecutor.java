@@ -1287,11 +1287,12 @@ public class ToolExecutor {
                 .replace("\r\n", "\n")
                 .replace('\r', '\n')
                 .replaceAll("(?i)<br\\s*/?>", " ");
+        boolean indentationSensitive = normalized.stripLeading().toLowerCase(Locale.ROOT).startsWith("mindmap");
         StringBuilder cleaned = new StringBuilder();
         for (String line : normalized.split("\\R", -1)) {
-            cleaned.append(sanitizeMermaidLine(line)).append('\n');
+            cleaned.append(indentationSensitive ? sanitizeIndentationSensitiveMermaidLine(line) : sanitizeMermaidLine(line)).append('\n');
         }
-        return cleaned.toString().trim();
+        return indentationSensitive ? cleaned.toString().stripTrailing() : cleaned.toString().trim();
     }
 
     private String sanitizeMermaidLine(String line) {
@@ -1301,6 +1302,13 @@ public class ToolExecutor {
         return line.replaceAll("(?i)<br\\s*/?>", " ")
                 .replaceAll("\\s{2,}", " ")
                 .trim();
+    }
+
+    private String sanitizeIndentationSensitiveMermaidLine(String line) {
+        if (line == null || line.isBlank()) {
+            return line == null ? "" : line;
+        }
+        return line.replaceAll("(?i)<br\\s*/?>", " ").stripTrailing();
     }
 
     private String sanitizeMermaidLabel(String text) {

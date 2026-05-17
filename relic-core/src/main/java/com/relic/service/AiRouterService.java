@@ -8,6 +8,8 @@ import com.relic.rag.retrieve.Retriever;
 import com.relic.tool.ToolExecutor;
 import com.relic.tool.ToolCallService;
 import com.relic.util.MessageHelper;
+import com.relic.util.RequestDeadline;
+import com.relic.util.TimeoutMessages;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
@@ -83,6 +85,9 @@ public class AiRouterService {
 
     @Value("${relic.rag.retrieval.min-score:0.0}")
     private double ragMinScore;
+
+    @Value("${relic.router.advisor-timeout-ms:90000}")
+    private long advisorTimeoutMs;
 
     private final Map<String, AiProvider> providerMap = new LinkedHashMap<>();
     private final SemanticRouter semanticRouter;
@@ -445,11 +450,11 @@ public class AiRouterService {
     private Map<String, String> collectAdvisorRepliesWithHeartbeat(List<Map<String, Object>> messages,
                                                                    Consumer<String> onChunk) {
         Map<String, String> replies = new ConcurrentHashMap<>();
-
-        CompletableFuture<Void> allDone = CompletableFuture.allOf(
-            advisors.stream()
+        Long deadline = RequestDeadline.currentDeadlineEpochMillis();
+        List<CompletableFuture<Void>> futures = advisors.stream()
                         .filter(providerMap::containsKey)
                         .map(name -> CompletableFuture.runAsync(() -> {
+                            RequestDeadline.setDeadlineEpochMillis(deadline);
                             try {
                                 long start = System.currentTimeMillis();
                                 log.info("【多AI协同】正在请求 {} ...", name);
@@ -463,16 +468,32 @@ public class AiRouterService {
                                 replies.put(name, reply);
                             } catch (Exception e) {
                                 log.error("【多AI协同】{} 调用失败", name, e);
+                            } finally {
+                                RequestDeadline.clear();
                             }
                         }))
-                        .toArray(CompletableFuture[]::new)
-        );
+                        .toList();
+        CompletableFuture<Void> allDone = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
 
         // 每 5 秒发一次心跳，防止前端超时断开
+        long advisorWaitMs = RequestDeadline.remainingMillis(Math.max(1_000L, advisorTimeoutMs));
+        if (advisorWaitMs <= 0L) {
+            futures.forEach(future -> future.cancel(true));
+            return replies;
+        }
+        long advisorStartMs = System.currentTimeMillis();
         while (!allDone.isDone()) {
             try {
-                allDone.get(5, TimeUnit.SECONDS);
+                long elapsedMs = System.currentTimeMillis() - advisorStartMs;
+                allDone.get(Math.max(1L, Math.min(5_000L, advisorWaitMs - elapsedMs)), TimeUnit.MILLISECONDS);
             } catch (java.util.concurrent.TimeoutException e) {
+                if (System.currentTimeMillis() - advisorStartMs >= advisorWaitMs) {
+                    futures.forEach(future -> future.cancel(true));
+                    log.warn("[multi-ai] advisor collection timed out after {} ms; collected {} replies",
+                            advisorWaitMs, replies.size());
+                    try { onChunk.accept("\n\n" + TimeoutMessages.ADVISOR_TIMEOUT + "\n\n"); } catch (Exception ignored) {}
+                    break;
+                }
                 // 还没完成，发心跳
                 try { onChunk.accept(""); } catch (Exception ignored) {}
             } catch (Exception e) {
@@ -492,10 +513,12 @@ public class AiRouterService {
     //并行调用所有 advisor，收集回复（advisor 可调用工具）
     public Map<String, String> collectAdvisorReplies(List<Map<String, Object>> messages) {
         Map<String, String> replies = new ConcurrentHashMap<>();
+        Long deadline = RequestDeadline.currentDeadlineEpochMillis();
 
         List<CompletableFuture<Void>> futures = advisors.stream()
                 .filter(providerMap::containsKey)
                 .map(name -> CompletableFuture.runAsync(() -> {
+                    RequestDeadline.setDeadlineEpochMillis(deadline);
                     try {
                         long start = System.currentTimeMillis();
                         log.info("【多AI协同】正在请求 {} ...", name);
@@ -509,12 +532,32 @@ public class AiRouterService {
                         replies.put(name, reply);
                     } catch (Exception e) {
                         log.error("【多AI协同】{} 调用失败", name, e);
+                    } finally {
+                        RequestDeadline.clear();
                     }
                 }))
                 .toList();
 
         // 等待所有 advisor 完成
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        try {
+            long advisorWaitMs = RequestDeadline.remainingMillis(Math.max(1_000L, advisorTimeoutMs));
+            if (advisorWaitMs <= 0L) {
+                futures.forEach(future -> future.cancel(true));
+                return replies;
+            }
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                    .get(advisorWaitMs, TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException e) {
+            futures.forEach(future -> future.cancel(true));
+            log.warn("[multi-ai] advisor collection timed out after {} ms; collected {} replies",
+                    advisorTimeoutMs, replies.size());
+        } catch (InterruptedException e) {
+            futures.forEach(future -> future.cancel(true));
+            Thread.currentThread().interrupt();
+            log.warn("[multi-ai] advisor collection interrupted; collected {} replies", replies.size());
+        } catch (Exception e) {
+            log.error("[multi-ai] advisor collection failed", e);
+        }
         return replies;
     }
 

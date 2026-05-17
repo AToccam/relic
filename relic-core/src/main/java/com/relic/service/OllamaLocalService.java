@@ -1,6 +1,7 @@
 package com.relic.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.relic.util.RequestDeadline;
 import lombok.extern.slf4j.Slf4j;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
@@ -170,13 +171,15 @@ public class OllamaLocalService implements LocalIntentClassifier {
 
         String jsonBody = objectMapper.writeValueAsString(body);
 
+        RequestDeadline.throwIfExpired();
+        long effectiveTimeoutMs = Math.max(1L, RequestDeadline.remainingMillis(Math.max(500, timeoutMs)));
         HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofMillis(timeoutMs))
+                .connectTimeout(Duration.ofMillis(effectiveTimeoutMs))
                 .build();
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(resolveGenerateUrl()))
-            .timeout(Duration.ofMillis(Math.max(500, timeoutMs)))
+            .timeout(Duration.ofMillis(effectiveTimeoutMs))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
@@ -214,13 +217,15 @@ public class OllamaLocalService implements LocalIntentClassifier {
 
         String jsonBody = objectMapper.writeValueAsString(body);
 
+        RequestDeadline.throwIfExpired();
+        long effectiveTimeoutMs = Math.max(1L, RequestDeadline.remainingMillis(Math.max(500, timeoutMs)));
         HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofMillis(timeoutMs))
+                .connectTimeout(Duration.ofMillis(effectiveTimeoutMs))
                 .build();
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(resolveGenerateUrl()))
-                .timeout(Duration.ofMillis(Math.max(500, timeoutMs)))
+                .timeout(Duration.ofMillis(effectiveTimeoutMs))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
