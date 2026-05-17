@@ -42,7 +42,7 @@ public final class RequestDeadline {
 
     public static void throwIfExpired() {
         if (isExpired()) {
-            throw new IllegalStateException("请求处理超时，请稍后重试。");
+            throw new IllegalStateException(TimeoutMessages.REQUEST_DEADLINE);
         }
     }
 

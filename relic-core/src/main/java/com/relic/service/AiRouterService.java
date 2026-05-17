@@ -9,6 +9,7 @@ import com.relic.tool.ToolExecutor;
 import com.relic.tool.ToolCallService;
 import com.relic.util.MessageHelper;
 import com.relic.util.RequestDeadline;
+import com.relic.util.TimeoutMessages;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
@@ -490,6 +491,7 @@ public class AiRouterService {
                     futures.forEach(future -> future.cancel(true));
                     log.warn("[multi-ai] advisor collection timed out after {} ms; collected {} replies",
                             advisorWaitMs, replies.size());
+                    try { onChunk.accept("\n\n" + TimeoutMessages.ADVISOR_TIMEOUT + "\n\n"); } catch (Exception ignored) {}
                     break;
                 }
                 // 还没完成，发心跳
