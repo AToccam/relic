@@ -16,6 +16,14 @@ relic:
     executor:
       pool-size: 4
       queue-size: 32
+  web-search:
+    max-results: 8
+    timeout-ms: 12000
+    auto-index-on-import: true
+    max-redirects: 5
+    max-download-bytes: 2097152
+    max-content-chars: 12000
+    user-agent: Mozilla/5.0 (compatible; RelicBot/1.0)
   openclaw:
     gateway-path: ${user.dir}/../relic-gateway
     config-path: ${user.home}/.openclaw/openclaw.json
