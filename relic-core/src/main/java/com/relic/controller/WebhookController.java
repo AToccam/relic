@@ -19,6 +19,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
@@ -26,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -49,7 +51,19 @@ public class WebhookController {
     @Value("${relic.request.timeout-ms:180000}")
     private long requestTimeoutMs;
 
+    @Value("${relic.request.max-concurrent-streams:8}")
+    private int maxConcurrentStreams;
+
+    private Semaphore streamSemaphore;
+
     private final ObjectMapper mapper = new ObjectMapper();
+
+    @PostConstruct
+    public void initStreamSemaphore() {
+        int permits = Math.max(1, maxConcurrentStreams);
+        streamSemaphore = new Semaphore(permits);
+        log.info("[stream-limit] max concurrent streams: {}", permits);
+    }
 
     //模式切换接口Single/Multi
     @GetMapping("/mode")
@@ -222,6 +236,13 @@ public class WebhookController {
 
         messages = skillCommandService.rewriteForEnabledSkillCommand(messages);
 
+        AtomicBoolean streamPermitReleased = new AtomicBoolean(false);
+        if (!streamSemaphore.tryAcquire()) {
+            log.warn("[stream-limit] max concurrent streams reached, rejecting conversation {}", conversationId);
+            releaseConversationLock(conversationId, conversationLock, new AtomicBoolean(false));
+            return buildImmediateSseMessage(messages, "当前请求较多，请稍后再试。");
+        }
+
         final List<Map<String, Object>> finalMessages = messages;
         long effectiveTimeoutMs = Math.max(10_000L, requestTimeoutMs);
         SseEmitter emitter = new SseEmitter(effectiveTimeoutMs);
@@ -297,6 +318,7 @@ public class WebhookController {
             } finally {
                 RequestDeadline.clear();
                 ToolExecutor.clearWorkingDirectoryContext();
+                releaseStreamPermit(streamPermitReleased);
                 releaseConversationLock(conversationId, conversationLock, lockReleased);
             }
         });
@@ -362,6 +384,12 @@ public class WebhookController {
             lock.unlock();
         } finally {
             conversationLocks.remove(conversationId, lock);
+        }
+    }
+
+    private void releaseStreamPermit(AtomicBoolean released) {
+        if (released.compareAndSet(false, true)) {
+            streamSemaphore.release();
         }
     }
 
