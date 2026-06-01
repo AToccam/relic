@@ -174,6 +174,19 @@ export const useSourcesStore = defineStore('sources', () => {
     }
   }
 
+  function addImportedWebResource(item: { name: string; relativePath: string; mimeType: string; size: number }) {
+    files.value.push({
+      id: `${Date.now()}-${Math.random()}`,
+      name: item.name,
+      sizeLabel: formatSize(item.size),
+      sizeBytes: item.size,
+      mimeType: item.mimeType,
+      relativePath: item.relativePath,
+      selected: true,
+      conversationId: currentConversationId.value
+    })
+  }
+
   function clearAll() {
     files.value = []
   }
@@ -236,7 +249,8 @@ export const useSourcesStore = defineStore('sources', () => {
     clearAll,
     loadPersistedFiles,
     migrateSelectedFilesToConversation,
-    indexFile
+    indexFile,
+    addImportedWebResource
   }
 })
 
