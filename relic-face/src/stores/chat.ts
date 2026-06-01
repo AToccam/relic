@@ -198,10 +198,11 @@ export const useChatStore = defineStore('chat', () => {
     const prevText = lastUser.content
     if (!prevText || typeof prevText !== 'string') return
 
+    const anchorFiles = sources.selectedUsableFiles.map(f => f.name).filter(Boolean)
     const seq = ++driftCheckSeq
     driftDetecting.value = true
     try {
-      const isDrift = await detectTopicDrift(prevText, newMsg)
+      const isDrift = await detectTopicDrift(prevText, newMsg, anchorFiles)
       if (seq !== driftCheckSeq) return
       if (isDrift) driftSuggested.value = true
     } catch {
