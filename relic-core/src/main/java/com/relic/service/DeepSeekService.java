@@ -2,6 +2,7 @@ package com.relic.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.relic.dto.ToolCallResult;
+import com.relic.util.RequestDeadline;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 
@@ -88,12 +89,16 @@ public class DeepSeekService extends OpenAiCompatibleService {
         ObjectMapper objectMapper = new ObjectMapper();
         String jsonBody = objectMapper.writeValueAsString(requestBody);
 
+        RequestDeadline.throwIfExpired();
+        long connectTimeout = Math.max(1L, RequestDeadline.remainingMillis(Math.max(3000, connectTimeoutMs)));
+        long requestTimeout = Math.max(1L, RequestDeadline.remainingMillis(Math.max(30_000, requestTimeoutMs)));
+
         HttpClient client = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofMillis(Math.max(3000, connectTimeoutMs)))
+            .connectTimeout(Duration.ofMillis(connectTimeout))
                 .build();
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(getUrl()))
-            .timeout(Duration.ofMillis(Math.max(30_000, requestTimeoutMs)))
+            .timeout(Duration.ofMillis(requestTimeout))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + getApiKey())
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))

@@ -10,8 +10,11 @@ import com.relic.service.SkillCommandService;
 import com.relic.tool.ToolExecutor;
 import com.relic.util.MessageHelper;
 import com.relic.util.OpenAiResponseBuilder;
+import com.relic.util.RequestDeadline;
+import com.relic.util.TimeoutMessages;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -22,13 +25,17 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 
 @Slf4j
 @RestController
 public class WebhookController {
 
     private static final int MAX_HISTORY = 8; //最大历史条数
+
+    private final ConcurrentHashMap<String, ReentrantLock> conversationLocks = new ConcurrentHashMap<>();
 
     @Autowired
     private AiRouterService aiRouter;
@@ -38,6 +45,9 @@ public class WebhookController {
 
     @Autowired
     private SkillCommandService skillCommandService;
+
+    @Value("${relic.request.timeout-ms:180000}")
+    private long requestTimeoutMs;
 
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -196,6 +206,12 @@ public class WebhookController {
         log.info("【最终发送给 AI 的记忆条数】: {}", messages.size());
         log.info("【当前最新提问】: {}", messages.get(messages.size() - 1).get("content"));
 
+        ReentrantLock conversationLock = conversationLocks.computeIfAbsent(conversationId, ignored -> new ReentrantLock());
+        if (!conversationLock.tryLock()) {
+            log.warn("[conversation-lock] conversation {} is already streaming, rejecting concurrent request", conversationId);
+            return buildImmediateSseMessage(messages, "当前会话正在生成，请稍后再试。");
+        }
+
         for (int i = messages.size() - 1; i >= 0; i--) {
             Map<String, Object> msg = messages.get(i);
             if ("user".equals(msg.get("role"))) {
@@ -207,12 +223,14 @@ public class WebhookController {
         messages = skillCommandService.rewriteForEnabledSkillCommand(messages);
 
         final List<Map<String, Object>> finalMessages = messages;
-        SseEmitter emitter = new SseEmitter(180_000L);
+        long effectiveTimeoutMs = Math.max(10_000L, requestTimeoutMs);
+        SseEmitter emitter = new SseEmitter(effectiveTimeoutMs);
         String chatId = "chatcmpl-" + System.currentTimeMillis();
         String modelName = aiRouter.getProviderNameForMessages(finalMessages);
         long created = System.currentTimeMillis() / 1000;
         AtomicBoolean emitterActive = new AtomicBoolean(true);
         AtomicBoolean citationsSent = new AtomicBoolean(false);
+        AtomicBoolean lockReleased = new AtomicBoolean(false);
         StringBuilder assistantOutput = new StringBuilder();
 
         emitter.onCompletion(() -> {
@@ -222,6 +240,7 @@ public class WebhookController {
 
         Thread streamThread = Thread.startVirtualThread(() -> {
             try {
+                RequestDeadline.start(effectiveTimeoutMs);
                 ToolExecutor.setWorkingDirectoryContext(workingDirectory);
                 log.info("【流式连接 AI 中...】模式: {}, 工作目录: {}",
                         aiRouter.getMode(),
@@ -263,7 +282,7 @@ public class WebhookController {
                 try {
                     Map<String, Object> errChunk = OpenAiResponseBuilder.buildChunk(
                         chatId, created, modelName,
-                            Map.of("content", "\n\n⚠️ 后端处理异常: " + e.getMessage()), null);
+                            Map.of("content", "\n\n" + TimeoutMessages.requestError(e)), null);
                     emitter.send(SseEmitter.event()
                             .data(mapper.writeValueAsString(errChunk), MediaType.APPLICATION_JSON));
                     Map<String, Object> stopChunk2 = OpenAiResponseBuilder.buildChunk(
@@ -276,18 +295,74 @@ public class WebhookController {
                     log.warn("【发送错误消息也失败】SSE 可能已关闭: {}", ex.getMessage());
                 }
             } finally {
+                RequestDeadline.clear();
                 ToolExecutor.clearWorkingDirectoryContext();
+                releaseConversationLock(conversationId, conversationLock, lockReleased);
             }
         });
 
-        // SSE 超时时中断虚拟线程，防止上游流式读取的阻塞
         emitter.onTimeout(() -> {
             emitterActive.set(false);
             streamThread.interrupt();
-            log.warn("【SSE 连接超时，已中断流式线程】");
+            log.warn("[SSE] request timed out after {} ms, stream thread interrupted", effectiveTimeoutMs);
+            try {
+                Map<String, Object> errChunk = OpenAiResponseBuilder.buildChunk(
+                        chatId, created, modelName,
+                        Map.of("content", "\n\n" + TimeoutMessages.SSE_TIMEOUT), null);
+                emitter.send(SseEmitter.event()
+                        .data(mapper.writeValueAsString(errChunk), MediaType.APPLICATION_JSON));
+                Map<String, Object> stopChunk = OpenAiResponseBuilder.buildChunk(
+                        chatId, created, modelName, Map.of(), "stop");
+                emitter.send(SseEmitter.event()
+                        .data(mapper.writeValueAsString(stopChunk), MediaType.APPLICATION_JSON));
+                emitter.send(SseEmitter.event().data("[DONE]", MediaType.TEXT_PLAIN));
+            } catch (Exception e) {
+                log.warn("[SSE] failed to send timeout message: {}", e.getMessage());
+            } finally {
+                emitter.complete();
+            }
         });
 
         return emitter;
+    }
+
+    private SseEmitter buildImmediateSseMessage(List<Map<String, Object>> messages, String message) {
+        long effectiveTimeoutMs = Math.max(10_000L, requestTimeoutMs);
+        SseEmitter emitter = new SseEmitter(effectiveTimeoutMs);
+        String chatId = "chatcmpl-" + System.currentTimeMillis();
+        String modelName = aiRouter.getProviderNameForMessages(messages);
+        long created = System.currentTimeMillis() / 1000;
+
+        Thread.startVirtualThread(() -> {
+            try {
+                Map<String, Object> chunk = OpenAiResponseBuilder.buildChunk(
+                        chatId, created, modelName, Map.of("content", message), null);
+                emitter.send(SseEmitter.event()
+                        .data(mapper.writeValueAsString(chunk), MediaType.APPLICATION_JSON));
+                Map<String, Object> stopChunk = OpenAiResponseBuilder.buildChunk(
+                        chatId, created, modelName, Map.of(), "stop");
+                emitter.send(SseEmitter.event()
+                        .data(mapper.writeValueAsString(stopChunk), MediaType.APPLICATION_JSON));
+                emitter.send(SseEmitter.event().data("[DONE]", MediaType.TEXT_PLAIN));
+                emitter.complete();
+            } catch (Exception e) {
+                log.warn("[SSE] failed to send immediate message: {}", e.getMessage());
+                emitter.completeWithError(e);
+            }
+        });
+
+        return emitter;
+    }
+
+    private void releaseConversationLock(String conversationId, ReentrantLock lock, AtomicBoolean released) {
+        if (!released.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            lock.unlock();
+        } finally {
+            conversationLocks.remove(conversationId, lock);
+        }
     }
 
     @GetMapping("/chat/conversations")

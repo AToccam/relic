@@ -1,6 +1,7 @@
 package com.relic.service;
 
 import com.relic.util.MessageHelper;
+import com.relic.util.RequestDeadline;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -65,7 +66,7 @@ public class DefaultSemanticRouter implements SemanticRouter {
             try {
                 Optional<RoutePath> localDecision = CompletableFuture
                         .supplyAsync(() -> localClassifier.get().classify(userMessage))
-                        .get(localClassifierBudgetMs, TimeUnit.MILLISECONDS);
+                        .get(RequestDeadline.remainingMillis(localClassifierBudgetMs), TimeUnit.MILLISECONDS);
                 if (localDecision.isPresent()) {
                     RoutePath localPath = localDecision.get();
 

@@ -4,11 +4,24 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.relic.dto.ToolCallResult;
 import com.relic.service.AiProvider;
+import com.relic.util.RequestDeadline;
+import com.relic.util.TimeoutMessages;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -63,6 +76,7 @@ public class ToolCallService {
 
     private static final List<String> CHART_KEYWORDS = List.of(
             "\u56fe\u8868", "\u753b\u56fe", "\u5173\u7cfb\u56fe", "\u7ed3\u6784\u56fe", "\u793a\u610f\u56fe", "\u56fe\u793a",
+            "\u6811\u72b6\u56fe", "\u5c42\u7ea7\u56fe", "\u5206\u652f\u56fe",
             "\u5bf9\u6bd4\u56fe", "\u6bd4\u8f83\u56fe", "\u5bf9\u7167\u56fe", "\u533a\u522b\u56fe", "\u5dee\u5f02\u56fe",
             "\u6bd4\u4f8b\u56fe", "\u5206\u5e03\u56fe", "\u5360\u6bd4\u56fe", "\u8d8b\u52bf\u56fe", "\u65f6\u95f4\u7ebf",
             "\u7518\u7279\u56fe", "\u5e8f\u5217\u56fe", "\u65f6\u5e8f\u56fe", "\u7c7b\u56fe", "\u5b9e\u4f53\u5173\u7cfb",
@@ -77,6 +91,13 @@ public class ToolCallService {
     private static final List<String> GENERIC_CHART_ACTIONS = List.of(
             "\u505a\u4e2a", "\u505a\u4e00\u4e2a", "\u753b\u4e2a", "\u753b\u4e00\u4e2a",
             "\u751f\u6210", "\u751f\u6210\u4e00\u4e2a", "\u751f\u6210\u4e00\u4efd", "\u521b\u5efa", "\u5236\u4f5c", "\u7ed9\u6211\u751f\u6210");
+    private static final List<String> BITMAP_IMAGE_ACTIONS = List.of(
+            "\u751f\u6210", "\u753b", "\u753b\u4e00\u5f20", "\u505a\u4e00\u5f20", "\u521b\u5efa", "\u5236\u4f5c",
+            "generate", "create", "draw", "make");
+    private static final List<String> BITMAP_IMAGE_KEYWORDS = List.of(
+            "\u56fe\u7247", "\u56fe\u50cf", "\u7167\u7247", "\u914d\u56fe", "\u63d2\u753b", "\u6d77\u62a5", "\u58c1\u7eb8",
+            "\u80cc\u666f\u56fe", "\u5ba3\u4f20\u56fe", "\u5c01\u9762\u56fe", "\u751f\u56fe",
+            "image", "picture", "photo", "illustration", "poster", "wallpaper");
     private static final List<String> WEAK_CHART_ACTIONS = List.of(
             "\u68b3\u7406", "\u6574\u7406", "\u5c55\u793a", "\u5448\u73b0", "\u603b\u89c8", "\u7ed3\u6784\u5316",
             "\u53ef\u89c6\u5316", "\u505a\u6210", "\u753b\u4e00\u4e0b", "\u753b\u4e0b", "\u4e00\u5f20", "\u4e00\u9875",
@@ -137,10 +158,52 @@ public class ToolCallService {
 
     @Autowired
     private ToolExecutor toolExecutor;
+
+    @Value("${relic.tools.execution-timeout-ms:60000}")
+    private long toolExecutionTimeoutMs;
+
+    @Value("${relic.tools.executor.pool-size:4}")
+    private int toolExecutorPoolSize;
+
+    @Value("${relic.tools.executor.queue-size:32}")
+    private int toolExecutorQueueSize;
+
+    private ExecutorService toolWorkerExecutor;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @PostConstruct
+    public void initToolWorkerExecutor() {
+        int poolSize = Math.max(1, toolExecutorPoolSize);
+        int queueSize = Math.max(1, toolExecutorQueueSize);
+        AtomicInteger counter = new AtomicInteger();
+        ThreadFactory threadFactory = task -> {
+            Thread thread = new Thread(task, "relic-tool-worker-" + counter.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        };
+        toolWorkerExecutor = new ThreadPoolExecutor(
+                poolSize,
+                poolSize,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(queueSize),
+                threadFactory,
+                new ThreadPoolExecutor.AbortPolicy());
+    }
+
+    @PreDestroy
+    public void shutdownToolWorkerExecutor() {
+        if (toolWorkerExecutor != null) {
+            toolWorkerExecutor.shutdownNow();
+        }
+    }
 
     public String askWithTools(AiProvider provider, List<Map<String, Object>> messages) {
         IntentDecision decision = decideIntent(messages);
+        if (decision.unsupportedBitmapImageIntent()) {
+            return unsupportedBitmapImageReply();
+        }
         if (shouldCreateChartFileDeterministically(decision)) {
             return createChartFileDeterministically(provider, messages, decision);
         }
@@ -189,6 +252,10 @@ public class ToolCallService {
                                 List<Map<String, Object>> messages,
                                 Consumer<String> onChunk) throws Exception {
         IntentDecision decision = decideIntent(messages);
+        if (decision.unsupportedBitmapImageIntent()) {
+            onChunk.accept(unsupportedBitmapImageReply());
+            return;
+        }
         if (shouldCreateChartFileDeterministically(decision)) {
             onChunk.accept(createChartFileDeterministically(provider, messages, decision));
             return;
@@ -358,7 +425,7 @@ public class ToolCallService {
             args.put("content", content);
 
             String toolName = decision.docxOutputIntent() ? "create_docx_file" : "create_text_file";
-            String toolResult = toolExecutor.execute(toolName, objectMapper.writeValueAsString(args));
+            String toolResult = executeToolWithTimeout(toolName, objectMapper.writeValueAsString(args));
             return buildDirectFileOutput(toolResult, draft.replyMessage(), decision.docxOutputIntent() && decision.chartIntent());
         } catch (Exception e) {
             log.warn("[deterministic-file] create failed: {}", e.getMessage());
@@ -379,7 +446,7 @@ public class ToolCallService {
             Map<String, Object> chartArgs = new HashMap<>();
             chartArgs.put("title", draft.chartTitle());
             chartArgs.put("content", draft.mermaidSource());
-            String chartResult = toolExecutor.execute("render_mermaid_chart", objectMapper.writeValueAsString(chartArgs));
+            String chartResult = executeToolWithTimeout("render_mermaid_chart", objectMapper.writeValueAsString(chartArgs));
             if (isChartValidationError(chartResult) || !hasInlineChart(chartResult)) {
                 return "⚠️ 图表生成失败：" + removeSpecialToolLines(chartResult);
             }
@@ -395,7 +462,7 @@ public class ToolCallService {
             fileArgs.put("content", content);
 
             String toolName = decision.docxOutputIntent() ? "create_docx_file" : "create_text_file";
-            String fileResult = toolExecutor.execute(toolName, objectMapper.writeValueAsString(fileArgs));
+            String fileResult = executeToolWithTimeout(toolName, objectMapper.writeValueAsString(fileArgs));
             return buildDirectFileOutput(fileResult, draft.replyMessage(), decision.docxOutputIntent() && decision.chartIntent());
         } catch (Exception e) {
             log.warn("[deterministic-chart-file] create failed: {}", e.getMessage());
@@ -1142,12 +1209,53 @@ public class ToolCallService {
             return "已达到本次请求可创建文件上限(" + guard.maxCreates + ")。如需一次生成多个文件，请明确说明“生成多个文件”。";
         }
 
-        String result = toolExecutor.execute(toolName, tc.getArgumentsString());
+        String result = executeToolWithTimeout(toolName, tc.getArgumentsString());
 
         if (isCreateTool(toolName) && hasDownloadUrl(result)) {
             guard.createdCount++;
         }
         return result;
+    }
+
+    private String executeToolWithTimeout(String toolName, String arguments) {
+        RequestDeadline.throwIfExpired();
+        long timeoutMs = RequestDeadline.remainingMillis(Math.max(1_000L, toolExecutionTimeoutMs));
+        if (timeoutMs <= 0L) {
+            return TimeoutMessages.REQUEST_DEADLINE;
+        }
+        Long deadline = RequestDeadline.currentDeadlineEpochMillis();
+        String workingDirectory = ToolExecutor.currentWorkingDirectory();
+        CompletableFuture<String> future;
+        try {
+            future = CompletableFuture.supplyAsync(() -> {
+                RequestDeadline.setDeadlineEpochMillis(deadline);
+                ToolExecutor.setWorkingDirectoryContext(workingDirectory);
+                try {
+                    return toolExecutor.execute(toolName, arguments);
+                } finally {
+                    RequestDeadline.clear();
+                    ToolExecutor.clearWorkingDirectoryContext();
+                }
+            }, toolWorkerExecutor);
+        } catch (Exception e) {
+            log.warn("[tool-rejected] {} could not be scheduled: {}", toolName, e.getMessage());
+            return TimeoutMessages.TOOL_QUEUE_FULL;
+        }
+        try {
+            return future.get(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            log.warn("[tool-timeout] {} exceeded {} ms", toolName, timeoutMs);
+            return TimeoutMessages.TOOL_TIMEOUT;
+        } catch (InterruptedException e) {
+            future.cancel(true);
+            Thread.currentThread().interrupt();
+            return TimeoutMessages.TOOL_INTERRUPTED;
+        } catch (Exception e) {
+            Throwable cause = e.getCause() == null ? e : e.getCause();
+            log.warn("[tool-error] {} failed: {}", toolName, cause.getMessage());
+            return "工具调用失败：" + cause.getMessage();
+        }
     }
 
     private boolean isBlockedRepeatedChartCall(ToolCallResult.ToolCall tc, CreateGuard guard) {
@@ -1914,7 +2022,13 @@ public class ToolCallService {
         boolean inlineTableIntent = looksLikeInlineTableIntent(latestUserText) && !fileOutputIntent;
         addIf(matchedRules, inlineTableIntent, "INLINE_TABLE");
 
+        boolean unsupportedBitmapImageIntent = !fileOutputIntent && looksLikeUnsupportedBitmapImageIntent(latestUserText);
+        addIf(matchedRules, unsupportedBitmapImageIntent, "UNSUPPORTED_BITMAP_IMAGE");
+
         boolean strongChartIntent = forcedInlineChartIntent || looksLikeChartIntent(latestUserText);
+        if (unsupportedBitmapImageIntent) {
+            strongChartIntent = false;
+        }
         addIf(matchedRules, strongChartIntent, "CHART_STRONG");
 
         boolean weakChartIntent = looksLikeWeakChartIntent(latestUserText);
@@ -1927,13 +2041,18 @@ public class ToolCallService {
         addIf(matchedRules, chartRevisionIntent, "CHART_REVISION");
 
         boolean chartIntent = strongChartIntent || weakChartIntent || ambiguousChartFollowUp || chartRevisionIntent;
+        if (unsupportedBitmapImageIntent) {
+            chartIntent = false;
+        }
         boolean explicitMultiFiles = looksLikeExplicitMultiFileIntent(latestUserText);
         addIf(matchedRules, explicitMultiFiles, "MULTI_FILE");
         boolean explicitMultiCharts = looksLikeExplicitMultiChartIntent(latestUserText);
         addIf(matchedRules, explicitMultiCharts, "MULTI_CHART");
 
         OutputMode outputMode;
-        if (!chartIntent && (noFileOutputIntent || inlineTableIntent)) {
+        if (unsupportedBitmapImageIntent) {
+            outputMode = OutputMode.PLAIN_REPLY;
+        } else if (!chartIntent && (noFileOutputIntent || inlineTableIntent)) {
             outputMode = OutputMode.PLAIN_REPLY;
         } else if (chartIntent && fileOutputIntent && !docxOutputIntent) {
             outputMode = OutputMode.CHART_FILE_OUTPUT;
@@ -1955,6 +2074,7 @@ public class ToolCallService {
                 textFileOutputIntent,
                 inlineTableIntent,
                 workspaceReadIntent,
+                unsupportedBitmapImageIntent,
                 explicitMultiFiles ? EXPLICIT_MULTI_CREATE_LIMIT : DEFAULT_CREATE_LIMIT,
                 explicitMultiCharts ? EXPLICIT_MULTI_CHART_LIMIT : DEFAULT_CHART_LIMIT,
                 List.copyOf(matchedRules));
@@ -2091,9 +2211,23 @@ public class ToolCallService {
         if (!containsAny(text, GENERIC_CHART_ACTIONS)) {
             return false;
         }
-        return text.contains("\u56fe")
-                || text.contains("\u56fe\u50cf")
-                || text.contains("\u793a\u610f");
+        return text.contains("\u56fe\u8868")
+                || text.contains("\u56fe\u793a")
+                || text.contains("\u793a\u610f")
+                || text.contains("\u56fe\u89e3")
+                || text.contains("\u7ed3\u6784\u56fe")
+                || text.contains("\u5173\u7cfb\u56fe")
+                || text.contains("\u6811\u72b6\u56fe");
+    }
+
+    private boolean looksLikeUnsupportedBitmapImageIntent(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String t = text.toLowerCase(Locale.ROOT);
+        return containsAny(t, BITMAP_IMAGE_ACTIONS)
+                && containsAny(t, BITMAP_IMAGE_KEYWORDS)
+                && !containsAny(t, CHART_KEYWORDS);
     }
 
     private boolean looksLikeChartRevisionIntent(String text) {
@@ -2328,6 +2462,10 @@ public class ToolCallService {
                 .trim();
     }
 
+    private String unsupportedBitmapImageReply() {
+        return "\u76ee\u524d\u65e0\u6cd5\u76f4\u63a5\u751f\u6210\u56fe\u7247\u3002\u6211\u53ef\u4ee5\u5e2e\u4f60\u751f\u6210\u6587\u5b57\u8bf4\u660e\u3001\u6587\u6863\u3001\u8868\u683c\uff0c\u6216\u8005\u751f\u6210\u6d41\u7a0b\u56fe\u3001\u6811\u72b6\u56fe\u3001\u5173\u7cfb\u56fe\u7b49\u7ed3\u6784\u5316\u56fe\u8868\u3002";
+    }
+
     private static final class CreateGuard {
         private final int maxCreates;
         private final int maxCharts;
@@ -2372,6 +2510,7 @@ public class ToolCallService {
             boolean textFileOutputIntent,
             boolean inlineTableIntent,
             boolean workspaceReadIntent,
+            boolean unsupportedBitmapImageIntent,
             int maxCreates,
             int maxCharts,
             List<String> matchedRules) {
