@@ -149,6 +149,15 @@ function renderMd(text: string): string {
 }
 
 const bubbleRef = useTemplateRef<HTMLElement>('bubble')
+const copied = ref(false)
+
+function copyMessage() {
+  const text = typeof props.message.content === 'string' ? props.message.content : ''
+  navigator.clipboard.writeText(text).then(() => {
+    copied.value = true
+    setTimeout(() => { copied.value = false }, 1500)
+  })
+}
 
 watchEffect(async () => {
   props.message.content
@@ -239,6 +248,18 @@ watchEffect(async () => {
             </div>
           </div>
         </details>
+
+        <div v-if="!message.streaming" class="msg-actions">
+          <button class="msg-copy-btn" @click="copyMessage" :title="copied ? '已复制' : '复制全文'">
+            <svg v-if="!copied" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+            <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+            <span>{{ copied ? '已复制' : '复制' }}</span>
+          </button>
+        </div>
       </template>
 
       <template v-else>
@@ -549,6 +570,39 @@ details[open] .citations-summary::before {
   white-space: pre-wrap;
   max-height: 80px;
   overflow-y: auto;
+}
+
+.msg-actions {
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  margin-top: 2px;
+}
+
+.bubble:hover .msg-actions {
+  opacity: 1;
+}
+
+.msg-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #64748b;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.msg-copy-btn:hover {
+  background: #f1f5f9;
+  border-color: #0891b2;
+  color: #0891b2;
 }
 
 .markdown-body :deep(p) { margin: 0 0 8px; }
