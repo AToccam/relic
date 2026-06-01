@@ -102,6 +102,28 @@ async function renameHistoryItem(conversationId: string, currentName: string) {
   openHistoryMenuId.value = null
 }
 
+function exportConversation(conversationId: string, title: string) {
+  const buffer = chat.messages
+  if (!buffer || buffer.length === 0) return
+
+  const lines: string[] = [`# ${title || '对话记录'}`, '', `> 导出时间：${new Date().toLocaleString()}`, '']
+  for (const msg of buffer) {
+    const role = msg.role === 'user' ? '**用户**' : '**AI**'
+    lines.push(`### ${role}`, '', typeof msg.content === 'string' ? msg.content : '', '')
+  }
+
+  const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${title || '对话'}.md`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  openHistoryMenuId.value = null
+}
+
 async function deleteHistoryItem(conversationId: string) {
   const ok = window.confirm('确认删除这个会话记录吗？删除后不可恢复。')
   if (!ok) return
@@ -217,6 +239,7 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
             </span>
             <div v-if="openHistoryMenuId === item.conversationId" class="history-menu" @click.stop>
               <button class="history-menu-item" @click="renameHistoryItem(item.conversationId, resolveHistoryTitle(item))">重命名</button>
+              <button class="history-menu-item" @click="exportConversation(item.conversationId, resolveHistoryTitle(item))">导出 MD</button>
               <button class="history-menu-item danger" @click="deleteHistoryItem(item.conversationId)">删除</button>
             </div>
           </button>
