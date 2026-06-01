@@ -291,6 +291,12 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
                 <polyline points="14 2 14 8 20 8" />
               </svg>
             </div>
+            <img
+              v-if="file.dataUrl && file.mimeType.startsWith('image/')"
+              :src="file.dataUrl"
+              class="file-thumb"
+              :alt="file.name"
+            />
             <div class="file-info">
               <span class="file-name" :title="file.name">{{ file.name }}</span>
               <span class="file-size">{{ file.sizeLabel }}</span>
@@ -707,6 +713,15 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+}
+
+.file-thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid #e2e8f0;
   flex-shrink: 0;
 }
 
