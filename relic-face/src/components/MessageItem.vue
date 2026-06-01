@@ -287,6 +287,7 @@ watchEffect(async () => {
         <div v-else class="plain-text">{{ message.content }}</div>
       </template>
       <span v-if="message.streaming" class="cursor">▌</span>
+      <span v-if="!message.streaming && message.interrupted" class="interrupted-badge">⏹ 已中断</span>
     </div>
   </div>
 </template>
@@ -570,6 +571,19 @@ details[open] .citations-summary::before {
   white-space: pre-wrap;
   max-height: 80px;
   overflow-y: auto;
+}
+
+.interrupted-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #92400e;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 6px;
+  padding: 2px 8px;
+  align-self: flex-start;
 }
 
 .msg-actions {

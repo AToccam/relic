@@ -171,6 +171,14 @@ export const useChatStore = defineStore('chat', () => {
     const id = currentConversationId.value
     if (!id) return
     abortControllers.get(id)?.abort()
+    // 标记当前正在流式的消息为已中断
+    const buffer = messageCacheByConversation.get(id)
+    if (buffer) {
+      const last = buffer[buffer.length - 1]
+      if (last && last.role === 'assistant' && last.streaming) {
+        last.interrupted = true
+      }
+    }
   }
 
   function clearDrift() {
