@@ -41,10 +41,18 @@ export async function testMulti(prompt: string): Promise<MultiTestResult> {
   return res.json()
 }
 
-export async function detectTopicDrift(prevMsg: string, newMsg: string): Promise<boolean> {
+export async function detectTopicDrift(
+  prevMsg: string,
+  newMsg: string,
+  anchorFiles?: string[]
+): Promise<boolean> {
   const system = '你是话题判断助手，只能回答YES或NO，不要输出任何其他内容。'
+  const fileContext =
+    anchorFiles && anchorFiles.length > 0
+      ? `\n当前会话已关联文件：${anchorFiles.slice(0, 5).join('、')}。如果新消息仍与这些文件内容相关，应回答NO。`
+      : ''
   const prompt =
-    `判断以下两条消息是否属于明显不同的话题领域。\n` +
+    `判断以下两条消息是否属于明显不同的话题领域。${fileContext}\n` +
     `消息A：${prevMsg.slice(0, 150)}\n` +
     `消息B：${newMsg.slice(0, 150)}\n` +
     `YES = 话题明显不同，建议新开会话；NO = 同一话题或存在关联性`

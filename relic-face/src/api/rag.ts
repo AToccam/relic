@@ -27,3 +27,12 @@ export async function getRagIndexStatus(sourceId: string): Promise<RagIndexStatu
   }
   return response.json()
 }
+
+export async function listRagIndexStatuses(): Promise<RagIndexStatusResponse[]> {
+  const response = await fetch(`${BASE}/rag/index/status/list`)
+  if (!response.ok) {
+    throw new Error(`查询全部索引状态失败: HTTP ${response.status}`)
+  }
+  const json = await response.json()
+  return Array.isArray(json.items) ? json.items : []
+}
