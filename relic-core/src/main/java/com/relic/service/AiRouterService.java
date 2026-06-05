@@ -27,6 +27,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -559,10 +560,13 @@ public class AiRouterService {
     private List<CompletableFuture<Void>> scheduleAdvisorTasks(List<Map<String, Object>> messages,
                                                               Map<String, String> replies,
                                                               Long deadline) {
-        try {
-            return advisors.stream()
-                    .filter(providerMap::containsKey)
-                    .map(name -> CompletableFuture.runAsync(() -> {
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        for (String name : advisors) {
+            if (!providerMap.containsKey(name)) {
+                continue;
+            }
+            try {
+                futures.add(CompletableFuture.runAsync(() -> {
                         RequestDeadline.setDeadlineEpochMillis(deadline);
                         try {
                             long start = System.currentTimeMillis();
@@ -580,12 +584,14 @@ public class AiRouterService {
                         } finally {
                             RequestDeadline.clear();
                         }
-                    }, advisorExecutor))
-                    .toList();
-        } catch (Exception e) {
-            log.warn("[multi-ai] advisor tasks could not be scheduled: {}", e.getMessage());
-            return List.of();
+                    }, advisorExecutor));
+            } catch (RejectedExecutionException e) {
+                log.warn("[multi-ai] advisor executor is saturated; advisor {} was not scheduled", name);
+            } catch (Exception e) {
+                log.warn("[multi-ai] advisor {} could not be scheduled: {}", name, e.getMessage());
+            }
         }
+        return futures;
     }
 
 
