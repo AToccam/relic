@@ -9,4 +9,7 @@ public class ImportWebResourceRequest {
     private String title;
     private String snippet;
     private String keyword;
+    private String summary;
+    private String siteName;
+    private String datePublished;
 }

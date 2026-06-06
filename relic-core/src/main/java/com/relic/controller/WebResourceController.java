@@ -2,12 +2,14 @@ package com.relic.controller;
 
 import com.relic.resource.SavedResource;
 import com.relic.resource.WorkspaceResourceService;
-import com.relic.websearch.DuckDuckGoSearchService;
+import com.relic.websearch.BochaSearchService;
 import com.relic.websearch.WebResourceImportService;
 import com.relic.websearch.dto.ImportWebResourceRequest;
 import com.relic.websearch.dto.WebSearchRequest;
 import com.relic.websearch.dto.WebSearchResult;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -24,20 +26,29 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class WebResourceController {
 
-    private final DuckDuckGoSearchService duckDuckGoSearchService;
+    private final BochaSearchService bochaSearchService;
     private final WebResourceImportService webResourceImportService;
     private final WorkspaceResourceService workspaceResourceService;
 
     @PostMapping("/search")
-    public Map<String, Object> search(@RequestBody WebSearchRequest request) throws IOException {
-        String keyword = requireKeyword(request == null ? null : request.getKeyword());
-        List<WebSearchResult> results = duckDuckGoSearchService.search(keyword, request == null ? null : request.getLimit());
+    public ResponseEntity<Map<String, Object>> search(@RequestBody WebSearchRequest request) {
+        String keyword;
+        try {
+            keyword = requireKeyword(request == null ? null : request.getKeyword());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(errorResponse(e.getMessage()));
+        }
 
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("ok", true);
-        response.put("keyword", keyword);
-        response.put("items", results);
-        return response;
+        try {
+            List<WebSearchResult> results = bochaSearchService.search(keyword, request == null ? null : request.getLimit());
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("ok", true);
+            response.put("keyword", keyword);
+            response.put("items", results);
+            return ResponseEntity.ok(response);
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(errorResponse(e.getMessage()));
+        }
     }
 
     @PostMapping("/import")
@@ -56,5 +67,12 @@ public class WebResourceController {
             throw new IllegalArgumentException("keyword 不能为空");
         }
         return keyword.trim();
+    }
+
+    private Map<String, Object> errorResponse(String message) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("ok", false);
+        response.put("message", message);
+        return response;
     }
 }

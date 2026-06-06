@@ -30,8 +30,14 @@ import java.util.function.Consumer;
 @Service
 public class DeepSeekService extends OpenAiCompatibleService {
 
-    private final String API_KEY = "sk-d7cbb8c351964fab8c6a7d8709e9da7b";
-    private final String URL = "https://api.deepseek.com/chat/completions";
+    @Value("${relic.deepseek.api-key:}")
+    private String apiKey;
+
+    @Value("${relic.deepseek.url:https://api.deepseek.com/chat/completions}")
+    private String url;
+
+    @Value("${relic.deepseek.model:deepseek-chat}")
+    private String model;
 
     @Value("${relic.deepseek.connect-timeout-ms:20000}")
     private int connectTimeoutMs;
@@ -46,13 +52,13 @@ public class DeepSeekService extends OpenAiCompatibleService {
     public String getName() { return "deepseek"; }
 
     @Override
-    protected String getApiKey() { return API_KEY; }
+    protected String getApiKey() { return apiKey; }
 
     @Override
-    protected String getUrl() { return URL; }
+    protected String getUrl() { return url; }
 
     @Override
-    protected String getModel() { return "deepseek-chat"; }
+    protected String getModel() { return model; }
 
     @Override
     protected String providerDisplayName() { return "DeepSeek"; }

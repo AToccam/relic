@@ -104,14 +104,14 @@ export const useChatStore = defineStore('chat', () => {
 
     if (isConversationStreaming(targetConversationId)) return
 
-    const selectedFiles = sources.selectedUsableFiles
-    if (!userText.trim() && selectedFiles.length === 0) return
+    const selectedKnowledgeSources = sources.selectedKnowledgeSources
+    const selectedAttachmentFiles = sources.selectedAttachmentFiles
+    if (!userText.trim() && selectedAttachmentFiles.length === 0) return
 
-    const content = buildUserMessageContent(userText.trim(), selectedFiles)
-    const displayText = buildUserDisplayText(userText.trim(), selectedFiles)
+    const content = buildUserMessageContent(userText.trim(), selectedAttachmentFiles)
+    const displayText = buildUserDisplayText(userText.trim(), selectedAttachmentFiles)
 
     addMessage('user', displayText, content)
-    sources.setAllUsableSelection(false)
     const assistantMsg = addMessage('assistant', '')
     assistantMsg.streaming = true
     setConversationStreaming(targetConversationId, true)
@@ -124,7 +124,7 @@ export const useChatStore = defineStore('chat', () => {
         .filter(m => m.id !== assistantMsg.id)
         .map(m => ({ role: m.role, content: m.payloadContent ?? m.content }))
 
-      const ragSourceIds = selectedFiles
+      const ragSourceIds = selectedKnowledgeSources
         .map(f => f.relativePath)
         .filter(Boolean)
       const ragConfig: RagConfig | undefined = ragSourceIds.length > 0
