@@ -10,6 +10,7 @@ export interface Message {
   content: string
   payloadContent?: MessageContent
   streaming?: boolean
+  interrupted?: boolean
   citations?: Citation[]
 }
 
