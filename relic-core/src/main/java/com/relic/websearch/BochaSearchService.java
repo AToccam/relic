@@ -31,7 +31,7 @@ public class BochaSearchService {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    private final WikipediaFallbackSearchService wikipediaFallbackSearchService;
+    private final DomesticBaikeFallbackSearchService domesticBaikeFallbackSearchService;
 
     @Value("${relic.web-search.bocha.api-key:${BOCHA_API_KEY:}}")
     private String apiKey;
@@ -53,21 +53,21 @@ public class BochaSearchService {
         int limit = normalizeLimit(requestedLimit);
 
         if (!StringUtils.hasText(apiKey)) {
-            log.warn("Bocha API key 未配置，使用 Wikipedia fallback: keyword={}", normalizedKeyword);
-            return wikipediaFallbackSearchService.search(normalizedKeyword, limit);
+            log.warn("Bocha API key 未配置，使用 360百科兜底: keyword={}", normalizedKeyword);
+            return domesticBaikeFallbackSearchService.search(normalizedKeyword, limit);
         }
 
         try {
             List<WebSearchResult> results = searchBocha(normalizedKeyword, limit);
             if (!results.isEmpty()) {
-                appendWikipediaResults(results, normalizedKeyword, limit);
+                appendDomesticBaikeResults(results, normalizedKeyword, limit);
                 return results;
             }
-            log.info("Bocha 搜索结果为空，使用 Wikipedia fallback: keyword={}", normalizedKeyword);
-            return wikipediaFallbackSearchService.search(normalizedKeyword, limit);
+            log.info("Bocha 搜索结果为空，使用 360百科兜底: keyword={}", normalizedKeyword);
+            return domesticBaikeFallbackSearchService.search(normalizedKeyword, limit);
         } catch (Exception e) {
-            log.warn("Bocha 搜索失败，使用 Wikipedia fallback: keyword={}, reason={}", normalizedKeyword, e.getMessage());
-            List<WebSearchResult> fallback = wikipediaFallbackSearchService.search(normalizedKeyword, limit);
+            log.warn("Bocha 搜索失败，使用 360百科兜底: keyword={}, reason={}", normalizedKeyword, e.getMessage());
+            List<WebSearchResult> fallback = domesticBaikeFallbackSearchService.search(normalizedKeyword, limit);
             if (!fallback.isEmpty()) {
                 return fallback;
             }
@@ -145,10 +145,10 @@ public class BochaSearchService {
         return results;
     }
 
-    private void appendWikipediaResults(List<WebSearchResult> results, String keyword, int limit) {
+    private void appendDomesticBaikeResults(List<WebSearchResult> results, String keyword, int limit) {
         try {
-            List<WebSearchResult> wikipediaResults = wikipediaFallbackSearchService.search(keyword, limit);
-            if (wikipediaResults.isEmpty()) {
+            List<WebSearchResult> domesticBaikeResults = domesticBaikeFallbackSearchService.search(keyword, limit);
+            if (domesticBaikeResults.isEmpty()) {
                 return;
             }
 
@@ -157,14 +157,14 @@ public class BochaSearchService {
                 existingUrls.add(normalizeUrl(result.getUrl()));
             }
 
-            for (WebSearchResult wikipediaResult : wikipediaResults) {
-                String normalizedUrl = normalizeUrl(wikipediaResult.getUrl());
+            for (WebSearchResult domesticBaikeResult : domesticBaikeResults) {
+                String normalizedUrl = normalizeUrl(domesticBaikeResult.getUrl());
                 if (existingUrls.add(normalizedUrl)) {
-                    results.add(wikipediaResult);
+                    results.add(domesticBaikeResult);
                 }
             }
         } catch (Exception e) {
-            log.warn("Wikipedia append search failed: keyword={}, reason={}", keyword, e.getMessage());
+            log.warn("360百科追加搜索失败: keyword={}, reason={}", keyword, e.getMessage());
         }
     }
 
