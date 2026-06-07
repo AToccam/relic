@@ -17,10 +17,12 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -58,6 +60,7 @@ public class BochaSearchService {
         try {
             List<WebSearchResult> results = searchBocha(normalizedKeyword, limit);
             if (!results.isEmpty()) {
+                appendWikipediaResults(results, normalizedKeyword, limit);
                 return results;
             }
             log.info("Bocha 搜索结果为空，使用 Wikipedia fallback: keyword={}", normalizedKeyword);
@@ -142,6 +145,29 @@ public class BochaSearchService {
         return results;
     }
 
+    private void appendWikipediaResults(List<WebSearchResult> results, String keyword, int limit) {
+        try {
+            List<WebSearchResult> wikipediaResults = wikipediaFallbackSearchService.search(keyword, limit);
+            if (wikipediaResults.isEmpty()) {
+                return;
+            }
+
+            Set<String> existingUrls = new HashSet<>();
+            for (WebSearchResult result : results) {
+                existingUrls.add(normalizeUrl(result.getUrl()));
+            }
+
+            for (WebSearchResult wikipediaResult : wikipediaResults) {
+                String normalizedUrl = normalizeUrl(wikipediaResult.getUrl());
+                if (existingUrls.add(normalizedUrl)) {
+                    results.add(wikipediaResult);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Wikipedia append search failed: keyword={}, reason={}", keyword, e.getMessage());
+        }
+    }
+
     private String readableBochaError(int status, String body) {
         String detail = extractErrorDetail(body);
         String prefix = switch (status) {
@@ -200,6 +226,17 @@ public class BochaSearchService {
     private boolean isHttpUrl(String url) {
         String lower = url == null ? "" : url.toLowerCase(Locale.ROOT);
         return lower.startsWith("http://") || lower.startsWith("https://");
+    }
+
+    private String normalizeUrl(String url) {
+        if (!StringUtils.hasText(url)) {
+            return "";
+        }
+        String normalized = url.trim().toLowerCase(Locale.ROOT);
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
     }
 
     private double score(JsonNode item, String keyword, String title, String snippet, String url, int sequence) {
