@@ -9,6 +9,10 @@ relic:
   request:
     timeout-ms: 180000
     max-concurrent-streams: 8
+  multimodal:
+    audio:
+      max-base64-chars: 10485760
+      allowed-formats: mp3,mpeg,wav,webm,ogg,m4a,mp4
   openai-compatible:
     connect-timeout-ms: 20000
     request-timeout-ms: 300000
