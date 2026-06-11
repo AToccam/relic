@@ -147,10 +147,26 @@ public class WebhookController {
 
         return Map.of(
                 "provider", provider,
-                "status", reply.contains("失败") ? "fail" : "ok",
+                "status", isAiTestFailure(reply) ? "fail" : "ok",
                 "costMs", costTime,
                 "reply", reply
         );
+    }
+
+    private boolean isAiTestFailure(String reply) {
+        if (reply == null || reply.isBlank()) {
+            return true;
+        }
+        String lower = reply.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("failed")
+                || lower.contains("failure")
+                || lower.contains("api error")
+                || lower.contains("api key")
+                || lower.contains("not configured")
+                || lower.contains("timeout")
+                || lower.contains("timed out")
+                || lower.contains("失败")
+                || lower.contains("错误");
     }
 
     // 多 AI 协同测试（查看各 advisor 原始回复）

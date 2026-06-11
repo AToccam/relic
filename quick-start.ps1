@@ -76,6 +76,11 @@ Write-Host "  - Service windows: each service runs in its own terminal."
 Write-Host "============================================================"
 Write-Host ""
 
+if ([string]::IsNullOrWhiteSpace($env:QWEN_API_KEY) -and [string]::IsNullOrWhiteSpace($env:DASHSCOPE_API_KEY)) {
+  Write-Host "Warning: QWEN_API_KEY / DASHSCOPE_API_KEY is not set. Qwen will use the temporary fallback key in code."
+  Write-Host ""
+}
+
 # 1) Ollama
 Write-Host "[1/4] Ollama"
 $hasOllama = $null -ne (Get-Command ollama -ErrorAction SilentlyContinue)
