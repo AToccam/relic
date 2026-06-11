@@ -1,8 +1,12 @@
 package com.relic.tool;
 
+import com.relic.service.AiProvider;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -40,6 +44,73 @@ class ToolCallServiceIntentTest {
     }
 
     @Test
+    void naturalDirectoryListRequestUsesWorkspaceReadIntent() throws Exception {
+        Object decision = decideIntent("列出当前目录中的文件");
+
+        assertEquals("WORKSPACE_READ", invoke(decision, "outputMode").toString());
+        assertEquals(Boolean.TRUE, invoke(decision, "workspaceReadIntent"));
+    }
+
+    @Test
+    void directoryQuestionUsesWorkspaceReadIntent() throws Exception {
+        Object decision = decideIntent("当前工作目录有哪些文件？");
+
+        assertEquals("WORKSPACE_READ", invoke(decision, "outputMode").toString());
+        assertEquals(Boolean.TRUE, invoke(decision, "workspaceReadIntent"));
+    }
+
+    @Test
+    void listFilesUsesWorkingDirectoryContextForEmptyPath() throws Exception {
+        Path workspace = Files.createTempDirectory("relic-workspace-");
+        Path workingDirectory = Files.createTempDirectory("relic-working-dir-");
+        Files.writeString(workspace.resolve("workspace-only.txt"), "workspace");
+        Files.writeString(workingDirectory.resolve("working-only.txt"), "working");
+
+        ToolExecutor executor = new ToolExecutor(null);
+        ReflectionTestUtils.setField(executor, "workspacePath", workspace.toString());
+        Method method = ToolExecutor.class.getDeclaredMethod("listFiles", String.class);
+        method.setAccessible(true);
+
+        try {
+            ToolExecutor.setWorkingDirectoryContext(workingDirectory.toString());
+            String listing = (String) method.invoke(executor, "");
+
+            assertTrue(listing.contains("working-only.txt"));
+            assertFalse(listing.contains("workspace-only.txt"));
+        } finally {
+            ToolExecutor.clearWorkingDirectoryContext();
+        }
+    }
+
+    @Test
+    void deterministicListFilesStreamEmitsToolCallNotice() throws Exception {
+        Path workspace = Files.createTempDirectory("relic-workspace-");
+        Files.writeString(workspace.resolve("listed.txt"), "content");
+
+        ToolExecutor executor = new ToolExecutor(null);
+        ReflectionTestUtils.setField(executor, "workspacePath", workspace.toString());
+
+        ToolCallService service = new ToolCallService();
+        ReflectionTestUtils.setField(service, "toolExecutor", executor);
+        ReflectionTestUtils.setField(service, "toolExecutionTimeoutMs", 10_000L);
+        ReflectionTestUtils.setField(service, "toolExecutorPoolSize", 1);
+        ReflectionTestUtils.setField(service, "toolExecutorQueueSize", 4);
+        service.initToolWorkerExecutor();
+
+        StringBuilder streamed = new StringBuilder();
+        try {
+            ToolExecutor.setWorkingDirectoryContext(workspace.toString());
+            service.streamWithTools(new NoopProvider(), userMessage("列出当前目录中的文件"), streamed::append);
+        } finally {
+            ToolExecutor.clearWorkingDirectoryContext();
+            service.shutdownToolWorkerExecutor();
+        }
+
+        assertTrue(streamed.toString().contains("正在调用 list_files 工具"));
+        assertTrue(streamed.toString().contains("listed.txt"));
+    }
+
+    @Test
     void mindmapSanitizerPreservesIndentation() throws Exception {
         ToolExecutor executor = new ToolExecutor(null);
         Method method = ToolExecutor.class.getDeclaredMethod("sanitizeMermaidSource", String.class);
@@ -74,5 +145,17 @@ class ToolCallServiceIntentTest {
         Method method = target.getClass().getDeclaredMethod(methodName);
         method.setAccessible(true);
         return method.invoke(target);
+    }
+
+    private static final class NoopProvider implements AiProvider {
+        @Override
+        public String getName() {
+            return "noop";
+        }
+
+        @Override
+        public String ask(String prompt) {
+            return "";
+        }
     }
 }

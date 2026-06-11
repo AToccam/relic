@@ -146,6 +146,11 @@ public class ToolCallService {
             "\u8bfb\u53d6\u6587\u4ef6", "\u67e5\u770b\u6587\u4ef6", "\u770b\u4e0b\u6587\u4ef6", "\u6253\u5f00\u6587\u4ef6",
             "\u5217\u51fa\u6587\u4ef6", "\u5217\u51fa\u5de5\u4f5c\u533a", "\u5de5\u4f5c\u533a",
             "read file", "list files", "workspace", "read_file", "list_files");
+    private static final List<String> DIRECTORY_LIST_KEYWORDS = List.of(
+            "列出文件", "列出目录", "列一下文件", "列一下目录", "列文件", "列目录",
+            "查看目录", "看看目录", "当前目录", "当前文件夹", "工作目录", "工作区文件",
+            "有哪些文件", "有什么文件", "文件列表", "目录列表",
+            "list files", "list directory", "ls", "dir");
     private static final List<String> MULTI_FILE_KEYWORDS = List.of(
             "\u591a\u4e2a\u6587\u4ef6", "\u591a\u4efd\u6587\u4ef6", "\u591a\u4efd\u6587\u6863", "\u6279\u91cf\u751f\u6210",
             "\u5206\u522b\u751f\u6210", "\u5206\u522b\u8f93\u51fa", "\u6bcf\u4e2a\u90fd\u4fdd\u5b58",
@@ -210,6 +215,9 @@ public class ToolCallService {
         if (shouldCreateFileDeterministically(decision)) {
             return createFileDeterministically(provider, messages, decision);
         }
+        if (shouldListFilesDeterministically(decision, messages)) {
+            return listFilesDeterministically(messages);
+        }
         if (!provider.supportsTools()) {
             log.debug("Provider {} does not support tools, fallback to plain ask", provider.getName());
             return provider.ask(messages);
@@ -257,11 +265,18 @@ public class ToolCallService {
             return;
         }
         if (shouldCreateChartFileDeterministically(decision)) {
+            emitToolCallNotice(onChunk, decision.primaryTool());
             onChunk.accept(createChartFileDeterministically(provider, messages, decision));
             return;
         }
         if (shouldCreateFileDeterministically(decision)) {
+            emitToolCallNotice(onChunk, decision.primaryTool());
             onChunk.accept(createFileDeterministically(provider, messages, decision));
+            return;
+        }
+        if (shouldListFilesDeterministically(decision, messages)) {
+            emitToolCallNotice(onChunk, "list_files");
+            onChunk.accept(listFilesDeterministically(messages));
             return;
         }
         if (!provider.supportsTools()) {
@@ -302,7 +317,7 @@ public class ToolCallService {
                         continue;
                     }
 
-                    onChunk.accept("\n🔧 正在调用 " + tc.getName() + "...\n");
+                    emitToolCallNotice(onChunk, tc.getName());
 
                     String toolResult = executeToolWithGuard(tc, createGuard);
                     boolean retryRequired = isChartValidationError(toolResult);
@@ -396,6 +411,33 @@ public class ToolCallService {
                 && decision.outputMode() == OutputMode.CHART_FILE_OUTPUT
                 && !decision.workspaceReadIntent()
                 && decision.maxCreates() <= 1;
+    }
+
+    private boolean shouldListFilesDeterministically(IntentDecision decision, List<Map<String, Object>> messages) {
+        return decision != null
+                && decision.outputMode() == OutputMode.WORKSPACE_READ
+                && looksLikeDirectoryListIntent(extractLatestUserText(messages));
+    }
+
+    private String listFilesDeterministically(List<Map<String, Object>> messages) {
+        try {
+            String path = extractDirectoryPathForList(extractLatestUserText(messages));
+            Map<String, Object> args = path.isBlank() ? Map.of() : Map.of("path", path);
+            String toolResult = executeToolWithTimeout("list_files", objectMapper.writeValueAsString(args));
+            String label = path.isBlank() ? "当前目录" : path;
+            return label + "的文件列表：\n" + toolResult;
+        } catch (Exception e) {
+            log.warn("[deterministic-list-files] failed: {}", e.getMessage());
+            return "列出文件失败：" + e.getMessage();
+        }
+    }
+
+    private void emitToolCallNotice(Consumer<String> onChunk, String toolName) {
+        if (onChunk == null) {
+            return;
+        }
+        String name = toolName == null || toolName.isBlank() ? "tool" : toolName.trim();
+        onChunk.accept("\n正在调用 " + name + " 工具...\n");
     }
 
     private boolean shouldStopAfterTools(CreateGuard guard) {
@@ -2336,7 +2378,38 @@ public class ToolCallService {
         if (text == null || text.isBlank()) {
             return false;
         }
-        return containsAny(text.toLowerCase(), WORKSPACE_READ_KEYWORDS);
+        String t = text.toLowerCase(Locale.ROOT);
+        return containsAny(t, WORKSPACE_READ_KEYWORDS) || looksLikeDirectoryListIntent(t);
+    }
+
+    private boolean looksLikeDirectoryListIntent(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String t = text.toLowerCase(Locale.ROOT).trim();
+        if (containsAny(t, DIRECTORY_LIST_KEYWORDS)) {
+            return true;
+        }
+        return (t.contains("列出") || t.contains("查看") || t.contains("看看"))
+                && (t.contains("目录") || t.contains("文件夹") || t.contains("文件"));
+    }
+
+    private String extractDirectoryPathForList(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+
+        Matcher quoted = Pattern.compile("[\"'“”‘’]([^\"'“”‘’]+)[\"'“”‘’]").matcher(text);
+        if (quoted.find()) {
+            return quoted.group(1).trim();
+        }
+
+        Matcher driveDir = DRIVE_DIR_PATTERN.matcher(text);
+        String found = "";
+        while (driveDir.find()) {
+            found = driveDir.group(1).trim();
+        }
+        return found;
     }
 
     private boolean looksLikeExplicitMultiFileIntent(String text) {

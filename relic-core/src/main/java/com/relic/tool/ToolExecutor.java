@@ -1412,9 +1412,21 @@ public class ToolExecutor {
 
     private String listFiles(String subPath) {
         try {
+            Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
+            Path basePath = workspace;
+            String overrideDir = currentWorkingDirectory();
+            if (overrideDir != null && !overrideDir.isBlank()) {
+                try {
+                    basePath = Path.of(overrideDir).toAbsolutePath().normalize();
+                } catch (InvalidPathException e) {
+                    log.warn("[ToolExecutor] invalid workingDirectory '{}', falling back to workspace: {}", overrideDir, e.getMessage());
+                    basePath = workspace;
+                }
+            }
+
             Path dirPath;
             if (subPath == null || subPath.isEmpty()) {
-                dirPath = Path.of(workspacePath).toAbsolutePath().normalize();
+                dirPath = basePath;
             } else {
                 Path candidate;
                 try {
@@ -1422,12 +1434,11 @@ public class ToolExecutor {
                 } catch (InvalidPathException e) {
                     return "Invalid path: " + subPath;
                 }
-                Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
-                dirPath = candidate.isAbsolute() ? candidate.normalize() : workspace.resolve(subPath).normalize();
+                dirPath = candidate.isAbsolute() ? candidate.normalize() : basePath.resolve(subPath).normalize();
             }
 
             if (!Files.exists(dirPath)) {
-                return "Directory does not exist: " + (subPath == null || subPath.isEmpty() ? "workspace root" : subPath);
+                return "Directory does not exist: " + (subPath == null || subPath.isEmpty() ? dirPath : subPath);
             }
             if (!Files.isDirectory(dirPath)) {
                 return subPath + " is not a directory";
@@ -1518,6 +1529,16 @@ public class ToolExecutor {
         }
 
         Path workspace = Path.of(workspacePath).toAbsolutePath().normalize();
+        Path basePath = workspace;
+        String overrideDir = currentWorkingDirectory();
+        if (overrideDir != null && !overrideDir.isBlank()) {
+            try {
+                basePath = Path.of(overrideDir).toAbsolutePath().normalize();
+            } catch (InvalidPathException e) {
+                log.warn("[ToolExecutor] invalid workingDirectory '{}', falling back to workspace: {}", overrideDir, e.getMessage());
+                basePath = workspace;
+            }
+        }
         Path candidate;
         try {
             candidate = Path.of(filename);
@@ -1527,9 +1548,9 @@ public class ToolExecutor {
 
         Path resolved = candidate.isAbsolute()
                 ? candidate.normalize()
-                : workspace.resolve(filename).normalize();
+                : basePath.resolve(filename).normalize();
 
-        if (!allowOutsideRead && !resolved.startsWith(workspace)) {
+        if (!allowOutsideRead && !resolved.startsWith(workspace) && !resolved.startsWith(basePath)) {
             throw new SecurityException("Path is outside workspace: " + filename);
         }
 
