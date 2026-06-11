@@ -19,13 +19,17 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -49,7 +53,25 @@ public class WebhookController {
     @Value("${relic.request.timeout-ms:180000}")
     private long requestTimeoutMs;
 
+    @Value("${relic.request.max-concurrent-streams:8}")
+    private int maxConcurrentStreams;
+
+    @Value("${relic.multimodal.audio.max-base64-chars:10485760}")
+    private int maxAudioBase64Chars;
+
+    @Value("${relic.multimodal.audio.allowed-formats:mp3,mpeg,wav,webm,ogg,m4a,mp4}")
+    private String allowedAudioFormatsConfig;
+
+    private Semaphore streamSemaphore;
+
     private final ObjectMapper mapper = new ObjectMapper();
+
+    @PostConstruct
+    public void initStreamSemaphore() {
+        int permits = Math.max(1, maxConcurrentStreams);
+        streamSemaphore = new Semaphore(permits);
+        log.info("[stream-limit] max concurrent streams: {}", permits);
+    }
 
     //模式切换接口Single/Multi
     @GetMapping("/mode")
@@ -206,6 +228,12 @@ public class WebhookController {
         log.info("【最终发送给 AI 的记忆条数】: {}", messages.size());
         log.info("【当前最新提问】: {}", messages.get(messages.size() - 1).get("content"));
 
+        String audioValidationError = validateAudioInputs(messages);
+        if (audioValidationError != null) {
+            log.warn("[audio-input] rejected invalid audio input: {}", audioValidationError);
+            return buildImmediateSseMessage(messages, audioValidationError);
+        }
+
         ReentrantLock conversationLock = conversationLocks.computeIfAbsent(conversationId, ignored -> new ReentrantLock());
         if (!conversationLock.tryLock()) {
             log.warn("[conversation-lock] conversation {} is already streaming, rejecting concurrent request", conversationId);
@@ -221,6 +249,13 @@ public class WebhookController {
         }
 
         messages = skillCommandService.rewriteForEnabledSkillCommand(messages);
+
+        AtomicBoolean streamPermitReleased = new AtomicBoolean(false);
+        if (!streamSemaphore.tryAcquire()) {
+            log.warn("[stream-limit] max concurrent streams reached, rejecting conversation {}", conversationId);
+            releaseConversationLock(conversationId, conversationLock, new AtomicBoolean(false));
+            return buildImmediateSseMessage(messages, "当前请求较多，请稍后再试。");
+        }
 
         final List<Map<String, Object>> finalMessages = messages;
         long effectiveTimeoutMs = Math.max(10_000L, requestTimeoutMs);
@@ -297,6 +332,7 @@ public class WebhookController {
             } finally {
                 RequestDeadline.clear();
                 ToolExecutor.clearWorkingDirectoryContext();
+                releaseStreamPermit(streamPermitReleased);
                 releaseConversationLock(conversationId, conversationLock, lockReleased);
             }
         });
@@ -354,6 +390,57 @@ public class WebhookController {
         return emitter;
     }
 
+    private String validateAudioInputs(List<Map<String, Object>> messages) {
+        Set<String> allowedFormats = allowedAudioFormats();
+        int safeMaxBase64Chars = Math.max(1024, maxAudioBase64Chars);
+        for (Map<String, Object> message : messages) {
+            Object content = message.get("content");
+            if (!(content instanceof List<?> parts)) {
+                continue;
+            }
+            for (Object part : parts) {
+                if (!(part instanceof Map<?, ?> rawPart)) {
+                    continue;
+                }
+                if (!"input_audio".equals(String.valueOf(rawPart.get("type")))
+                        && !rawPart.containsKey("input_audio")) {
+                    continue;
+                }
+                Object audioObj = rawPart.get("input_audio");
+                if (!(audioObj instanceof Map<?, ?> audio)) {
+                    return "语音输入格式不正确，请重新上传音频。";
+                }
+                String data = Objects.toString(audio.get("data"), "").trim();
+                String format = Objects.toString(audio.get("format"), "").trim().toLowerCase();
+                if (data.isEmpty()) {
+                    return "语音输入为空，请重新上传音频。";
+                }
+                if (data.length() > safeMaxBase64Chars) {
+                    return "语音输入文件过大，请压缩或缩短录音后重试。";
+                }
+                if (format.isEmpty() || !allowedFormats.contains(format)) {
+                    return "暂不支持该语音格式，请使用 mp3、wav、webm、ogg、m4a 或 mp4。";
+                }
+            }
+        }
+        return null;
+    }
+
+    private Set<String> allowedAudioFormats() {
+        Set<String> formats = new LinkedHashSet<>();
+        String config = allowedAudioFormatsConfig == null ? "" : allowedAudioFormatsConfig;
+        for (String item : config.split(",")) {
+            String normalized = item.trim().toLowerCase();
+            if (!normalized.isEmpty()) {
+                formats.add(normalized);
+            }
+        }
+        if (formats.isEmpty()) {
+            formats.addAll(List.of("mp3", "mpeg", "wav", "webm", "ogg", "m4a", "mp4"));
+        }
+        return formats;
+    }
+
     private void releaseConversationLock(String conversationId, ReentrantLock lock, AtomicBoolean released) {
         if (!released.compareAndSet(false, true)) {
             return;
@@ -365,9 +452,15 @@ public class WebhookController {
         }
     }
 
+    private void releaseStreamPermit(AtomicBoolean released) {
+        if (released.compareAndSet(false, true)) {
+            streamSemaphore.release();
+        }
+    }
+
     @GetMapping("/chat/conversations")
-    public Map<String, Object> listConversations() {
-        return Map.of("items", chatHistoryService.listConversations());
+    public Map<String, Object> listConversations(@RequestParam(value = "archived", defaultValue = "false") boolean archived) {
+        return Map.of("items", chatHistoryService.listConversations(archived));
     }
 
     @PostMapping("/chat/conversations/rename")
@@ -376,6 +469,19 @@ public class WebhookController {
         String newName = request.getOrDefault("newName", "");
         boolean ok = chatHistoryService.renameConversation(conversationId, newName);
         return Map.of("ok", ok);
+    }
+
+    @PostMapping("/chat/conversations/archive")
+    public Map<String, Object> archiveConversation(@RequestBody Map<String, Object> request) {
+        String rawConversationId = Objects.toString(request.get("conversationId"), "").trim();
+        if (rawConversationId.isEmpty()) {
+            return Map.of("ok", false, "error", "conversationId is required");
+        }
+        String conversationId = chatHistoryService.normalizeConversationId(rawConversationId);
+        Object archivedObj = request.get("archived");
+        boolean archived = archivedObj == null || Boolean.parseBoolean(String.valueOf(archivedObj));
+        boolean ok = chatHistoryService.archiveConversation(conversationId, archived);
+        return Map.of("ok", ok, "archived", archived);
     }
 
     @DeleteMapping("/chat/conversations")

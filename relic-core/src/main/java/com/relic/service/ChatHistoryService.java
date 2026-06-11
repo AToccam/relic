@@ -98,6 +98,10 @@ public class ChatHistoryService {
     }
 
     public synchronized List<Map<String, Object>> listConversations() {
+        return listConversations(false);
+    }
+
+    public synchronized List<Map<String, Object>> listConversations(boolean archived) {
         Path dir = getConversationDir();
         if (!Files.exists(dir)) {
             return List.of();
@@ -110,6 +114,10 @@ public class ChatHistoryService {
                     .forEach(path -> {
                         try {
                             Map<String, Object> doc = objectMapper.readValue(Files.readString(path), MAP_TYPE);
+                            boolean docArchived = Boolean.TRUE.equals(doc.get("archived"));
+                            if (docArchived != archived) {
+                                return;
+                            }
                             String conversationId = String.valueOf(doc.getOrDefault("conversationId", stripJsonSuffix(path.getFileName().toString())));
                             @SuppressWarnings("unchecked")
                             List<Map<String, Object>> messages = (List<Map<String, Object>>) doc.getOrDefault("messages", List.of());
@@ -130,6 +138,7 @@ public class ChatHistoryService {
                             item.put("updatedAt", String.valueOf(doc.getOrDefault("updatedAt", "")));
                             item.put("messageCount", messages.size());
                             item.put("lastPreview", lastPreview);
+                            item.put("archived", docArchived);
                             result.add(item);
                         } catch (Exception ignored) {
                         }
@@ -140,6 +149,26 @@ public class ChatHistoryService {
 
         result.sort(Comparator.comparing((Map<String, Object> m) -> String.valueOf(m.getOrDefault("updatedAt", ""))).reversed());
         return result;
+    }
+
+    public synchronized boolean archiveConversation(String conversationId, boolean archived) {
+        String safeId = normalizeConversationId(conversationId);
+        Path dir = getConversationDir();
+        Path file = dir.resolve(safeId + ".json").normalize();
+        if (!file.startsWith(dir) || !Files.exists(file)) {
+            return false;
+        }
+        try {
+            Map<String, Object> doc = readConversationDoc(safeId);
+            doc.put("conversationId", safeId);
+            doc.put("archived", archived);
+            doc.put("updatedAt", Instant.now().toString());
+            writeConversationDoc(safeId, doc);
+            return true;
+        } catch (Exception e) {
+            log.warn("更新会话归档状态失败: conversationId={}, archived={}, error={}", safeId, archived, e.getMessage());
+            return false;
+        }
     }
 
     public synchronized boolean renameConversation(String conversationId, String newName) {
@@ -292,6 +321,9 @@ public class ChatHistoryService {
             doc.put("title", "");
         } else {
             doc.put("title", Objects.toString(doc.get("title"), ""));
+        }
+        if (!doc.containsKey("archived") || !(doc.get("archived") instanceof Boolean)) {
+            doc.put("archived", false);
         }
         return doc;
     }

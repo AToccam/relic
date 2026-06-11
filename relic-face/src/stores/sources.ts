@@ -26,6 +26,17 @@ interface UploadResult {
 
 const IMAGE_MIME_PREFIX = 'image/'
 const AUDIO_MIME_PREFIX = 'audio/'
+const MAX_AUDIO_BYTES = 7.5 * 1024 * 1024
+const ALLOWED_AUDIO_TYPES = new Set([
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/wav',
+  'audio/webm',
+  'audio/ogg',
+  'audio/mp4',
+  'audio/x-m4a',
+  'audio/m4a'
+])
 
 export const useSourcesStore = defineStore('sources', () => {
   const files = ref<SourceFileItem[]>([])
@@ -58,6 +69,10 @@ export const useSourcesStore = defineStore('sources', () => {
     try {
       for (const file of incoming) {
         try {
+          const localValidationError = validateLocalFile(file)
+          if (localValidationError) {
+            throw new Error(localValidationError)
+          }
           const uploaded = await uploadSourceFile(file)
           const mimeType = uploaded.mimeType || file.type || 'application/octet-stream'
           const item: SourceFileItem = {
@@ -266,6 +281,20 @@ function isImage(mimeType: string): boolean {
 
 function isAudio(mimeType: string): boolean {
   return mimeType.startsWith(AUDIO_MIME_PREFIX)
+}
+
+function validateLocalFile(file: File): string | null {
+  const mimeType = file.type || 'application/octet-stream'
+  if (!isAudio(mimeType)) {
+    return null
+  }
+  if (!ALLOWED_AUDIO_TYPES.has(mimeType.toLowerCase())) {
+    return '暂不支持该音频格式，请使用 mp3、wav、webm、ogg、m4a 或 mp4'
+  }
+  if (file.size > MAX_AUDIO_BYTES) {
+    return '音频文件过大，请压缩到 7.5MB 以内或缩短录音'
+  }
+  return null
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
