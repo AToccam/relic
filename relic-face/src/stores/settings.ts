@@ -34,6 +34,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   const multiAdvisors = ref<string[]>([])
   const multiLeader = ref<string>('')
+  const toolsEnabled = ref<boolean>(true)
 
   function normalizeAdvisors(input: string[]): string[] {
     const providerSet = new Set(providers.value)
@@ -210,6 +211,7 @@ export const useSettingsStore = defineStore('settings', () => {
   return {
     mode, providers, singleProvider, singleProviderOptions, testResults, multiTestResult, loading, multiLoading,
     multiAdvisors, multiLeader, roleSaving, roleSaveError,
+    toolsEnabled,
     skills, skillsWorkspaceDir, skillsLoading, skillsError, skillBusyKey,
     skillImporting, skillImportMessage, skillImportError,
     fetchMode, switchMode, switchSingleProvider, switchMultiLeader, switchMultiAdvisors,

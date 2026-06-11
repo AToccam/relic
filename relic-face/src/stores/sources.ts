@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { deleteSourceFile, listSourceFiles, uploadSourceFile } from '@/api/files'
+import { getRagIndexStatus, listRagIndexStatuses, triggerRagIndex, type RagIndexStatus } from '@/api/rag'
 
 export interface SourceFileItem {
   id: string
@@ -13,6 +14,9 @@ export interface SourceFileItem {
   conversationId: string
   dataUrl?: string
   uploadError?: string
+  ragStatus?: RagIndexStatus
+  ragChunkCount?: number
+  ragIndexing?: boolean
 }
 
 interface UploadResult {
@@ -139,6 +143,22 @@ export const useSourcesStore = defineStore('sources', () => {
       })
       existing.add(item.relativePath)
     }
+
+    // 批量回填 RAG 索引状态，让历史文件也能显示已索引徽章
+    try {
+      const statuses = await listRagIndexStatuses()
+      const statusMap = new Map(statuses.map(s => [s.sourceId, s]))
+      for (const file of files.value) {
+        if (!file.relativePath) continue
+        const s = statusMap.get(file.relativePath)
+        if (s) {
+          file.ragStatus = s.status
+          file.ragChunkCount = s.chunkCount
+        }
+      }
+    } catch {
+      // 后端不可达时静默忽略
+    }
   }
 
   async function removeFile(id: string) {
@@ -169,8 +189,53 @@ export const useSourcesStore = defineStore('sources', () => {
     }
   }
 
+  function addImportedWebResource(item: { name: string; relativePath: string; mimeType: string; size: number }) {
+    files.value.push({
+      id: `${Date.now()}-${Math.random()}`,
+      name: item.name,
+      sizeLabel: formatSize(item.size),
+      sizeBytes: item.size,
+      mimeType: item.mimeType,
+      relativePath: item.relativePath,
+      selected: true,
+      conversationId: currentConversationId.value
+    })
+  }
+
   function clearAll() {
     files.value = []
+  }
+
+  async function indexFile(id: string): Promise<void> {
+    const item = files.value.find(f => f.id === id)
+    if (!item || !item.relativePath || item.uploadError) return
+
+    item.ragIndexing = true
+    item.ragStatus = 'INDEXING'
+    try {
+      await triggerRagIndex(item.relativePath)
+    } catch {
+      item.ragStatus = 'FAILED'
+      item.ragIndexing = false
+      return
+    }
+
+    // 轮询直到终态
+    const poll = async () => {
+      try {
+        const result = await getRagIndexStatus(item.relativePath)
+        item.ragStatus = result.status
+        item.ragChunkCount = result.chunkCount
+        if (result.status === 'INDEXING') {
+          window.setTimeout(poll, 2000)
+        } else {
+          item.ragIndexing = false
+        }
+      } catch {
+        item.ragIndexing = false
+      }
+    }
+    window.setTimeout(poll, 2000)
   }
 
   function migrateSelectedFilesToConversation(newConversationId: string) {
@@ -198,7 +263,9 @@ export const useSourcesStore = defineStore('sources', () => {
     setAllUsableSelection,
     clearAll,
     loadPersistedFiles,
-    migrateSelectedFilesToConversation
+    migrateSelectedFilesToConversation,
+    indexFile,
+    addImportedWebResource
   }
 })
 

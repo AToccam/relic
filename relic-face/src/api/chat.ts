@@ -1,4 +1,4 @@
-import type { MessageContent } from '@/types'
+import type { Citation, MessageContent } from '@/types'
 
 const BASE = '/api'
 
@@ -18,16 +18,30 @@ export interface PersistedMessage {
   createdAt?: string
 }
 
+export interface RagConfig {
+  enabled: boolean
+  sourceIds: string[]
+}
+
 export async function streamChat(
   messages: Array<{ role: string; content: MessageContent }>,
   onChunk: (text: string) => void,
   conversationId?: string,
   signal?: AbortSignal,
-  workingDirectory?: string
+  workingDirectory?: string,
+  toolsEnabled?: boolean,
+  ragConfig?: RagConfig,
+  onCitations?: (citations: Citation[]) => void
 ): Promise<void> {
   const body: Record<string, unknown> = { messages, stream: true, conversationId }
   if (workingDirectory && workingDirectory.trim()) {
     body.workingDirectory = workingDirectory.trim()
+  }
+  if (toolsEnabled === false) {
+    body.toolsEnabled = false
+  }
+  if (ragConfig && ragConfig.enabled && ragConfig.sourceIds.length > 0) {
+    body.ragConfig = ragConfig
   }
   const response = await fetch(`${BASE}/v1/chat/completions`, {
     method: 'POST',
@@ -63,6 +77,9 @@ export async function streamChat(
         const json = JSON.parse(data)
         const content = json.choices?.[0]?.delta?.content
         if (content) onChunk(content)
+        if (onCitations && Array.isArray(json.citations) && json.citations.length > 0) {
+          onCitations(json.citations as Citation[])
+        }
       } catch {
         // ignore parse errors for malformed chunks
       }

@@ -1,15 +1,44 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useSourcesStore } from '@/stores/sources'
 import { useWorkspaceStore } from '@/stores/workspace'
+import { useSettingsStore } from '@/stores/settings'
 
 const chat = useChatStore()
 const sources = useSourcesStore()
 const workspace = useWorkspaceStore()
+const settings = useSettingsStore()
 const input = ref('')
 const showWorkingDirEditor = ref(false)
 const workingDirDraft = ref('')
+const selectedSuggestionIndex = ref(-1)
+
+const slashQuery = computed(() => {
+  const val = input.value
+  if (!val.startsWith('/')) return null
+  if (val.indexOf(' ') !== -1) return null
+  return val.slice(1)
+})
+
+const skillSuggestions = computed(() => {
+  if (slashQuery.value === null) return []
+  const query = slashQuery.value.toLowerCase()
+  return settings.skills
+    .filter(s => !s.disabled && s.name.toLowerCase().startsWith(query))
+    .slice(0, 8)
+})
+
+const showSuggestions = computed(() => skillSuggestions.value.length > 0)
+
+watch(slashQuery, () => {
+  selectedSuggestionIndex.value = -1
+})
+
+function selectSuggestion(name: string) {
+  input.value = `/${name} `
+  selectedSuggestionIndex.value = -1
+}
 
 function openWorkingDirEditor() {
   workingDirDraft.value = workspace.workingDirectory
@@ -68,6 +97,38 @@ function onDriftNewConv() {
 }
 
 function handleKeydown(e: KeyboardEvent) {
+  if (showSuggestions.value) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      selectedSuggestionIndex.value = Math.min(selectedSuggestionIndex.value + 1, skillSuggestions.value.length - 1)
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      selectedSuggestionIndex.value = Math.max(selectedSuggestionIndex.value - 1, 0)
+      return
+    }
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      const idx = selectedSuggestionIndex.value >= 0 ? selectedSuggestionIndex.value : 0
+      const skill = skillSuggestions.value[idx]
+      if (skill) selectSuggestion(skill.name)
+      return
+    }
+    if (e.key === 'Enter' && selectedSuggestionIndex.value >= 0) {
+      e.preventDefault()
+      const skill = skillSuggestions.value[selectedSuggestionIndex.value]
+      if (skill) selectSuggestion(skill.name)
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      input.value = ''
+      selectedSuggestionIndex.value = -1
+      return
+    }
+  }
+
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     handleSend()
@@ -117,12 +178,25 @@ function isImage(mimeType: string) {
       </div>
       <button class="drift-close" @click="chat.clearDrift()">×</button>
     </div>
-    <textarea
-      v-model="input"
-      placeholder="输入消息… (可用 /skillName 调用已勾选 Skill；Enter 发送，Shift+Enter 换行)"
-      @keydown="handleKeydown"
-      rows="3"
-    />
+    <div class="textarea-wrapper">
+      <div v-if="showSuggestions" class="skill-suggestions">
+        <div
+          v-for="(skill, i) in skillSuggestions"
+          :key="skill.name"
+          :class="['skill-suggestion-item', { active: i === selectedSuggestionIndex }]"
+          @mousedown.prevent="selectSuggestion(skill.name)"
+        >
+          <span class="suggestion-name">{{ skill.emoji ? `${skill.emoji} ` : '' }}/{{ skill.name }}</span>
+          <span class="suggestion-desc">{{ skill.description }}</span>
+        </div>
+      </div>
+      <textarea
+        v-model="input"
+        placeholder="输入消息… (可用 /skillName 调用已勾选 Skill；Enter 发送，Shift+Enter 换行)"
+        @keydown="handleKeydown"
+        rows="3"
+      />
+    </div>
     <div class="working-dir-row">
       <button
         v-if="!showWorkingDirEditor"
@@ -203,10 +277,10 @@ function isImage(mimeType: string) {
   gap: 5px;
   padding: 4px 8px 4px 6px;
   border-radius: 6px;
-  background: rgba(99, 102, 241, 0.08);
-  border: 1px solid rgba(99, 102, 241, 0.22);
+  background: rgba(8, 145, 178, 0.08);
+  border: 1px solid rgba(8, 145, 178, 0.22);
   font-size: 12px;
-  color: #4338ca;
+  color: #0369a1;
   max-width: 200px;
 }
 
@@ -219,7 +293,7 @@ function isImage(mimeType: string) {
 }
 
 .chip-icon {
-  color: #6366f1;
+  color: #0891b2;
   flex-shrink: 0;
 }
 
@@ -233,7 +307,7 @@ function isImage(mimeType: string) {
 
 .chip-size {
   font-size: 10px;
-  color: #818cf8;
+  color: #38bdf8;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -244,7 +318,7 @@ function isImage(mimeType: string) {
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: #818cf8;
+  color: #38bdf8;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -344,9 +418,59 @@ function isImage(mimeType: string) {
   background: rgba(245, 158, 11, 0.15);
 }
 
-textarea,
+.textarea-wrapper,
 .input-actions {
   align-self: stretch;
+}
+
+.textarea-wrapper {
+  position: relative;
+}
+
+.skill-suggestions {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  z-index: 200;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.skill-suggestion-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.skill-suggestion-item:hover,
+.skill-suggestion-item.active {
+  background: #f0f9ff;
+}
+
+.suggestion-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0369a1;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.suggestion-desc {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .working-dir-row {
@@ -373,15 +497,15 @@ textarea,
 }
 
 .working-dir-btn:hover {
-  border-color: #6366f1;
-  color: #4338ca;
-  background: rgba(99, 102, 241, 0.08);
+  border-color: #0891b2;
+  color: #0369a1;
+  background: rgba(8, 145, 178, 0.08);
 }
 
 .working-dir-btn.has-value {
-  background: rgba(99, 102, 241, 0.08);
-  border: 1px solid rgba(99, 102, 241, 0.32);
-  color: #4338ca;
+  background: rgba(8, 145, 178, 0.08);
+  border: 1px solid rgba(8, 145, 178, 0.32);
+  color: #0369a1;
 }
 
 .working-dir-text {
@@ -435,7 +559,7 @@ textarea,
 }
 
 .working-dir-input:focus {
-  border-color: #6366f1;
+  border-color: #0891b2;
 }
 
 .working-dir-confirm,
@@ -451,13 +575,13 @@ textarea,
 }
 
 .working-dir-confirm {
-  background: #6366f1;
-  border-color: #6366f1;
+  background: #0891b2;
+  border-color: #0891b2;
   color: #fff;
 }
 
 .working-dir-confirm:hover {
-  background: #4f46e5;
+  background: #0e7490;
 }
 
 .working-dir-cancel {
@@ -475,7 +599,8 @@ textarea,
 }
 
 textarea {
-  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
   resize: none;
   background: #f8f9fa;
   color: #1a202c;
@@ -491,7 +616,7 @@ textarea {
 }
 
 textarea:focus {
-  border-color: #6366f1;
+  border-color: #0891b2;
   background: #ffffff;
 }
 
@@ -518,12 +643,12 @@ textarea::placeholder {
 }
 
 .send-btn {
-  background: #6366f1;
+  background: #0891b2;
   color: #fff;
 }
 
 .send-btn:hover:not(:disabled) {
-  background: #4f46e5;
+  background: #0e7490;
 }
 
 .send-btn:disabled {

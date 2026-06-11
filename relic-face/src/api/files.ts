@@ -75,6 +75,16 @@ export async function listGeneratedFiles(): Promise<GeneratedFileResponse[]> {
   return Array.isArray(json.items) ? json.items : []
 }
 
+export function downloadFile(relativePath: string): void {
+  const url = `${BASE}/files/download?relativePath=${encodeURIComponent(relativePath)}`
+  const a = document.createElement('a')
+  a.href = url
+  a.download = ''
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
 export async function deleteGeneratedFile(relativePath: string): Promise<boolean> {
   const response = await fetch(`${BASE}/files/generated/delete`, {
     method: 'POST',

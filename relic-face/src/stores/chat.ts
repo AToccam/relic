@@ -6,12 +6,14 @@ import {
   getConversationHistory,
   listConversations,
   renameConversation as renameConversationApi,
-  streamChat
+  streamChat,
+  type RagConfig
 } from '@/api/chat'
 import { detectTopicDrift } from '@/api/mode'
 import { useSourcesStore } from '@/stores/sources'
 import { useStudioStore } from '@/stores/studio'
 import { useWorkspaceStore } from '@/stores/workspace'
+import { useSettingsStore } from '@/stores/settings'
 import type { Message, MessageContent, MessagePart } from '@/types'
 import type { ConversationSummary, PersistedMessage } from '@/api/chat'
 
@@ -19,6 +21,7 @@ export const useChatStore = defineStore('chat', () => {
   const sources = useSourcesStore()
   const studio = useStudioStore()
   const workspace = useWorkspaceStore()
+  const settings = useSettingsStore()
   const messages = ref<Message[]>([])
   const conversations = ref<ConversationSummary[]>([])
   const showingArchived = ref(false)
@@ -123,6 +126,13 @@ export const useChatStore = defineStore('chat', () => {
         .filter(m => m.id !== assistantMsg.id)
         .map(m => ({ role: m.role, content: m.payloadContent ?? m.content }))
 
+      const ragSourceIds = selectedFiles
+        .map(f => f.relativePath)
+        .filter(Boolean)
+      const ragConfig: RagConfig | undefined = ragSourceIds.length > 0
+        ? { enabled: true, sourceIds: ragSourceIds }
+        : undefined
+
       await streamChat(
         payload,
         (chunk) => {
@@ -134,7 +144,12 @@ export const useChatStore = defineStore('chat', () => {
         },
         targetConversationId,
         abortController.signal,
-        workspace.workingDirectory
+        workspace.workingDirectory,
+        settings.toolsEnabled,
+        ragConfig,
+        (citations) => {
+          assistantMsg.citations = citations
+        }
       )
 
       await refreshConversations()
@@ -158,6 +173,14 @@ export const useChatStore = defineStore('chat', () => {
     const id = currentConversationId.value
     if (!id) return
     abortControllers.get(id)?.abort()
+    // 标记当前正在流式的消息为已中断
+    const buffer = messageCacheByConversation.get(id)
+    if (buffer) {
+      const last = buffer[buffer.length - 1]
+      if (last && last.role === 'assistant' && last.streaming) {
+        last.interrupted = true
+      }
+    }
   }
 
   function clearDrift() {
@@ -177,10 +200,11 @@ export const useChatStore = defineStore('chat', () => {
     const prevText = lastUser.content
     if (!prevText || typeof prevText !== 'string') return
 
+    const anchorFiles = sources.selectedUsableFiles.map(f => f.name).filter(Boolean)
     const seq = ++driftCheckSeq
     driftDetecting.value = true
     try {
-      const isDrift = await detectTopicDrift(prevText, newMsg)
+      const isDrift = await detectTopicDrift(prevText, newMsg, anchorFiles)
       if (seq !== driftCheckSeq) return
       if (isDrift) driftSuggested.value = true
     } catch {

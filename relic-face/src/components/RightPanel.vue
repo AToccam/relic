@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useStudioStore } from '@/stores/studio'
+import { downloadFile } from '@/api/files'
 
 const studio = useStudioStore()
 
@@ -141,6 +142,13 @@ async function removeGeneratedFile(id: string) {
             <span class="file-size">{{ file.sizeLabel }}</span>
             <span class="file-path">{{ file.relativePath }}</span>
           </div>
+          <button class="download-btn" @click="downloadFile(file.relativePath)" title="下载">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </button>
           <button class="remove-btn" @click="removeGeneratedFile(file.id)" title="删除">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -222,13 +230,13 @@ async function removeGeneratedFile(id: string) {
 }
 
 .format-tab:hover {
-  border-color: #6366f1;
+  border-color: #0891b2;
   color: #4a5568;
 }
 
 .format-tab.active {
-  background: #6366f1;
-  border-color: #6366f1;
+  background: #0891b2;
+  border-color: #0891b2;
   color: #ffffff;
 }
 
@@ -314,6 +322,7 @@ async function removeGeneratedFile(id: string) {
   word-break: break-all;
 }
 
+.download-btn,
 .remove-btn {
   width: 20px;
   height: 20px;
@@ -327,6 +336,11 @@ async function removeGeneratedFile(id: string) {
   justify-content: center;
   flex-shrink: 0;
   transition: all 0.15s;
+}
+
+.download-btn:hover {
+  background: #dbeafe;
+  color: #2563eb;
 }
 
 .remove-btn:hover {

@@ -2,6 +2,8 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useSourcesStore } from '@/stores/sources'
 import { useChatStore } from '@/stores/chat'
+import { downloadFile } from '@/api/files'
+import { importWebResource, searchWeb, type WebSearchResult } from '@/api/webresources'
 
 const sources = useSourcesStore()
 const chat = useChatStore()
@@ -38,6 +40,10 @@ async function onDrop(e: DragEvent) {
   if (e.dataTransfer?.files.length) {
     await addFiles(e.dataTransfer.files)
   }
+}
+
+async function indexFile(id: string) {
+  await sources.indexFile(id)
 }
 
 async function removeFile(id: string) {
@@ -94,6 +100,28 @@ async function renameHistoryItem(conversationId: string, currentName: string) {
   const trimmed = name.trim()
   if (!trimmed) return
   await chat.renameConversation(conversationId, trimmed)
+  openHistoryMenuId.value = null
+}
+
+function exportConversation(conversationId: string, title: string) {
+  const buffer = chat.messages
+  if (!buffer || buffer.length === 0) return
+
+  const lines: string[] = [`# ${title || '对话记录'}`, '', `> 导出时间：${new Date().toLocaleString()}`, '']
+  for (const msg of buffer) {
+    const role = msg.role === 'user' ? '**用户**' : '**AI**'
+    lines.push(`### ${role}`, '', typeof msg.content === 'string' ? msg.content : '', '')
+  }
+
+  const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${title || '对话'}.md`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
   openHistoryMenuId.value = null
 }
 
@@ -163,8 +191,61 @@ function resolveHistoryTitle(item: { title?: string; lastPreview?: string }): st
   return preview || '新对话'
 }
 
+function ragStatusLabel(status: string, chunkCount?: number): string {
+  if (status === 'INDEXING') return '索引中…'
+  if (status === 'COMPLETED') return chunkCount ? `已索引 ${chunkCount} 块` : '已索引'
+  if (status === 'FAILED') return '索引失败'
+  return '未索引'
+}
+
 function handleOutsideClick() {
   openHistoryMenuId.value = null
+}
+
+// 联网搜索
+const webSearchKeyword = ref('')
+const webSearchResults = ref<WebSearchResult[]>([])
+const webSearching = ref(false)
+const webSearchError = ref('')
+const webSearchExpanded = ref(false)
+const importingIds = ref<Set<string>>(new Set())
+const importedIds = ref<Set<string>>(new Set())
+
+async function doWebSearch() {
+  const kw = webSearchKeyword.value.trim()
+  if (!kw) return
+  webSearching.value = true
+  webSearchError.value = ''
+  webSearchResults.value = []
+  webSearchExpanded.value = true
+  try {
+    webSearchResults.value = await searchWeb(kw)
+  } catch (e) {
+    webSearchError.value = e instanceof Error ? e.message : '搜索失败'
+  } finally {
+    webSearching.value = false
+  }
+}
+
+async function doImport(result: WebSearchResult) {
+  if (importingIds.value.has(result.id) || importedIds.value.has(result.id)) return
+  importingIds.value = new Set([...importingIds.value, result.id])
+  try {
+    const res = await importWebResource(result, webSearchKeyword.value.trim())
+    sources.addImportedWebResource({
+      name: res.filename,
+      relativePath: res.relativePath,
+      mimeType: res.mimeType,
+      size: res.size
+    })
+    importedIds.value = new Set([...importedIds.value, result.id])
+  } catch (e) {
+    window.alert(e instanceof Error ? e.message : '导入失败')
+  } finally {
+    const next = new Set(importingIds.value)
+    next.delete(result.id)
+    importingIds.value = next
+  }
 }
 
 onMounted(() => document.addEventListener('click', handleOutsideClick))
@@ -270,6 +351,61 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
         </div>
       </section>
 
+      <section class="section websearch-section">
+        <div class="source-section-title-row">
+          <div class="source-section-title">联网搜索</div>
+          <button class="section-action-btn" @click="webSearchExpanded = !webSearchExpanded">
+            {{ webSearchExpanded ? '收起' : '展开' }}
+          </button>
+        </div>
+
+        <div class="websearch-input-row">
+          <input
+            v-model="webSearchKeyword"
+            class="websearch-input"
+            type="text"
+            placeholder="输入关键词搜索网页"
+            @keydown.enter="doWebSearch"
+          />
+          <button class="websearch-btn" :disabled="webSearching || !webSearchKeyword.trim()" @click="doWebSearch">
+            <svg v-if="!webSearching" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <span v-else class="spin-icon">⟳</span>
+          </button>
+        </div>
+
+        <div v-if="webSearchError" class="websearch-error">{{ webSearchError }}</div>
+
+        <template v-if="webSearchExpanded && webSearchResults.length > 0">
+          <div
+            v-for="result in webSearchResults"
+            :key="result.id"
+            class="websearch-result"
+          >
+            <div class="websearch-result-title">
+              <a :href="result.url" target="_blank" rel="noopener" class="websearch-link" :title="result.url">
+                {{ result.title || result.url }}
+              </a>
+            </div>
+            <p class="websearch-snippet">{{ result.snippet }}</p>
+            <button
+              class="websearch-import-btn"
+              :disabled="importingIds.has(result.id) || importedIds.has(result.id)"
+              @click="doImport(result)"
+            >
+              <template v-if="importedIds.has(result.id)">✓ 已导入</template>
+              <template v-else-if="importingIds.has(result.id)">导入中…</template>
+              <template v-else>导入到文件区</template>
+            </button>
+          </div>
+        </template>
+
+        <div v-else-if="webSearchExpanded && !webSearching && webSearchKeyword.trim() && webSearchResults.length === 0 && !webSearchError" class="empty-hint compact">
+          <p>未找到相关结果</p>
+        </div>
+      </section>
+
       <section class="section files-section">
         <div class="source-section-title">上传文件</div>
 
@@ -333,12 +469,46 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
                 <polyline points="14 2 14 8 20 8" />
               </svg>
             </div>
+            <img
+              v-if="file.dataUrl && file.mimeType.startsWith('image/')"
+              :src="file.dataUrl"
+              class="file-thumb"
+              :alt="file.name"
+            />
             <div class="file-info">
               <span class="file-name" :title="file.name">{{ file.name }}</span>
               <span class="file-size">{{ file.sizeLabel }}</span>
               <span v-if="file.uploadError" class="file-error">{{ file.uploadError }}</span>
               <span v-else class="file-path">{{ file.relativePath }}</span>
+              <span
+                v-if="!file.uploadError && file.ragStatus"
+                :class="['rag-badge', `rag-${file.ragStatus.toLowerCase()}`]"
+              >
+                {{ ragStatusLabel(file.ragStatus, file.ragChunkCount) }}
+              </span>
             </div>
+            <button
+              v-if="file.relativePath && !file.uploadError && !file.ragIndexing && file.ragStatus !== 'COMPLETED'"
+              class="index-btn"
+              @click.stop="indexFile(file.id)"
+              title="建立 RAG 索引"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              </svg>
+            </button>
+            <button
+              v-if="file.relativePath && !file.uploadError"
+              class="download-btn"
+              @click.stop="downloadFile(file.relativePath)"
+              title="下载"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            </button>
             <button class="remove-btn" @click.stop="removeFile(file.id)" title="移除">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -406,7 +576,7 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .header-icon-btn.active {
   background: #e0e7ff;
-  color: #4f46e5;
+  color: #0e7490;
 }
 
 .panel-body {
@@ -521,12 +691,12 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 }
 
 .history-item:hover {
-  border-color: #6366f1;
-  background: #eef2ff;
+  border-color: #0891b2;
+  background: #f0f9ff;
 }
 
 .history-item.active {
-  border-color: #4f46e5;
+  border-color: #0e7490;
   background: #e0e7ff;
 }
 
@@ -574,9 +744,9 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .drop-zone:hover,
 .drop-zone.dragging {
-  border-color: #6366f1;
-  background: rgba(99, 102, 241, 0.04);
-  color: #6366f1;
+  border-color: #0891b2;
+  background: rgba(8, 145, 178, 0.04);
+  color: #0891b2;
 }
 
 .drop-title {
@@ -588,7 +758,7 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .drop-zone:hover .drop-title,
 .drop-zone.dragging .drop-title {
-  color: #6366f1;
+  color: #0891b2;
 }
 
 .drop-hint {
@@ -660,27 +830,27 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .history-search-input:focus {
   outline: none;
-  border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  border-color: #0891b2;
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.15);
 }
 
 .history-search-clear {
   border: none;
   background: transparent;
-  color: #4f46e5;
+  color: #0e7490;
   font-size: 11px;
   padding: 4px;
   cursor: pointer;
 }
 
 .history-search-clear:hover {
-  color: #4338ca;
+  color: #0369a1;
 }
 
 .section-action-btn {
   border: none;
   background: transparent;
-  color: #6366f1;
+  color: #0891b2;
   font-size: 11px;
   padding: 4px;
   cursor: pointer;
@@ -712,8 +882,8 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 }
 
 .source-item.selected {
-  border-color: #6366f1;
-  background: rgba(99, 102, 241, 0.06);
+  border-color: #0891b2;
+  background: rgba(8, 145, 178, 0.06);
 }
 
 .source-item.error {
@@ -744,11 +914,20 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   width: 28px;
   height: 28px;
   border-radius: 6px;
-  background: rgba(99, 102, 241, 0.1);
-  color: #6366f1;
+  background: rgba(8, 145, 178, 0.1);
+  color: #0891b2;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+}
+
+.file-thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid #e2e8f0;
   flex-shrink: 0;
 }
 
@@ -789,10 +968,45 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 
 .uploading {
   font-size: 12px;
-  color: #6366f1;
+  color: #0891b2;
   text-align: center;
 }
 
+.rag-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid;
+  align-self: flex-start;
+  white-space: nowrap;
+}
+
+.rag-badge.rag-not_indexed {
+  color: #94a3b8;
+  border-color: #e2e8f0;
+  background: #f8fafc;
+}
+
+.rag-badge.rag-indexing {
+  color: #7c3aed;
+  border-color: rgba(124, 58, 237, 0.25);
+  background: rgba(124, 58, 237, 0.07);
+}
+
+.rag-badge.rag-completed {
+  color: #15803d;
+  border-color: rgba(21, 128, 61, 0.25);
+  background: rgba(21, 128, 61, 0.07);
+}
+
+.rag-badge.rag-failed {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.25);
+  background: rgba(220, 38, 38, 0.07);
+}
+
+.index-btn,
+.download-btn,
 .remove-btn {
   width: 22px;
   height: 22px;
@@ -808,9 +1022,150 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   transition: all 0.15s;
 }
 
+.index-btn:hover {
+  background: rgba(124, 58, 237, 0.1);
+  color: #7c3aed;
+}
+
+.download-btn:hover {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
 .remove-btn:hover {
   background: #fee2e2;
   color: #ef4444;
+}
+
+.websearch-section {
+  flex-shrink: 0;
+}
+
+.websearch-input-row {
+  display: flex;
+  gap: 6px;
+  margin: 8px 4px 0;
+}
+
+.websearch-input {
+  flex: 1;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #1e293b;
+  font-size: 12px;
+}
+
+.websearch-input:focus {
+  outline: none;
+  border-color: #0891b2;
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.15);
+}
+
+.websearch-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid #0891b2;
+  background: #0891b2;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 14px;
+  transition: background 0.15s;
+}
+
+.websearch-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.websearch-btn:not(:disabled):hover {
+  background: #0e7490;
+}
+
+.spin-icon {
+  display: inline-block;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.websearch-error {
+  font-size: 11px;
+  color: #dc2626;
+  padding: 4px 4px 0;
+}
+
+.websearch-result {
+  margin-top: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.websearch-result-title {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.websearch-link {
+  color: #0369a1;
+  text-decoration: none;
+}
+
+.websearch-link:hover {
+  text-decoration: underline;
+}
+
+.websearch-snippet {
+  font-size: 11px;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.websearch-import-btn {
+  align-self: flex-end;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid #0891b2;
+  background: transparent;
+  color: #0891b2;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.websearch-import-btn:not(:disabled):hover {
+  background: #0891b2;
+  color: #fff;
+}
+
+.websearch-import-btn:disabled {
+  border-color: #94a3b8;
+  color: #94a3b8;
+  cursor: default;
 }
 
 .empty-hint {

@@ -149,6 +149,15 @@ function renderMd(text: string): string {
 }
 
 const bubbleRef = useTemplateRef<HTMLElement>('bubble')
+const copied = ref(false)
+
+function copyMessage() {
+  const text = typeof props.message.content === 'string' ? props.message.content : ''
+  navigator.clipboard.writeText(text).then(() => {
+    copied.value = true
+    setTimeout(() => { copied.value = false }, 1500)
+  })
+}
 
 watchEffect(async () => {
   props.message.content
@@ -229,6 +238,28 @@ watchEffect(async () => {
             :source="seg.text"
           />
         </template>
+
+        <details v-if="message.citations && message.citations.length > 0" class="citations-block">
+          <summary class="citations-summary">参考来源 ({{ message.citations.length }})</summary>
+          <div class="citations-list">
+            <div v-for="(c, i) in message.citations" :key="i" class="citation-item">
+              <span class="citation-source">{{ c.sourceId }}</span>
+              <p class="citation-snippet">{{ c.snippet }}</p>
+            </div>
+          </div>
+        </details>
+
+        <div v-if="!message.streaming" class="msg-actions">
+          <button class="msg-copy-btn" @click="copyMessage" :title="copied ? '已复制' : '复制全文'">
+            <svg v-if="!copied" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+            <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+            <span>{{ copied ? '已复制' : '复制' }}</span>
+          </button>
+        </div>
       </template>
 
       <template v-else>
@@ -256,6 +287,7 @@ watchEffect(async () => {
         <div v-else class="plain-text">{{ message.content }}</div>
       </template>
       <span v-if="message.streaming" class="cursor">▌</span>
+      <span v-if="!message.streaming && message.interrupted" class="interrupted-badge">⏹ 已中断</span>
     </div>
   </div>
 </template>
@@ -279,16 +311,22 @@ watchEffect(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   flex-shrink: 0;
-  background: #e2e8f0;
-  color: #4a5568;
+  background: #091e2e;
+  color: #22d3ee;
+  border: 1.5px solid #22d3ee;
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.2);
+  font-family: ui-monospace, 'JetBrains Mono', 'Courier New', monospace;
+  letter-spacing: 0.04em;
 }
 
 .message-item.user .avatar {
-  background: #6366f1;
-  color: #fff;
+  background: #0e4d63;
+  color: #7de8f8;
+  border-color: #38bdf8;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
 }
 
 .bubble {
@@ -306,7 +344,7 @@ watchEffect(async () => {
 }
 
 .message-item.user .bubble {
-  background: #6366f1;
+  background: #0891b2;
   color: #fff;
   border-bottom-right-radius: 4px;
 }
@@ -323,8 +361,9 @@ watchEffect(async () => {
 .cursor {
   display: inline-block;
   animation: blink 0.8s step-end infinite;
-  color: #6366f1;
+  color: #22d3ee;
   margin-left: 2px;
+  text-shadow: 0 0 8px rgba(34, 211, 238, 0.6);
 }
 
 @keyframes blink {
@@ -336,7 +375,7 @@ watchEffect(async () => {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  border: 1px solid rgba(99, 102, 241, 0.18);
+  border: 1px solid rgba(8, 145, 178, 0.18);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -346,11 +385,11 @@ watchEffect(async () => {
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  background: rgba(99, 102, 241, 0.05);
+  background: rgba(8, 145, 178, 0.05);
   border: none;
   cursor: pointer;
   font-size: 12px;
-  color: #4338ca;
+  color: #0369a1;
   font-family: inherit;
   text-align: left;
   width: 100%;
@@ -358,7 +397,7 @@ watchEffect(async () => {
 }
 
 .process-toggle:hover {
-  background: rgba(99, 102, 241, 0.1);
+  background: rgba(8, 145, 178, 0.1);
 }
 
 .toggle-arrow {
@@ -395,9 +434,9 @@ watchEffect(async () => {
 }
 
 .seg-tool {
-  background: rgba(99, 102, 241, 0.08);
-  border: 1px solid rgba(99, 102, 241, 0.2);
-  color: #4338ca;
+  background: rgba(8, 145, 178, 0.08);
+  border: 1px solid rgba(8, 145, 178, 0.2);
+  color: #0369a1;
 }
 
 .seg-status {
@@ -474,6 +513,112 @@ watchEffect(async () => {
   opacity: 1;
 }
 
+.citations-block {
+  margin-top: 8px;
+  border: 1px solid rgba(8, 145, 178, 0.18);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.citations-summary {
+  padding: 6px 10px;
+  background: rgba(8, 145, 178, 0.05);
+  color: #0369a1;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.citations-summary::-webkit-details-marker { display: none; }
+
+.citations-summary::before {
+  content: '▶ ';
+  font-size: 10px;
+}
+
+details[open] .citations-summary::before {
+  content: '▼ ';
+}
+
+.citations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.citation-item {
+  border-left: 3px solid rgba(8, 145, 178, 0.3);
+  padding-left: 8px;
+}
+
+.citation-source {
+  font-size: 11px;
+  font-weight: 600;
+  color: #0369a1;
+  display: block;
+  margin-bottom: 2px;
+  word-break: break-all;
+}
+
+.citation-snippet {
+  font-size: 12px;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+.interrupted-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #92400e;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 6px;
+  padding: 2px 8px;
+  align-self: flex-start;
+}
+
+.msg-actions {
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  margin-top: 2px;
+}
+
+.bubble:hover .msg-actions {
+  opacity: 1;
+}
+
+.msg-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #64748b;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.msg-copy-btn:hover {
+  background: #f1f5f9;
+  border-color: #0891b2;
+  color: #0891b2;
+}
+
 .markdown-body :deep(p) { margin: 0 0 8px; }
 .markdown-body :deep(p:last-child) { margin-bottom: 0; }
 .markdown-body :deep(p) { white-space: pre-wrap; }
@@ -491,7 +636,7 @@ watchEffect(async () => {
   padding: 1px 4px;
   font-size: 13px;
   font-family: 'Consolas', 'Monaco', monospace;
-  color: #6366f1;
+  color: #0891b2;
 }
 .markdown-body :deep(pre code) {
   padding: 0;
