@@ -22,6 +22,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -233,7 +236,7 @@ public class WebhookController {
         List<Map<String, Object>> messages = MessageHelper.cleanRawMessages(rawMessages);
         ChatCompletionRequest.RagConfig ragConfig = request == null ? null : request.getRagConfig();
         Boolean toolsEnabled = request == null ? null : request.getToolsEnabled();
-        String workingDirectory = request == null ? null : request.getWorkingDirectory();
+        String workingDirectory = normalizeWorkingDirectory(request == null ? null : request.getWorkingDirectory());
 
         if (messages.isEmpty()) {
             messages.add(MessageHelper.buildUserMessage(""));
@@ -376,6 +379,25 @@ public class WebhookController {
         });
 
         return emitter;
+    }
+
+    private String normalizeWorkingDirectory(String workingDirectory) {
+        if (workingDirectory == null || workingDirectory.isBlank()) {
+            return null;
+        }
+
+        String trimmed = workingDirectory.trim();
+        try {
+            Path path = Path.of(trimmed).toAbsolutePath().normalize();
+            if (Files.isDirectory(path)) {
+                return path.toString();
+            }
+            log.warn("[working-directory] invalid directory '{}', falling back to default workspace", trimmed);
+            return null;
+        } catch (InvalidPathException e) {
+            log.warn("[working-directory] invalid path '{}', falling back to default workspace: {}", trimmed, e.getMessage());
+            return null;
+        }
     }
 
     private SseEmitter buildImmediateSseMessage(List<Map<String, Object>> messages, String message) {

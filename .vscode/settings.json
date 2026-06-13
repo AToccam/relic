@@ -1,18 +1,26 @@
 {
     "java.compile.nullAnalysis.mode": "automatic",
     "java.configuration.updateBuildConfiguration": "interactive",
-    
+    "terminal.integrated.defaultProfile.windows": "PowerShell",
+    "terminal.integrated.env.windows": {
+        "PYTHONIOENCODING": "utf-8",
+        "MAVEN_OPTS": "-Dfile.encoding=UTF-8 -Dsun.stdout.encoding=UTF-8 -Dsun.stderr.encoding=UTF-8"
+    },
     "terminal.integrated.profiles.windows": {
         "Command Prompt": {
             "path": [
                 "${env:windir}\\Sysnative\\cmd.exe",
                 "${env:windir}\\System32\\cmd.exe"
             ],
-            "args": ["/K", "chcp 65001"]
+            "args": ["/K", "chcp 65001 >nul"]
         },
         "PowerShell": {
             "source": "PowerShell",
-            "args": ["-NoExit", "-Command", "chcp 65001"]
+            "args": [
+                "-NoExit",
+                "-Command",
+                "chcp 65001 > $null; $utf8 = New-Object System.Text.UTF8Encoding($false); [Console]::InputEncoding = $utf8; [Console]::OutputEncoding = $utf8; $OutputEncoding = $utf8"
+            ]
         }
     }
 }
