@@ -201,15 +201,15 @@ if (-not $hasNode -or -not $hasNpm -or -not $hasFacePkg -or -not $hasFaceModules
   Write-Host "- Install check: OK"
   if (-not $startAllowed) {
     Write-Host "- Startup skipped because missing services already exist."
-  } elseif (Test-ListeningPort 5173) {
-    Write-Host "- Already running on port 5173."
+  } elseif (Test-ListeningPort 3000) {
+    Write-Host "- Already running on port 3000."
   } else {
     $pidFrontend = Start-ServiceWindow -workDir $faceDir -title "Relic Face" -command "npm run dev"
-    if (Wait-PortUp -port 5173 -seconds 30) {
+    if (Wait-PortUp -port 3000 -seconds 30) {
       Add-Started "relic-face"
-      Write-Host "- Started and listening on port 5173."
+      Write-Host "- Started and listening on port 3000."
     } else {
-      Write-Host "- Start triggered but port 5173 not ready in time."
+      Write-Host "- Start triggered but port 3000 not ready in time."
     }
   }
 }

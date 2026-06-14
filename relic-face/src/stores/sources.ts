@@ -34,6 +34,22 @@ interface UploadResult {
 const IMAGE_MIME_PREFIX = 'image/'
 const AUDIO_MIME_PREFIX = 'audio/'
 const MAX_AUDIO_BYTES = 7.5 * 1024 * 1024
+const ALLOWED_FILE_EXTENSIONS = new Set([
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.txt',
+  '.md',
+  '.ppt',
+  '.pptx',
+  '.xls',
+  '.xlsx',
+  '.csv',
+  '.json',
+  '.xml',
+  '.yaml',
+  '.yml'
+])
 const ALLOWED_AUDIO_TYPES = new Set([
   'audio/mpeg',
   'audio/mp3',
@@ -359,6 +375,36 @@ function isImage(mimeType: string): boolean {
 
 function isAudio(mimeType: string): boolean {
   return mimeType.startsWith(AUDIO_MIME_PREFIX)
+}
+
+function validateLocalFile(file: File): string | null {
+  if (!file || file.size <= 0) {
+    return '上传文件为空'
+  }
+
+  const mimeType = (file.type || '').toLowerCase()
+  if (isImage(mimeType)) {
+    return null
+  }
+
+  if (isAudio(mimeType)) {
+    if (!ALLOWED_AUDIO_TYPES.has(mimeType)) {
+      return '不支持的音频格式'
+    }
+    if (file.size > MAX_AUDIO_BYTES) {
+      return '音频文件不能超过 7.5 MB'
+    }
+    return null
+  }
+
+  const lowerName = file.name.toLowerCase()
+  const dot = lowerName.lastIndexOf('.')
+  const extension = dot >= 0 ? lowerName.slice(dot) : ''
+  if (ALLOWED_FILE_EXTENSIONS.has(extension)) {
+    return null
+  }
+
+  return '不支持的文件格式'
 }
 
 function isKnowledgeSource(file: SourceFileItem): boolean {
