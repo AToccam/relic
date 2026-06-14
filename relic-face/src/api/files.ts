@@ -6,6 +6,8 @@ export interface UploadFileResponse {
   relativePath: string
   mimeType: string
   size: number
+  sourceType?: string
+  indexTriggered?: boolean
 }
 
 export interface PersistedFileResponse {
@@ -14,6 +16,11 @@ export interface PersistedFileResponse {
   mimeType: string
   size: number
   updatedAt: string
+  sourceType?: string
+  originUrl?: string
+  title?: string
+  snippet?: string
+  keyword?: string
 }
 
 export interface GeneratedFileResponse {

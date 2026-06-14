@@ -16,4 +16,7 @@ public class WebSearchResult {
     private String url;
     private String snippet;
     private double score;
+    private String summary;
+    private String siteName;
+    private String datePublished;
 }

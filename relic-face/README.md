@@ -27,7 +27,7 @@ npm install
 npm run dev
 ```
 
-开发服务器启动后访问 `http://localhost:5173`。
+开发服务器启动后访问 `http://localhost:3000`。
 
 Vite 已配置代理，前端所有 `/api/*` 请求自动转发至 `http://127.0.0.1:8082`。
 

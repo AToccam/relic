@@ -34,7 +34,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.ReentrantLock;
 
 @Slf4j
 @RestController
@@ -42,7 +41,7 @@ public class WebhookController {
 
     private static final int MAX_HISTORY = 8; //最大历史条数
 
-    private final ConcurrentHashMap<String, ReentrantLock> conversationLocks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Semaphore> conversationLocks = new ConcurrentHashMap<>();
 
     @Autowired
     private AiRouterService aiRouter;
@@ -253,8 +252,8 @@ public class WebhookController {
             return buildImmediateSseMessage(messages, audioValidationError);
         }
 
-        ReentrantLock conversationLock = conversationLocks.computeIfAbsent(conversationId, ignored -> new ReentrantLock());
-        if (!conversationLock.tryLock()) {
+        Semaphore conversationLock = conversationLocks.computeIfAbsent(conversationId, ignored -> new Semaphore(1));
+        if (!conversationLock.tryAcquire()) {
             log.warn("[conversation-lock] conversation {} is already streaming, rejecting concurrent request", conversationId);
             return buildImmediateSseMessage(messages, "当前会话正在生成，请稍后再试。");
         }
@@ -284,6 +283,7 @@ public class WebhookController {
         long created = System.currentTimeMillis() / 1000;
         AtomicBoolean emitterActive = new AtomicBoolean(true);
         AtomicBoolean citationsSent = new AtomicBoolean(false);
+        AtomicBoolean fallbackSent = new AtomicBoolean(false);
         AtomicBoolean lockReleased = new AtomicBoolean(false);
         StringBuilder assistantOutput = new StringBuilder();
 
@@ -311,6 +311,10 @@ public class WebhookController {
                         }
                         Map<String, Object> chunk = OpenAiResponseBuilder.buildChunk(
                             chatId, created, modelName, Map.of("content", content), null, citations);
+                        Map<String, Object> fallback = aiRouter.getCurrentFallbackInfo();
+                        if (fallback != null && fallbackSent.compareAndSet(false, true)) {
+                            chunk.put("fallback", fallback);
+                        }
                         emitter.send(SseEmitter.event()
                                 .data(mapper.writeValueAsString(chunk), MediaType.APPLICATION_JSON));
                     } catch (IOException e) {
@@ -479,12 +483,12 @@ public class WebhookController {
         return formats;
     }
 
-    private void releaseConversationLock(String conversationId, ReentrantLock lock, AtomicBoolean released) {
+    private void releaseConversationLock(String conversationId, Semaphore lock, AtomicBoolean released) {
         if (!released.compareAndSet(false, true)) {
             return;
         }
         try {
-            lock.unlock();
+            lock.release();
         } finally {
             conversationLocks.remove(conversationId, lock);
         }

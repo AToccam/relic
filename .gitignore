@@ -1,3 +1,5 @@
 .DS_Store
 
 relic-gateway/.npm-cache/
+.m2/
+tmp/

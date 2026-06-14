@@ -191,6 +191,16 @@ watchEffect(async () => {
     <div class="avatar">{{ message.role === 'user' ? 'U' : 'AI' }}</div>
     <div class="bubble" ref="bubble">
       <template v-if="message.role === 'assistant'">
+        <div
+          v-if="message.fallback"
+          class="fallback-badge"
+          :title="message.fallback.reason || 'Upstream model unavailable'"
+        >
+          <span class="fallback-dot"></span>
+          <span>本地模型兜底</span>
+          <span v-if="message.fallback.provider" class="fallback-provider">{{ message.fallback.provider }}</span>
+        </div>
+
         <div v-if="hasProcess" class="process-block">
           <button class="process-toggle" @click="processExpanded = !processExpanded">
             <svg
@@ -378,6 +388,35 @@ watchEffect(async () => {
   border: 1px solid rgba(8, 145, 178, 0.18);
   border-radius: 8px;
   overflow: hidden;
+}
+
+.fallback-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 4px 9px;
+  border-radius: 6px;
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  background: rgba(245, 158, 11, 0.1);
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fallback-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.16);
+}
+
+.fallback-provider {
+  font-family: ui-monospace, 'JetBrains Mono', 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: #78350f;
 }
 
 .process-toggle {

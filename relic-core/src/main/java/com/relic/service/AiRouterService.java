@@ -108,6 +108,7 @@ public class AiRouterService {
     private final Optional<Retriever> retriever;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ThreadLocal<RagRuntime> ragRuntime = ThreadLocal.withInitial(() -> new RagRuntime("", List.of()));
+    private final ThreadLocal<FallbackRuntime> fallbackRuntime = new ThreadLocal<>();
     private ExecutorService advisorExecutor;
 
     @Autowired
@@ -185,8 +186,23 @@ public class AiRouterService {
     private record RagRuntime(String contextPrompt, List<Citation> citations) {
     }
 
+    private record FallbackRuntime(String type, String provider, String reason) {
+    }
+
     public List<Citation> getCurrentCitations() {
         return ragRuntime.get().citations();
+    }
+
+    public Map<String, Object> getCurrentFallbackInfo() {
+        FallbackRuntime runtime = fallbackRuntime.get();
+        if (runtime == null) {
+            return null;
+        }
+        Map<String, Object> fallback = new LinkedHashMap<>();
+        fallback.put("type", runtime.type());
+        fallback.put("provider", runtime.provider());
+        fallback.put("reason", runtime.reason());
+        return fallback;
     }
 
     public String getPrimaryProviderName() {
@@ -357,6 +373,7 @@ public class AiRouterService {
             throw e;
         } finally {
             clearRagRuntime();
+            clearFallbackRuntime();
         }
     }
 
@@ -430,6 +447,7 @@ public class AiRouterService {
             throw e;
         } finally {
             clearRagRuntime();
+            clearFallbackRuntime();
         }
     }
 
@@ -1074,6 +1092,10 @@ public class AiRouterService {
             || lower.contains("qwen api 错误")
             || lower.contains("连接 deepseek 失败")
             || lower.contains("deepseek api 错误")
+                || lower.contains("http 402")
+                || lower.contains("insufficient balance")
+                || lower.contains("quota")
+                || lower.contains("billing")
                 || lower.contains("connect")
                 || lower.contains("refused");
     }
@@ -1097,7 +1119,11 @@ public class AiRouterService {
                 if (lower.contains("connect")
                         || lower.contains("refused")
                         || lower.contains("unresolved")
-                        || lower.contains("unknown host")) {
+                        || lower.contains("unknown host")
+                        || lower.contains("http 402")
+                        || lower.contains("insufficient balance")
+                        || lower.contains("quota")
+                        || lower.contains("billing")) {
                     return true;
                 }
             }
@@ -1120,12 +1146,17 @@ public class AiRouterService {
                                       String reason) {
         String question = extractLatestUserMessage(messages);
         if (localFallbackService.isPresent()) {
+            fallbackRuntime.set(new FallbackRuntime("local_model", "ollama", reason));
             log.warn("【本地兜底-流式】检测到上游异常，转 Ollama 简答。原因: {}", reason);
             onChunk.accept("\n\n连接失败，当前调用本地模型。\n\n");
             localFallbackService.get().streamSimpleAnswer(question, onChunk);
             return;
         }
         onChunk.accept("\n\n⚠️ 云端 AI 暂不可用，且未配置本地兜底模型。\n");
+    }
+
+    private void clearFallbackRuntime() {
+        fallbackRuntime.remove();
     }
 
     private String describeThrowable(Throwable e) {
