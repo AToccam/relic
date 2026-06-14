@@ -17,14 +17,21 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 
 import java.net.ConnectException;
 import java.net.UnknownHostException;
 import java.nio.channels.UnresolvedAddressException;
 import java.util.*;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
@@ -89,12 +96,20 @@ public class AiRouterService {
     @Value("${relic.router.advisor-timeout-ms:90000}")
     private long advisorTimeoutMs;
 
+    @Value("${relic.router.advisor-executor.pool-size:4}")
+    private int advisorExecutorPoolSize;
+
+    @Value("${relic.router.advisor-executor.queue-size:16}")
+    private int advisorExecutorQueueSize;
+
     private final Map<String, AiProvider> providerMap = new LinkedHashMap<>();
     private final SemanticRouter semanticRouter;
     private final Optional<OllamaLocalService> localFallbackService;
     private final Optional<Retriever> retriever;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ThreadLocal<RagRuntime> ragRuntime = ThreadLocal.withInitial(() -> new RagRuntime("", List.of()));
+    private final ThreadLocal<FallbackRuntime> fallbackRuntime = new ThreadLocal<>();
+    private ExecutorService advisorExecutor;
 
     @Autowired
     private ToolCallService toolCallService;
@@ -118,6 +133,7 @@ public class AiRouterService {
 
     @PostConstruct
     public void logStartupConfiguration() {
+        initAdvisorExecutor();
         advisors = Arrays.stream(advisorsConfig.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
@@ -140,11 +156,53 @@ public class AiRouterService {
         log.info("============================================");
     }
 
+    @PreDestroy
+    public void shutdownAdvisorExecutor() {
+        if (advisorExecutor != null) {
+            advisorExecutor.shutdownNow();
+        }
+    }
+
+    private void initAdvisorExecutor() {
+        int poolSize = Math.max(1, advisorExecutorPoolSize);
+        int queueSize = Math.max(1, advisorExecutorQueueSize);
+        AtomicInteger counter = new AtomicInteger();
+        ThreadFactory threadFactory = task -> {
+            Thread thread = new Thread(task, "relic-advisor-worker-" + counter.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        };
+        advisorExecutor = new ThreadPoolExecutor(
+                poolSize,
+                poolSize,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(queueSize),
+                threadFactory,
+                new ThreadPoolExecutor.AbortPolicy());
+        log.info("[multi-ai] advisor executor initialized: poolSize={}, queueSize={}", poolSize, queueSize);
+    }
+
     private record RagRuntime(String contextPrompt, List<Citation> citations) {
+    }
+
+    private record FallbackRuntime(String type, String provider, String reason) {
     }
 
     public List<Citation> getCurrentCitations() {
         return ragRuntime.get().citations();
+    }
+
+    public Map<String, Object> getCurrentFallbackInfo() {
+        FallbackRuntime runtime = fallbackRuntime.get();
+        if (runtime == null) {
+            return null;
+        }
+        Map<String, Object> fallback = new LinkedHashMap<>();
+        fallback.put("type", runtime.type());
+        fallback.put("provider", runtime.provider());
+        fallback.put("reason", runtime.reason());
+        return fallback;
     }
 
     public String getPrimaryProviderName() {
@@ -315,6 +373,7 @@ public class AiRouterService {
             throw e;
         } finally {
             clearRagRuntime();
+            clearFallbackRuntime();
         }
     }
 
@@ -388,6 +447,7 @@ public class AiRouterService {
             throw e;
         } finally {
             clearRagRuntime();
+            clearFallbackRuntime();
         }
     }
 
@@ -446,36 +506,14 @@ public class AiRouterService {
         return toolCallService.askWithTools(getProvider(resolveToolProviderNameForMessages(aggregatedMessages)), aggregatedMessages);
     }
 
-    /** 并行调用所有 advisor，收集回复（带心跳保活） */
+    /** 并行调用所有 advisor，收集回复（带心跳保活）。 */
     private Map<String, String> collectAdvisorRepliesWithHeartbeat(List<Map<String, Object>> messages,
                                                                    Consumer<String> onChunk) {
         Map<String, String> replies = new ConcurrentHashMap<>();
         Long deadline = RequestDeadline.currentDeadlineEpochMillis();
-        List<CompletableFuture<Void>> futures = advisors.stream()
-                        .filter(providerMap::containsKey)
-                        .map(name -> CompletableFuture.runAsync(() -> {
-                            RequestDeadline.setDeadlineEpochMillis(deadline);
-                            try {
-                                long start = System.currentTimeMillis();
-                                log.info("【多AI协同】正在请求 {} ...", name);
-                                String reply = askAdvisorWithTools(name, messages);
-                                long cost = System.currentTimeMillis() - start;
-                                if (isIgnorableAdvisorReply(reply)) {
-                                    log.warn("【多AI协同】{} 回复不可用（疑似工具调用失败/拒绝），已忽略", name);
-                                    return;
-                                }
-                                log.info("【多AI协同】{} 回复完成，耗时 {} ms", name, cost);
-                                replies.put(name, reply);
-                            } catch (Exception e) {
-                                log.error("【多AI协同】{} 调用失败", name, e);
-                            } finally {
-                                RequestDeadline.clear();
-                            }
-                        }))
-                        .toList();
+        List<CompletableFuture<Void>> futures = scheduleAdvisorTasks(messages, replies, deadline);
         CompletableFuture<Void> allDone = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
 
-        // 每 5 秒发一次心跳，防止前端超时断开
         long advisorWaitMs = RequestDeadline.remainingMillis(Math.max(1_000L, advisorTimeoutMs));
         if (advisorWaitMs <= 0L) {
             futures.forEach(future -> future.cancel(true));
@@ -494,10 +532,9 @@ public class AiRouterService {
                     try { onChunk.accept("\n\n" + TimeoutMessages.ADVISOR_TIMEOUT + "\n\n"); } catch (Exception ignored) {}
                     break;
                 }
-                // 还没完成，发心跳
                 try { onChunk.accept(""); } catch (Exception ignored) {}
             } catch (Exception e) {
-                log.error("【多AI协同】等待 advisor 回复异常", e);
+                log.error("[multi-ai] failed while waiting for advisor replies", e);
                 break;
             }
         }
@@ -505,40 +542,17 @@ public class AiRouterService {
         return replies;
     }
 
-    //并行调用所有 advisor，收集回复（对外暴露，可用于测试） 
+    // 并行调用所有 advisor，收集回复（对外暴露，可用于测试）。
     public Map<String, String> collectAdvisorReplies(String userQuestion) {
         return collectAdvisorReplies(MessageHelper.buildSingleTurnMessages(userQuestion));
     }
 
-    //并行调用所有 advisor，收集回复（advisor 可调用工具）
+    // 并行调用所有 advisor，收集回复（advisor 可调用工具）。
     public Map<String, String> collectAdvisorReplies(List<Map<String, Object>> messages) {
         Map<String, String> replies = new ConcurrentHashMap<>();
         Long deadline = RequestDeadline.currentDeadlineEpochMillis();
+        List<CompletableFuture<Void>> futures = scheduleAdvisorTasks(messages, replies, deadline);
 
-        List<CompletableFuture<Void>> futures = advisors.stream()
-                .filter(providerMap::containsKey)
-                .map(name -> CompletableFuture.runAsync(() -> {
-                    RequestDeadline.setDeadlineEpochMillis(deadline);
-                    try {
-                        long start = System.currentTimeMillis();
-                        log.info("【多AI协同】正在请求 {} ...", name);
-                        String reply = askAdvisorWithTools(name, messages);
-                        long cost = System.currentTimeMillis() - start;
-                        if (isIgnorableAdvisorReply(reply)) {
-                            log.warn("【多AI协同】{} 回复不可用（疑似工具调用失败/拒绝），已忽略", name);
-                            return;
-                        }
-                        log.info("【多AI协同】{} 回复完成，耗时 {} ms", name, cost);
-                        replies.put(name, reply);
-                    } catch (Exception e) {
-                        log.error("【多AI协同】{} 调用失败", name, e);
-                    } finally {
-                        RequestDeadline.clear();
-                    }
-                }))
-                .toList();
-
-        // 等待所有 advisor 完成
         try {
             long advisorWaitMs = RequestDeadline.remainingMillis(Math.max(1_000L, advisorTimeoutMs));
             if (advisorWaitMs <= 0L) {
@@ -560,6 +574,44 @@ public class AiRouterService {
         }
         return replies;
     }
+
+    private List<CompletableFuture<Void>> scheduleAdvisorTasks(List<Map<String, Object>> messages,
+                                                              Map<String, String> replies,
+                                                              Long deadline) {
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        for (String name : advisors) {
+            if (!providerMap.containsKey(name)) {
+                continue;
+            }
+            try {
+                futures.add(CompletableFuture.runAsync(() -> {
+                        RequestDeadline.setDeadlineEpochMillis(deadline);
+                        try {
+                            long start = System.currentTimeMillis();
+                            log.info("[multi-ai] requesting advisor {} ...", name);
+                            String reply = askAdvisorWithTools(name, messages);
+                            long cost = System.currentTimeMillis() - start;
+                            if (isIgnorableAdvisorReply(reply)) {
+                                log.warn("[multi-ai] advisor {} reply is not usable; ignored", name);
+                                return;
+                            }
+                            log.info("[multi-ai] advisor {} completed in {} ms", name, cost);
+                            replies.put(name, reply);
+                        } catch (Exception e) {
+                            log.error("[multi-ai] advisor {} failed", name, e);
+                        } finally {
+                            RequestDeadline.clear();
+                        }
+                    }, advisorExecutor));
+            } catch (RejectedExecutionException e) {
+                log.warn("[multi-ai] advisor executor is saturated; advisor {} was not scheduled", name);
+            } catch (Exception e) {
+                log.warn("[multi-ai] advisor {} could not be scheduled: {}", name, e.getMessage());
+            }
+        }
+        return futures;
+    }
+
 
     private String askAdvisorWithTools(String advisorName, List<Map<String, Object>> messages) {
         List<Map<String, Object>> enriched = MessageHelper.ensureToolSystemPrompt(messages);
@@ -1040,6 +1092,10 @@ public class AiRouterService {
             || lower.contains("qwen api 错误")
             || lower.contains("连接 deepseek 失败")
             || lower.contains("deepseek api 错误")
+                || lower.contains("http 402")
+                || lower.contains("insufficient balance")
+                || lower.contains("quota")
+                || lower.contains("billing")
                 || lower.contains("connect")
                 || lower.contains("refused");
     }
@@ -1063,7 +1119,11 @@ public class AiRouterService {
                 if (lower.contains("connect")
                         || lower.contains("refused")
                         || lower.contains("unresolved")
-                        || lower.contains("unknown host")) {
+                        || lower.contains("unknown host")
+                        || lower.contains("http 402")
+                        || lower.contains("insufficient balance")
+                        || lower.contains("quota")
+                        || lower.contains("billing")) {
                     return true;
                 }
             }
@@ -1086,12 +1146,17 @@ public class AiRouterService {
                                       String reason) {
         String question = extractLatestUserMessage(messages);
         if (localFallbackService.isPresent()) {
+            fallbackRuntime.set(new FallbackRuntime("local_model", "ollama", reason));
             log.warn("【本地兜底-流式】检测到上游异常，转 Ollama 简答。原因: {}", reason);
             onChunk.accept("\n\n连接失败，当前调用本地模型。\n\n");
             localFallbackService.get().streamSimpleAnswer(question, onChunk);
             return;
         }
         onChunk.accept("\n\n⚠️ 云端 AI 暂不可用，且未配置本地兜底模型。\n");
+    }
+
+    private void clearFallbackRuntime() {
+        fallbackRuntime.remove();
     }
 
     private String describeThrowable(Throwable e) {

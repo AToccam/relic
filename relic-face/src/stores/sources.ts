@@ -33,6 +33,17 @@ interface UploadResult {
 
 const IMAGE_MIME_PREFIX = 'image/'
 const AUDIO_MIME_PREFIX = 'audio/'
+const MAX_AUDIO_BYTES = 7.5 * 1024 * 1024
+const ALLOWED_AUDIO_TYPES = new Set([
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/wav',
+  'audio/webm',
+  'audio/ogg',
+  'audio/mp4',
+  'audio/x-m4a',
+  'audio/m4a'
+])
 
 export const useSourcesStore = defineStore('sources', () => {
   const files = ref<SourceFileItem[]>([])
@@ -67,6 +78,10 @@ export const useSourcesStore = defineStore('sources', () => {
     try {
       for (const file of incoming) {
         try {
+          const localValidationError = validateLocalFile(file)
+          if (localValidationError) {
+            throw new Error(localValidationError)
+          }
           const uploaded = await uploadSourceFile(file)
           const mimeType = uploaded.mimeType || file.type || 'application/octet-stream'
           const item: SourceFileItem = {

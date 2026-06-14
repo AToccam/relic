@@ -6,8 +6,13 @@ import org.springframework.stereotype.Service;
 @Service
 public class QwenService extends OpenAiCompatibleService {
 
-    private final String API_KEY = "sk-8c46bed4d0324d12a6c44ba32f113d8e";
-    private final String URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+    private static final String FALLBACK_API_KEY = "sk-8c46bed4d0324d12a6c44ba32f113d8e";
+
+    @Value("${relic.qwen.api-key:}")
+    private String apiKey;
+
+    @Value("${relic.qwen.url:https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions}")
+    private String url;
 
     @Value("${relic.qwen.model:qwen-plus}")
     private String model;
@@ -17,12 +22,15 @@ public class QwenService extends OpenAiCompatibleService {
 
     @Override
     protected String getApiKey() {
-        return API_KEY;
+        if (apiKey != null && !apiKey.isBlank()) {
+            return apiKey.trim();
+        }
+        return FALLBACK_API_KEY;
     }
 
     @Override
     protected String getUrl() {
-        return URL;
+        return url;
     }
 
     @Override
@@ -37,6 +45,7 @@ public class QwenService extends OpenAiCompatibleService {
 
     @Override
     public boolean supportsMultimodal() {
-        return true;
+        String normalizedModel = model == null ? "" : model.toLowerCase(java.util.Locale.ROOT);
+        return normalizedModel.contains("-vl-") || normalizedModel.contains("omni");
     }
 }

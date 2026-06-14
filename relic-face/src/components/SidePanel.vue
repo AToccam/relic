@@ -246,6 +246,31 @@ async function deleteHistoryItem(conversationId: string) {
   openHistoryMenuId.value = null
 }
 
+async function archiveHistoryItem(conversationId: string, archived: boolean) {
+  try {
+    const ok = await chat.archiveConversation(conversationId, archived)
+    if (!ok) {
+      window.alert(archived ? '归档会话失败，请稍后重试。' : '恢复会话失败，请稍后重试。')
+      return
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : (archived ? '归档会话失败' : '恢复会话失败')
+    window.alert(message)
+    return
+  }
+  openHistoryMenuId.value = null
+}
+
+async function showActiveConversations() {
+  await chat.setArchiveView(false)
+  openHistoryMenuId.value = null
+}
+
+async function showArchivedConversations() {
+  await chat.setArchiveView(true)
+  openHistoryMenuId.value = null
+}
+
 function formatTime(value: string): string {
   if (!value) return ''
   const date = new Date(value)
@@ -313,8 +338,23 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
     <div class="panel-body">
       <section class="section history-section">
         <div class="source-section-title-row">
-          <div class="source-section-title">聊天记录</div>
-          <button class="section-action-btn" @click="newConversation">新对话</button>
+          <div class="source-section-title">{{ chat.showingArchived ? '归档会话' : '聊天记录' }}</div>
+          <button v-if="!chat.showingArchived" class="section-action-btn" @click="newConversation">新对话</button>
+        </div>
+
+        <div class="history-filter-row">
+          <button
+            :class="['history-filter-btn', { active: !chat.showingArchived }]"
+            @click="showActiveConversations"
+          >
+            当前
+          </button>
+          <button
+            :class="['history-filter-btn', { active: chat.showingArchived }]"
+            @click="showArchivedConversations"
+          >
+            归档
+          </button>
         </div>
 
         <div v-if="showHistorySearch" class="history-search-row">
@@ -855,6 +895,34 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.history-filter-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 8px 4px 6px;
+}
+
+.history-filter-btn {
+  height: 28px;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.history-filter-btn:hover {
+  border-color: #c7d2fe;
+  color: #4338ca;
+}
+
+.history-filter-btn.active {
+  border-color: #6366f1;
+  background: #eef2ff;
+  color: #4338ca;
 }
 
 .history-search-input {

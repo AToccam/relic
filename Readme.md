@@ -101,6 +101,11 @@ npx openclaw gateway --port 18789 --verbose
    ```bash
    docker compose up -d --build
    ```
+   如需在前台查看实时日志，也可以执行：
+   ```bash
+   docker compose up --build
+   ```
+   新版 Docker Compose 会显示交互式日志界面，看到 `Relic Core Started Successfully!` 表示后端启动成功。
 5. 首次启动说明（Gateway 采用 `npx openclaw` 方式）：
    - `relic-face` 首次会构建前端镜像（Vue 编译），耗时取决于网络和机器性能。
    - `relic-gateway` 首次启动会在容器内安装依赖（可能需要 1~3 分钟）。
@@ -135,6 +140,7 @@ npx openclaw gateway --port 18789 --verbose
    ```text
    http://127.0.0.1:5173
    ```
+   前端会通过 Nginx 将 `/api/*` 转发到 `relic-core:8082`。
 2. 检查前端页面可达：
    ```bash
    curl -I http://127.0.0.1:5173
@@ -190,6 +196,17 @@ Gateway 是**无状态**的，它通过 OpenClaw SDK 连接客户端，所有业
 
 ---
 
+### 当前已完成的核心能力
+
+- 后端统一超时：覆盖 SSE 总请求、模型调用、advisor 等待、工具执行和 RAG HTTP 请求。
+- 多请求并发保护：同会话锁、全局流式请求限流、advisor 有界线程池、RAG 同 source 重复索引防护。
+- Workspace 支持：前端可指定 AI 工具读写目录，后端工具执行按当前工作目录解析路径。
+- Tools 增强：支持文本文件、Word 文档、文件读取、目录列举、Mermaid 图表渲染等工具能力。
+- 多模态识别：支持图片和音频文件作为多模态消息输入，并优先路由到多模态 Provider。
+- 聊天记录：支持保存、读取、重命名、删除、归档、恢复归档。
+- 文档图表：支持生成 `.docx` 文档和 Mermaid 图表。
+- 语音输入兜底：支持音频文件上传，前后端均会校验音频格式与大小。
+
 ### relic-core 核心类职责
 
 #### Controller 层
@@ -198,6 +215,8 @@ Gateway 是**无状态**的，它通过 OpenClaw SDK 连接客户端，所有业
   - `POST /openclaw` — 接收 OpenClaw webhook 消息（非流式）
   - `POST /v1/chat/completions` — **OpenAI 兼容流式 SSE 端点**（主要入口）
   - `GET/POST /mode` — 查看/切换路由模式（SINGLE / MULTI）
+  - `GET /chat/conversations`、`GET /chat/history` — 读取会话列表和历史消息
+  - `POST /chat/conversations/rename`、`POST /chat/conversations/archive`、`DELETE /chat/conversations` — 重命名、归档/恢复、删除会话
   - `POST /test/ai`、`/test/multi` — 测试端点
 
 #### DTO 层
@@ -216,8 +235,8 @@ Gateway 是**无状态**的，它通过 OpenClaw SDK 连接客户端，所有业
 
 #### Tool 层（工具调用系统）
 
-- ToolDefinitions.java — 定义 3 个工具：`create_text_file`、`read_file`、`list_files`
-- ToolExecutor.java — 工具执行器（文件读写、目录列举），含路径遍历防护
+- ToolDefinitions.java — 定义工具：`create_text_file`、`create_docx_file`、`read_file`、`list_files`、`render_mermaid_chart`
+- ToolExecutor.java — 工具执行器（文件读写、目录列举、Word 文档、Mermaid 图表），含路径遍历防护
 - ToolCallService.java — **工具调用循环引擎**，最多 10 轮迭代，直到模型不再请求工具
 
 #### Util 层

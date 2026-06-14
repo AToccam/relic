@@ -1,5 +1,33 @@
 $ErrorActionPreference = "Stop"
 
+function Add-ProcessOption([string]$currentValue, [string]$option) {
+  if ([string]::IsNullOrWhiteSpace($currentValue)) {
+    return $option
+  }
+  if ($currentValue -like "*$option*") {
+    return $currentValue
+  }
+  return "$option $currentValue"
+}
+
+function Initialize-Utf8Console {
+  try {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [Console]::InputEncoding = $utf8NoBom
+    [Console]::OutputEncoding = $utf8NoBom
+    $script:OutputEncoding = $utf8NoBom
+  } catch {
+    Write-Host "Warning: failed to switch PowerShell console encoding to UTF-8: $($_.Exception.Message)"
+  }
+
+  $env:PYTHONIOENCODING = "utf-8"
+  $env:MAVEN_OPTS = Add-ProcessOption $env:MAVEN_OPTS "-Dfile.encoding=UTF-8"
+  $env:MAVEN_OPTS = Add-ProcessOption $env:MAVEN_OPTS "-Dsun.stdout.encoding=UTF-8"
+  $env:MAVEN_OPTS = Add-ProcessOption $env:MAVEN_OPTS "-Dsun.stderr.encoding=UTF-8"
+}
+
+Initialize-Utf8Console
+
 $noPause = $false
 foreach ($a in $args) {
   if ($a -ieq "--no-pause" -or $a -ieq "-NoPause") {
@@ -48,7 +76,7 @@ function Add-Started([string]$name) {
 }
 
 function Start-ServiceWindow([string]$workDir, [string]$title, [string]$command) {
-  $cmdLine = "title $title && $command"
+  $cmdLine = "chcp 65001 >nul && title $title && $command"
   $p = Start-Process -FilePath "cmd.exe" -WorkingDirectory $workDir -ArgumentList @("/k", $cmdLine) -PassThru
   return $p.Id
 }
@@ -75,6 +103,11 @@ Write-Host "  - Main window: orchestrator and summary."
 Write-Host "  - Service windows: each service runs in its own terminal."
 Write-Host "============================================================"
 Write-Host ""
+
+if ([string]::IsNullOrWhiteSpace($env:QWEN_API_KEY) -and [string]::IsNullOrWhiteSpace($env:DASHSCOPE_API_KEY)) {
+  Write-Host "Warning: QWEN_API_KEY / DASHSCOPE_API_KEY is not set. Qwen will use the temporary fallback key in code."
+  Write-Host ""
+}
 
 # 1) Ollama
 Write-Host "[1/4] Ollama"

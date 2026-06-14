@@ -363,7 +363,13 @@ public abstract class OpenAiCompatibleService implements AiProvider {
             try {
                 RequestDeadline.throwIfExpired();
                 Map<String, Object> response = restTemplate.postForObject(getUrl(), entity, Map.class);
+                if (response == null) {
+                    throw new RuntimeException(providerDisplayName() + " API returned empty response");
+                }
                 List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
+                if (choices == null || choices.isEmpty()) {
+                    throw new RuntimeException(providerDisplayName() + " API response has no choices: " + response);
+                }
                 return choices.get(0);
             } catch (HttpStatusCodeException e) {
                 String body = e.getResponseBodyAsString();

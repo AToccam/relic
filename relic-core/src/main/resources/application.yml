@@ -8,6 +8,11 @@ spring:
 relic:
   request:
     timeout-ms: 180000
+    max-concurrent-streams: 8
+  multimodal:
+    audio:
+      max-base64-chars: 10485760
+      allowed-formats: mp3,mpeg,wav,webm,ogg,m4a,mp4
   openai-compatible:
     connect-timeout-ms: 20000
     request-timeout-ms: 300000
@@ -43,9 +48,10 @@ relic:
     # 流式空闲超时，0 表示关闭空闲熔断
     idle-timeout-ms: 180000
   qwen:
-    api-key: ${QWEN_API_KEY:}
-    # Qwen 多模态模型（DashScope OpenAI 兼容）
-    model: qwen-vl-plus-latest
+    api-key: ${QWEN_API_KEY:${DASHSCOPE_API_KEY:}}
+    url: https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
+    # Qwen 文本模型（DashScope OpenAI 兼容）。当前临时 key 对 qwen-vl-plus-latest 会返回 403 access_denied。
+    model: qwen-plus
   kimi:
     api-key: ${KIMI_API_KEY:}
     # Kimi 多模态模型（Moonshot OpenAI 兼容）
@@ -58,8 +64,11 @@ relic:
     # 检测到图片/音频输入时的 provider 优先级（逗号分隔）
     multimodal-providers: qwen,kimi
     # 顾问 provider 列表（逗号分隔），用于 MULTI 模式
-    advisors: deepseek,kimi
+    advisors: deepseek,kimi,qwen
     advisor-timeout-ms: 90000
+    advisor-executor:
+      pool-size: 4
+      queue-size: 16
     # 开启后会优先调用 LocalIntentClassifier（若存在实现 Bean）
     enable-local-classifier: true
     # 本地语义分类最长等待时间，建议 >= classify-timeout-ms

@@ -1,4 +1,4 @@
-import type { Citation, MessageContent } from '@/types'
+import type { Citation, FallbackInfo, MessageContent } from '@/types'
 
 const BASE = '/api'
 
@@ -8,6 +8,7 @@ export interface ConversationSummary {
   updatedAt: string
   messageCount: number
   lastPreview: string
+  archived?: boolean
 }
 
 export interface PersistedMessage {
@@ -30,7 +31,8 @@ export async function streamChat(
   workingDirectory?: string,
   toolsEnabled?: boolean,
   ragConfig?: RagConfig,
-  onCitations?: (citations: Citation[]) => void
+  onCitations?: (citations: Citation[]) => void,
+  onFallback?: (fallback: FallbackInfo) => void
 ): Promise<void> {
   const body: Record<string, unknown> = { messages, stream: true, conversationId }
   if (workingDirectory && workingDirectory.trim()) {
@@ -79,6 +81,9 @@ export async function streamChat(
         if (onCitations && Array.isArray(json.citations) && json.citations.length > 0) {
           onCitations(json.citations as Citation[])
         }
+        if (onFallback && json.fallback && typeof json.fallback === 'object') {
+          onFallback(json.fallback as FallbackInfo)
+        }
       } catch {
         // ignore parse errors for malformed chunks
       }
@@ -86,8 +91,8 @@ export async function streamChat(
   }
 }
 
-export async function listConversations(): Promise<ConversationSummary[]> {
-  const response = await fetch(`${BASE}/chat/conversations`)
+export async function listConversations(archived = false): Promise<ConversationSummary[]> {
+  const response = await fetch(`${BASE}/chat/conversations?archived=${archived ? 'true' : 'false'}`)
   if (!response.ok) {
     throw new Error(`获取会话列表失败: HTTP ${response.status}`)
   }
@@ -125,6 +130,19 @@ export async function deleteConversation(conversationId: string): Promise<boolea
   })
   if (!response.ok) {
     throw new Error(`删除失败: HTTP ${response.status}`)
+  }
+  const json = await response.json()
+  return !!json.ok
+}
+
+export async function archiveConversation(conversationId: string, archived: boolean): Promise<boolean> {
+  const response = await fetch(`${BASE}/chat/conversations/archive`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conversationId, archived })
+  })
+  if (!response.ok) {
+    throw new Error(`褰掓。澶辫触: HTTP ${response.status}`)
   }
   const json = await response.json()
   return !!json.ok

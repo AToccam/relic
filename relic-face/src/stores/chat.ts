@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { reactive, ref } from 'vue'
 import {
+  archiveConversation as archiveConversationApi,
   deleteConversation as deleteConversationApi,
   getConversationHistory,
   listConversations,
@@ -23,6 +24,7 @@ export const useChatStore = defineStore('chat', () => {
   const settings = useSettingsStore()
   const messages = ref<Message[]>([])
   const conversations = ref<ConversationSummary[]>([])
+  const showingArchived = ref(false)
   const currentConversationId = ref('')
   const loadingHistory = ref(false)
   const streamingByConversation = ref<Record<string, boolean>>({})
@@ -147,6 +149,9 @@ export const useChatStore = defineStore('chat', () => {
         ragConfig,
         (citations) => {
           assistantMsg.citations = citations
+        },
+        (fallback) => {
+          assistantMsg.fallback = fallback
         }
       )
 
@@ -253,9 +258,23 @@ export const useChatStore = defineStore('chat', () => {
 
   async function refreshConversations() {
     try {
-      conversations.value = await listConversations()
+      conversations.value = await listConversations(showingArchived.value)
     } catch {
       // 后端不可达时静默忽略，保持当前会话列表不变
+    }
+  }
+
+  async function setArchiveView(value: boolean) {
+    showingArchived.value = value
+    await refreshConversations()
+    const first = conversations.value.length > 0 ? conversations.value[0] : undefined
+    if (first) {
+      await selectConversation(first.conversationId)
+    } else if (!value) {
+      clear()
+    } else {
+      currentConversationId.value = ''
+      messages.value = []
     }
   }
 
@@ -340,6 +359,35 @@ export const useChatStore = defineStore('chat', () => {
     return true
   }
 
+  async function archiveConversation(conversationId: string, archived: boolean) {
+    abortControllers.get(conversationId)?.abort()
+    abortControllers.delete(conversationId)
+    setConversationStreaming(conversationId, false)
+
+    const archivingCurrent = currentConversationId.value === conversationId
+    messageCacheByConversation.delete(conversationId)
+
+    const ok = await archiveConversationApi(conversationId, archived)
+    if (!ok) return false
+
+    await refreshConversations()
+
+    if (archivingCurrent) {
+      const first = conversations.value.length > 0 ? conversations.value[0] : undefined
+      if (first) {
+        await selectConversation(first.conversationId)
+      } else if (showingArchived.value) {
+        currentConversationId.value = ''
+        messages.value = []
+      } else {
+        clear()
+      }
+    } else {
+      messages.value = [...messages.value]
+    }
+    return true
+  }
+
   function isLocalDraftConversation(conversationId: string): boolean {
     const id = (conversationId || '').trim()
     if (!id) return false
@@ -358,6 +406,7 @@ export const useChatStore = defineStore('chat', () => {
   return {
     messages,
     conversations,
+    showingArchived,
     currentConversationId,
     loadingHistory,
     streamingByConversation,
@@ -370,10 +419,12 @@ export const useChatStore = defineStore('chat', () => {
     clear,
     init,
     refreshConversations,
+    setArchiveView,
     selectConversation,
     newConversation,
     renameConversation,
     deleteConversation,
+    archiveConversation,
     triggerDriftCheck,
     clearDrift,
     confirmDriftNewConversation

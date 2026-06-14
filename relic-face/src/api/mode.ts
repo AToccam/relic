@@ -24,12 +24,31 @@ export async function setMode(payload: ModeUpdateRequest): Promise<ModeResponse>
 }
 
 export async function testProvider(provider: string): Promise<TestResult> {
-  const res = await fetch(`${BASE}/test/ai`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider, prompt: '你好，请用一句话介绍你自己' })
-  })
-  return res.json()
+  const startedAt = Date.now()
+  try {
+    const res = await fetch(`${BASE}/test/ai`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, prompt: 'Hello, please introduce yourself in one sentence.' })
+    })
+    const data = await readJsonOrText(res)
+    if (!res.ok) {
+      return {
+        provider,
+        status: 'fail',
+        costMs: Date.now() - startedAt,
+        reply: formatErrorBody(data, `HTTP ${res.status}`)
+      }
+    }
+    return data as TestResult
+  } catch (e) {
+    return {
+      provider,
+      status: 'fail',
+      costMs: Date.now() - startedAt,
+      reply: e instanceof Error ? e.message : 'Request failed'
+    }
+  }
 }
 
 export async function testMulti(prompt: string): Promise<MultiTestResult> {
@@ -38,7 +57,11 @@ export async function testMulti(prompt: string): Promise<MultiTestResult> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt })
   })
-  return res.json()
+  const data = await readJsonOrText(res)
+  if (!res.ok) {
+    throw new Error(formatErrorBody(data, `HTTP ${res.status}`))
+  }
+  return data as MultiTestResult
 }
 
 export async function detectTopicDrift(
@@ -46,16 +69,17 @@ export async function detectTopicDrift(
   newMsg: string,
   anchorFiles?: string[]
 ): Promise<boolean> {
-  const system = '你是话题判断助手，只能回答YES或NO，不要输出任何其他内容。'
+  const system = 'You judge topic drift. Reply only YES or NO.'
   const fileContext =
     anchorFiles && anchorFiles.length > 0
-      ? `\n当前会话已关联文件：${anchorFiles.slice(0, 5).join('、')}。如果新消息仍与这些文件内容相关，应回答NO。`
+      ? `\nCurrent related files: ${anchorFiles.slice(0, 5).join(', ')}. If the new message is still related to these files, reply NO.`
       : ''
   const prompt =
-    `判断以下两条消息是否属于明显不同的话题领域。${fileContext}\n` +
-    `消息A：${prevMsg.slice(0, 150)}\n` +
-    `消息B：${newMsg.slice(0, 150)}\n` +
-    `YES = 话题明显不同，建议新开会话；NO = 同一话题或存在关联性`
+    `Decide whether these two messages are clearly different topics.${fileContext}\n` +
+    `Message A: ${prevMsg.slice(0, 150)}\n` +
+    `Message B: ${newMsg.slice(0, 150)}\n` +
+    'YES = clearly different topic; NO = same topic or related.'
+
   try {
     const res = await fetch('http://127.0.0.1:11434/api/generate', {
       method: 'POST',
@@ -74,4 +98,31 @@ export async function detectTopicDrift(
   } catch {
     return false
   }
+}
+
+async function readJsonOrText(res: Response): Promise<unknown> {
+  const text = await res.text()
+  if (!text) {
+    return null
+  }
+  try {
+    return JSON.parse(text)
+  } catch {
+    return text
+  }
+}
+
+function formatErrorBody(data: unknown, fallback: string): string {
+  if (typeof data === 'string' && data.trim()) {
+    return data
+  }
+  if (data && typeof data === 'object') {
+    const obj = data as Record<string, unknown>
+    const message = obj.message ?? obj.error ?? obj.reply
+    if (typeof message === 'string' && message.trim()) {
+      return message
+    }
+    return JSON.stringify(obj)
+  }
+  return fallback
 }

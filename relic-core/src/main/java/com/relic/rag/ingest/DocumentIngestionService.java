@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.Set;
 
 /**
  * 文档索引编排服务。
@@ -32,6 +33,7 @@ public class DocumentIngestionService {
     private final VectorStore vectorStore;
 
     private final ConcurrentHashMap<String, DocumentIndexState> indexStates = new ConcurrentHashMap<>();
+    private final Set<String> indexingSourceIds = ConcurrentHashMap.newKeySet();
 
     /**
      * 手动触发索引（异步）。
@@ -52,13 +54,19 @@ public class DocumentIngestionService {
      */
     public void triggerIndexAsync(String sourceId, String triggerType) {
         String normalizedSourceId = normalizeSourceId(sourceId);
+        if (!indexingSourceIds.add(normalizedSourceId)) {
+            log.info("[RAG] index already running for sourceId={}, skip duplicate trigger", normalizedSourceId);
+            return;
+        }
         upsertState(normalizedSourceId, IndexStatus.INDEXING, "索引任务已排队", 0);
 
         Thread.startVirtualThread(() -> {
             try {
-                indexNow(normalizedSourceId, triggerType);
+                indexNowInternal(normalizedSourceId, triggerType);
             } catch (Exception ignored) {
                 // 状态会在 indexNow 内更新为失败，这里避免传播到调用线程。
+            } finally {
+                indexingSourceIds.remove(normalizedSourceId);
             }
         });
     }
@@ -68,6 +76,18 @@ public class DocumentIngestionService {
      */
     public DocumentIndexState indexNow(String sourceId, String triggerType) {
         String normalizedSourceId = normalizeSourceId(sourceId);
+        if (!indexingSourceIds.add(normalizedSourceId)) {
+            log.info("[RAG] index already running for sourceId={}, returning current state", normalizedSourceId);
+            return getIndexState(normalizedSourceId);
+        }
+        try {
+            return indexNowInternal(normalizedSourceId, triggerType);
+        } finally {
+            indexingSourceIds.remove(normalizedSourceId);
+        }
+    }
+
+    private DocumentIndexState indexNowInternal(String normalizedSourceId, String triggerType) {
         upsertState(normalizedSourceId, IndexStatus.INDEXING, "正在索引中", 0);
         try {
             String text = textExtractor.extractBySourceId(normalizedSourceId);
