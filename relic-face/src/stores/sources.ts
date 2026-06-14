@@ -2,6 +2,9 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { deleteSourceFile, listSourceFiles, uploadSourceFile } from '@/api/files'
 import { getRagIndexStatus, listRagIndexStatuses, triggerRagIndex, type RagIndexStatus } from '@/api/rag'
+import { importWebResource, type WebSearchResult } from '@/api/webResources'
+
+export type SourceKind = 'local' | 'web'
 
 export interface SourceFileItem {
   id: string
@@ -12,11 +15,15 @@ export interface SourceFileItem {
   relativePath: string
   selected: boolean
   conversationId: string
+  sourceKind: SourceKind
   dataUrl?: string
   uploadError?: string
   ragStatus?: RagIndexStatus
   ragChunkCount?: number
   ragIndexing?: boolean
+  originUrl?: string
+  snippet?: string
+  keyword?: string
 }
 
 interface UploadResult {
@@ -48,6 +55,8 @@ export const useSourcesStore = defineStore('sources', () => {
   )
   const usableFiles = computed(() => conversationFiles.value.filter(f => !f.uploadError))
   const selectedUsableFiles = computed(() => usableFiles.value.filter(f => f.selected))
+  const selectedKnowledgeSources = computed(() => selectedUsableFiles.value.filter(isKnowledgeSource))
+  const selectedAttachmentFiles = computed(() => selectedUsableFiles.value.filter(isAttachmentSource))
   const hasFiles = computed(() => selectedUsableFiles.value.length > 0)
   const allUsableSelected = computed(() => usableFiles.value.length > 0 && selectedUsableFiles.value.length === usableFiles.value.length)
 
@@ -83,7 +92,8 @@ export const useSourcesStore = defineStore('sources', () => {
             mimeType,
             relativePath: uploaded.relativePath,
             selected: true,
-            conversationId: convId
+            conversationId: convId,
+            sourceKind: 'local'
           }
 
           if (isImage(mimeType) || isAudio(mimeType)) {
@@ -91,6 +101,9 @@ export const useSourcesStore = defineStore('sources', () => {
           }
 
           files.value.push(item)
+          if (isKnowledgeSource(item)) {
+            void indexFile(item.id)
+          }
           okCount += 1
         } catch (error) {
           errorCount += 1
@@ -104,6 +117,7 @@ export const useSourcesStore = defineStore('sources', () => {
             relativePath: '',
             selected: false,
             conversationId: convId,
+            sourceKind: 'local',
             uploadError: msg
           })
         }
@@ -133,13 +147,17 @@ export const useSourcesStore = defineStore('sources', () => {
       // 历史持久化文件无法确定归属会话，标记为空串（不显示在任何会话视图中）
       files.value.push({
         id: `${Date.now()}-${Math.random()}`,
-        name: item.filename,
+        name: item.title || item.filename,
         sizeLabel: formatSize(item.size || 0),
         sizeBytes: item.size || 0,
         mimeType: item.mimeType || 'application/octet-stream',
         relativePath: item.relativePath,
         selected: false,
-        conversationId: ''
+        conversationId: '',
+        sourceKind: item.sourceType === 'web_search' ? 'web' : 'local',
+        originUrl: item.originUrl,
+        snippet: item.snippet,
+        keyword: item.keyword
       })
       existing.add(item.relativePath)
     }
@@ -159,6 +177,49 @@ export const useSourcesStore = defineStore('sources', () => {
     } catch {
       // 后端不可达时静默忽略
     }
+  }
+
+  async function addWebResource(result: WebSearchResult, keyword: string): Promise<SourceFileItem> {
+    const imported = await importWebResource(result, keyword)
+    const relativePath = imported.sourceId || imported.relativePath
+    const existing = files.value.find(file => file.relativePath === relativePath)
+    if (existing) {
+      existing.conversationId = currentConversationId.value
+      existing.selected = true
+      existing.sourceKind = 'web'
+      existing.originUrl = imported.originUrl || result.url
+      existing.snippet = imported.snippet || result.snippet
+      existing.keyword = imported.keyword || keyword
+      if (existing.ragStatus !== 'COMPLETED') {
+        pollIndexStatus(existing)
+      }
+      return existing
+    }
+
+    const item: SourceFileItem = {
+      id: `${Date.now()}-${Math.random()}`,
+      name: imported.title || result.title || imported.filename || result.url,
+      sizeLabel: formatSize(imported.size || 0),
+      sizeBytes: imported.size || 0,
+      mimeType: imported.mimeType || 'text/markdown',
+      relativePath,
+      selected: true,
+      conversationId: currentConversationId.value,
+      sourceKind: 'web',
+      originUrl: imported.originUrl || result.url,
+      snippet: imported.snippet || result.snippet,
+      keyword: imported.keyword || keyword,
+      ragStatus: imported.indexTriggered ? 'INDEXING' : undefined,
+      ragIndexing: !!imported.indexTriggered
+    }
+
+    files.value.push(item)
+    if (imported.indexTriggered) {
+      pollIndexStatus(item)
+    } else {
+      void indexFile(item.id)
+    }
+    return item
   }
 
   async function removeFile(id: string) {
@@ -198,7 +259,8 @@ export const useSourcesStore = defineStore('sources', () => {
       mimeType: item.mimeType,
       relativePath: item.relativePath,
       selected: true,
-      conversationId: currentConversationId.value
+      conversationId: currentConversationId.value,
+      sourceKind: 'web'
     })
   }
 
@@ -220,7 +282,17 @@ export const useSourcesStore = defineStore('sources', () => {
       return
     }
 
-    // 轮询直到终态
+    pollIndexStatus(item)
+  }
+
+  function pollIndexStatus(item: SourceFileItem) {
+    if (!item.relativePath || item.uploadError) return
+
+    item.ragIndexing = true
+    if (!item.ragStatus || item.ragStatus === 'NOT_INDEXED') {
+      item.ragStatus = 'INDEXING'
+    }
+
     const poll = async () => {
       try {
         const result = await getRagIndexStatus(item.relativePath)
@@ -232,10 +304,11 @@ export const useSourcesStore = defineStore('sources', () => {
           item.ragIndexing = false
         }
       } catch {
+        item.ragStatus = 'FAILED'
         item.ragIndexing = false
       }
     }
-    window.setTimeout(poll, 2000)
+    window.setTimeout(poll, 1000)
   }
 
   function migrateSelectedFilesToConversation(newConversationId: string) {
@@ -253,11 +326,14 @@ export const useSourcesStore = defineStore('sources', () => {
     hasFiles,
     usableFiles,
     selectedUsableFiles,
+    selectedKnowledgeSources,
+    selectedAttachmentFiles,
     allUsableSelected,
     uploading,
     currentConversationId,
     setConversation,
     addFiles,
+    addWebResource,
     removeFile,
     toggleFileSelection,
     setAllUsableSelection,
@@ -265,6 +341,8 @@ export const useSourcesStore = defineStore('sources', () => {
     loadPersistedFiles,
     migrateSelectedFilesToConversation,
     indexFile,
+    isKnowledgeSource,
+    isAttachmentSource,
     addImportedWebResource
   }
 })
@@ -283,18 +361,20 @@ function isAudio(mimeType: string): boolean {
   return mimeType.startsWith(AUDIO_MIME_PREFIX)
 }
 
-function validateLocalFile(file: File): string | null {
-  const mimeType = file.type || 'application/octet-stream'
-  if (!isAudio(mimeType)) {
-    return null
+function isKnowledgeSource(file: SourceFileItem): boolean {
+  if (!file.relativePath || file.uploadError) {
+    return false
   }
-  if (!ALLOWED_AUDIO_TYPES.has(mimeType.toLowerCase())) {
-    return '暂不支持该音频格式，请使用 mp3、wav、webm、ogg、m4a 或 mp4'
+  const mimeType = (file.mimeType || '').toLowerCase()
+  return !isImage(mimeType) && !isAudio(mimeType)
+}
+
+function isAttachmentSource(file: SourceFileItem): boolean {
+  if (!file.relativePath || file.uploadError) {
+    return false
   }
-  if (file.size > MAX_AUDIO_BYTES) {
-    return '音频文件过大，请压缩到 7.5MB 以内或缩短录音'
-  }
-  return null
+  const mimeType = (file.mimeType || '').toLowerCase()
+  return isImage(mimeType) || isAudio(mimeType)
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {

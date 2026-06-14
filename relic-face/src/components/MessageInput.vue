@@ -4,6 +4,7 @@ import { useChatStore } from '@/stores/chat'
 import { useSourcesStore } from '@/stores/sources'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useSettingsStore } from '@/stores/settings'
+import type { SourceFileItem } from '@/stores/sources'
 
 const chat = useChatStore()
 const sources = useSourcesStore()
@@ -86,7 +87,7 @@ function handleSend() {
   if (driftTimer) { clearTimeout(driftTimer); driftTimer = null }
   chat.clearDrift()
   if (chat.isConversationStreaming(chat.currentConversationId)) return
-  if (!input.value.trim() && !sources.hasFiles) return
+  if (!input.value.trim() && sources.selectedAttachmentFiles.length === 0) return
   chat.send(input.value.trim())
   input.value = ''
 }
@@ -142,6 +143,30 @@ function removeChip(id: string) {
 function isImage(mimeType: string) {
   return mimeType.startsWith('image/')
 }
+
+function chipMeta(file: SourceFileItem): string {
+  if (sources.isAttachmentSource(file)) {
+    return file.sizeLabel
+  }
+  if (file.ragStatus === 'COMPLETED') {
+    return '知识库'
+  }
+  if (file.ragStatus === 'INDEXING') {
+    return '索引中'
+  }
+  if (file.ragStatus === 'FAILED') {
+    return '索引失败'
+  }
+  return file.sourceKind === 'web' ? '网页' : '来源'
+}
+
+function chipTitle(file: SourceFileItem): string {
+  return file.originUrl || file.relativePath
+}
+
+function chipRemoveTitle(file: SourceFileItem): string {
+  return sources.isAttachmentSource(file) ? '取消附带' : '从知识库取消使用'
+}
 </script>
 
 <template>
@@ -151,7 +176,7 @@ function isImage(mimeType: string) {
         v-for="file in sources.selectedUsableFiles"
         :key="file.id"
         class="file-chip"
-        :title="file.relativePath"
+        :title="chipTitle(file)"
       >
         <img v-if="isImage(file.mimeType) && file.dataUrl" :src="file.dataUrl" class="chip-thumb" />
         <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="chip-icon">
@@ -159,15 +184,15 @@ function isImage(mimeType: string) {
           <polyline points="14 2 14 8 20 8" />
         </svg>
         <span class="chip-name">{{ file.name }}</span>
-        <span class="chip-size">{{ file.sizeLabel }}</span>
-        <button class="chip-remove" @click="removeChip(file.id)" title="取消附带">
+        <span class="chip-size">{{ chipMeta(file) }}</span>
+        <button class="chip-remove" @click="removeChip(file.id)" :title="chipRemoveTitle(file)">
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
           </svg>
         </button>
       </div>
       <span v-if="sources.usableFiles.length > sources.selectedUsableFiles.length" class="chip-unselected-hint">
-        还有 {{ sources.usableFiles.length - sources.selectedUsableFiles.length }} 个文件未勾选
+        还有 {{ sources.usableFiles.length - sources.selectedUsableFiles.length }} 个来源未启用
       </span>
     </div>
     <div v-if="chat.driftSuggested" class="drift-banner">
@@ -242,7 +267,7 @@ function isImage(mimeType: string) {
         v-if="!chat.isConversationStreaming(chat.currentConversationId)"
         class="send-btn"
         @click="handleSend"
-        :disabled="!input.trim() && sources.selectedUsableFiles.length === 0"
+        :disabled="!input.trim() && sources.selectedAttachmentFiles.length === 0"
       >
         发送
       </button>
