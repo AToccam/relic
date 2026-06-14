@@ -149,6 +149,9 @@ export const useChatStore = defineStore('chat', () => {
         ragConfig,
         (citations) => {
           assistantMsg.citations = citations
+        },
+        (fallback) => {
+          assistantMsg.fallback = fallback
         }
       )
 

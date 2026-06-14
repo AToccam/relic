@@ -4,6 +4,12 @@ export interface Citation {
   snippet: string
 }
 
+export interface FallbackInfo {
+  type: string
+  provider: string
+  reason?: string
+}
+
 export interface Message {
   id: string
   role: 'user' | 'assistant'
@@ -12,6 +18,7 @@ export interface Message {
   streaming?: boolean
   interrupted?: boolean
   citations?: Citation[]
+  fallback?: FallbackInfo
 }
 
 export interface TextPart {
